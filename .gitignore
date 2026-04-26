@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+**/dist/
+**/build/
+.next/
+**/.next/
+
+# Environment files — NEVER commit tokens or secrets
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+**/.env
+**/.env.local
+
+# Uploads — user files, not source code
+uploads/
+**/uploads/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# TypeScript cache
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Shared package — not used in production
+shared/
+
+# OpenAPI spec — large reference file
+openapi.json
+
+# Excel / ODS / CSV files generated or uploaded
+*.xlsx
+*.ods
+*.csv
+
+# Misc
+.cache/
+coverage/

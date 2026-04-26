@@ -1,0 +1,204 @@
+/**
+ * Job Doc Parser
+ * Converts free-text job documentation into a structured Excel row.
+ * Handles the exact format used in the job request documents.
+ */
+
+export interface JobRow {
+  task_name:         string;
+  task_type:         string;
+  agent:             string;
+  command:           string;
+  credential:        string;
+  description:       string;
+  enabled:           string;
+  first_run_date:    string;
+  start_time:        string;
+  timezone:          string;
+  frequency_type:    string;
+  frequency_value:   string;
+  max_runtime:       string;
+  ref_job:           string;
+  business_services: string;
+  servicenow_ticket: string;
+  schedule_string:   string;
+  job_doc:           string;   // full original job doc text → notes
+}
+
+export const EMPTY_ROW: JobRow = {
+  task_name: '', task_type: 'taskUnix', agent: '', command: '',
+  credential: '', description: '', enabled: 'true',
+  first_run_date: '', start_time: '', timezone: '',
+  frequency_type: '', frequency_value: '', max_runtime: '',
+  ref_job: '', business_services: '', servicenow_ticket: '',
+  schedule_string: '', job_doc: '',
+};
+
+function extract(text: string, ...keys: string[]): string {
+  for (const key of keys) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const m = text.match(new RegExp(`${escaped}\\s*[=:]\\s*(.+?)(?:\\n|$)`, 'i'));
+    if (m) return m[1].trim();
+  }
+  return '';
+}
+
+function parseMaxRuntime(val: string): string {
+  if (!val) return '';
+  // "0100" → 60 min, "0015" → 15 min, "0030" → 30 min
+  const clean = val.trim().replace(/[^\d]/g, '');
+  if (clean.length === 4) {
+    const h = parseInt(clean.slice(0, 2));
+    const m = parseInt(clean.slice(2, 4));
+    return String(h * 60 + m);
+  }
+  // Already a number
+  const n = parseInt(clean);
+  return isNaN(n) ? '' : String(n);
+}
+
+function parseStartTime(schedStr: string): { start_time: string; timezone: string; schedule_string: string } {
+  if (!schedStr) return { start_time: '', timezone: '', schedule_string: '' };
+
+  // Pass timezone as-is — Stonebranch accepts IANA, Etc/GMT+X, and abbreviations like IST
+  // Do NOT convert — let the API validate
+
+  // If it contains EVERY or UNTIL → use as schedule_string
+  if (/EVERY|UNTIL/i.test(schedStr)) {
+    const tzMatch = schedStr.match(/TIMEZONE\s+(\S+)/i);
+    return {
+      start_time:      '',
+      timezone:        tzMatch?.[1] ?? '',
+      schedule_string: schedStr.trim(),
+    };
+  }
+
+  // "AT HHMM TIMEZONE tz" → simple absolute
+  const atMatch = schedStr.match(/AT\s+(\d{4})/i);
+  const tzMatch = schedStr.match(/TIMEZONE\s+(\S+)/i);
+  if (atMatch) {
+    const h = atMatch[1].slice(0, 2);
+    const m = atMatch[1].slice(2, 4);
+    return {
+      start_time:      `${h}:${m}`,
+      timezone:        tzMatch?.[1] ?? '',
+      schedule_string: '',
+    };
+  }
+
+  return { start_time: '', timezone: '', schedule_string: schedStr };
+}
+
+function parseFrequency(freqStr: string): { frequency_type: string; frequency_value: string } {
+  if (!freqStr) return { frequency_type: '', frequency_value: '' };
+
+  // FREQ=DAILY;INTERVAL=1
+  if (freqStr.includes('FREQ=')) {
+    const type  = freqStr.match(/FREQ=([^;]+)/i)?.[1]?.toUpperCase() ?? 'DAILY';
+    const value = freqStr.match(/INTERVAL=(\d+)/i)?.[1] ?? '1';
+    return { frequency_type: type, frequency_value: value };
+  }
+
+  const upper = freqStr.toUpperCase();
+  if (upper.includes('DAILY'))   return { frequency_type: 'DAILY',   frequency_value: '1' };
+  if (upper.includes('WEEKLY'))  return { frequency_type: 'WEEKLY',  frequency_value: '1' };
+  if (upper.includes('MONTHLY')) return { frequency_type: 'MONTHLY', frequency_value: '1' };
+
+  return { frequency_type: freqStr, frequency_value: '' };
+}
+
+function mapTaskType(typeStr: string): string {
+  const map: Record<string, string> = {
+    'unix':        'taskUnix',
+    'linux':       'taskUnix',
+    'windows':     'taskWindows',
+    'sql':         'taskSql',
+    'email':       'taskEmail',
+    'ftp':         'taskFtp',
+    'webservice':  'taskWebService',
+    'web service': 'taskWebService',
+    'manual':      'taskManual',
+    'sleep':       'taskSleep',
+    'timer':       'taskSleep',
+    'sap':         'taskSap',
+  };
+  const lower = typeStr.toLowerCase().trim();
+  return map[lower] ?? (typeStr.startsWith('task') ? typeStr : `task${typeStr.charAt(0).toUpperCase()}${typeStr.slice(1)}`);
+}
+
+/**
+ * Parse a free-text job document into a JobRow.
+ * Handles the standard job request format.
+ */
+export function parseJobDoc(text: string): JobRow {
+  const row: JobRow = { ...EMPTY_ROW };
+
+  // Core fields
+  row.task_name   = extract(text, 'Job Name', 'Task Name', 'Name');
+  row.description = extract(text, 'Job Description', 'Description', 'Task Description');
+  row.agent       = extract(text, 'Job Workstation', 'Workstation', 'Agent', 'Job Workstation');
+  row.credential  = extract(text, 'Job Login Account', 'Login Account', 'Credential', 'Credentials');
+  row.command     = extract(text, 'Job Script', 'Script', 'Command');
+
+  // Task type
+  const rawType = extract(text, 'Job Type', 'Task Type', 'Type');
+  // "Production" is the job category, not task type — default to taskUnix
+  if (rawType && rawType.toLowerCase() !== 'production') {
+    row.task_type = mapTaskType(rawType);
+  } else {
+    row.task_type = 'taskUnix';
+  }
+
+  // Dates
+  const firstRun = extract(text, 'Firstrun Date', 'First Run Date', 'First Run', 'Start Date');
+  row.first_run_date = firstRun || '';
+
+  // Schedule
+  const schedStr = extract(text, 'Job Starttime', 'Start Time', 'Job Start Time', 'Starttime');
+  const { start_time, timezone, schedule_string } = parseStartTime(schedStr);
+  row.start_time      = start_time;
+  row.schedule_string = schedule_string;
+
+  // Timezone (explicit field overrides parsed)
+  const explicitTz = extract(text, 'Job Timezone', 'Timezone', 'Time Zone');
+  row.timezone = explicitTz || timezone;
+
+  // Frequency
+  const freqStr = extract(text, 'Scheduled Frequency', 'Frequency', 'Schedule Frequency');
+  const { frequency_type, frequency_value } = parseFrequency(freqStr);
+  row.frequency_type  = frequency_type;
+  row.frequency_value = frequency_value;
+
+  // Max runtime
+  const maxRaw = extract(text, 'Maximum Runtime', 'Max Runtime', 'MAXDUR', 'Max Run Time');
+  row.max_runtime = parseMaxRuntime(maxRaw);
+
+  // Ref job
+  const addInfo = extract(text, 'Additional Information', 'Additional Info');
+  const refMatch = addInfo.match(/same as\s+([\w\-]+)/i) || text.match(/ref_job\s*[=:]\s*([\w\-]+)/i);
+  row.ref_job = refMatch?.[1] ?? '';
+
+  // ServiceNow ticket — explicit field first, then auto-detect from text
+  const explicitTicket = extract(text, 'ServiceNow Ticket', 'ServiceNow Ticket Number', 'RITM', 'Ticket', 'Snow Ticket');
+  const autoTicket     = text.match(/\b(RITM\d+|INC\d+|CHG\d+|REQ\d+)\b/i)?.[1] ?? '';
+  row.servicenow_ticket = explicitTicket || autoTicket;
+
+  // Business Services
+  row.business_services = extract(text, 'Business Services', 'Business Service', 'Member of Business Services', 'Business Unit Group');
+
+  row.enabled  = 'true';
+  row.job_doc  = text.trim();   // store full original text for notes
+
+  return row;
+}
+
+/**
+ * Validate a row has minimum required fields.
+ */
+export function validateRow(row: JobRow): string[] {
+  const errors: string[] = [];
+  if (!row.task_name) errors.push('task_name is required');
+  if (!row.agent)     errors.push('agent (Job Workstation) is required');
+  if (!row.command)   errors.push('command (Job Script) is required');
+  return errors;
+}

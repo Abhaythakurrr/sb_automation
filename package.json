@@ -1,0 +1,15 @@
+{
+  "name": "stonebranch-automation",
+  "version": "1.0.0",
+  "description": "Full-stack application for automating Stonebranch task and trigger creation",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w frontend\" \"npm run dev -w backend\"",
+    "build": "npm run build -w shared && npm run build -w backend && npm run build -w frontend",
+    "type-check": "npm run type-check -w frontend && npm run type-check -w backend && npm run type-check -w shared"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  }
+}
