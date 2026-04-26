@@ -150,8 +150,8 @@ The input file must have a sheet named `tasks` with these columns:
 | `frequency_value` | No | Interval count |
 | `max_runtime` | No | Minutes (e.g. `60` for 1 hour) |
 | `ref_job` | No | Existing job to inherit schedule from |
-| `business_services` | No | Comma-separated, e.g. `BJA-QAD, BJA-QAD - AP` |
-| `servicenow_ticket` | No | e.g. `SCTASK0862800` |
+| `business_services` | No | Comma-separated, e.g. `service_group1, service_group2` |
+| `servicenow_ticket` | No | e.g. `Ticket0862800` |
 | `schedule_string` | No | Raw schedule: `AT 0330 TIMEZONE Asia/Kolkata MAXDUR 0100` |
 
 ### Schedule String Format
