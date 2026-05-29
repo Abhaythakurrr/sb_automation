@@ -25,7 +25,7 @@ export const TASK_TYPES: TaskTypeConfig[] = [
   {
     apiType:     'taskUnix',
     label:       'Unix / Linux',
-    icon:        '🐧',
+    icon:        'LNX',
     description: 'Execute shell scripts or commands on a Linux/Unix agent',
     fields: [
       { key: 'task_name',         label: 'Job Name',           required: true,  placeholder: 'PMFG-BU-AS1-MFG-377-MYJOB' },
@@ -45,7 +45,7 @@ export const TASK_TYPES: TaskTypeConfig[] = [
   {
     apiType:     'taskWindows',
     label:       'Windows',
-    icon:        '🪟',
+    icon:        'WIN',
     description: 'Execute scripts or commands on a Windows agent',
     fields: [
       { key: 'task_name',         label: 'Job Name',           required: true,  placeholder: 'WIN-JOB-001' },
@@ -66,7 +66,7 @@ export const TASK_TYPES: TaskTypeConfig[] = [
   {
     apiType:     'taskSql',
     label:       'SQL',
-    icon:        '🗄️',
+    icon:        'SQL',
     description: 'Execute SQL statements against a database connection',
     fields: [
       { key: 'task_name',         label: 'Job Name',           required: true,  placeholder: 'SQL-JOB-001' },
@@ -87,7 +87,7 @@ export const TASK_TYPES: TaskTypeConfig[] = [
   {
     apiType:     'taskEmail',
     label:       'Email',
-    icon:        '📧',
+    icon:        'EML',
     description: 'Send automated email notifications',
     fields: [
       { key: 'task_name',         label: 'Job Name',           required: true,  placeholder: 'EMAIL-NOTIFY-001' },
@@ -107,7 +107,7 @@ export const TASK_TYPES: TaskTypeConfig[] = [
   {
     apiType:     'taskWebService',
     label:       'Web Service',
-    icon:        '🌐',
+    icon:        'WEB',
     description: 'Call REST or SOAP web service endpoints',
     fields: [
       { key: 'task_name',         label: 'Job Name',           required: true,  placeholder: 'WS-JOB-001' },
@@ -128,7 +128,7 @@ export const TASK_TYPES: TaskTypeConfig[] = [
   {
     apiType:     'taskSleep',
     label:       'Timer / Sleep',
-    icon:        '⏱️',
+    icon:        'TMR',
     description: 'Pause workflow execution for a specified duration',
     fields: [
       { key: 'task_name',         label: 'Job Name',           required: true,  placeholder: 'SLEEP-JOB-001' },
@@ -146,7 +146,7 @@ export const TASK_TYPES: TaskTypeConfig[] = [
   {
     apiType:     'taskManual',
     label:       'Manual',
-    icon:        '👤',
+    icon:        'MAN',
     description: 'Task requiring manual human intervention to complete',
     fields: [
       { key: 'task_name',         label: 'Job Name',           required: true,  placeholder: 'MANUAL-JOB-001' },

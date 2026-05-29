@@ -1,94 +1,72 @@
 /**
  * Stonebranch Payload Mapper
- * OpenAPI schema field names only. Universal Excel schema support.
+ * Builds API-compliant task and trigger payloads from Excel rows.
+ * Field names and values match exactly what UAC stores — verified against prod jobs.
  */
 import { parseScheduleString } from './scheduleParser';
 
 // ── Allowed fields (OpenAPI schema) ──────────────────────────────────────────
 
 export const ALLOWED_TASK_FIELDS = new Set([
-  // identity
   'type','name',
-  // agent
   'agent','agentVar','agentCluster','agentClusterVar','broadcastCluster','broadcastClusterVar',
-  // execution
   'command','commandOrScript','script','runtimeDir','parameters',
   'credentials','credentialsVar','runAsSudo',
-  // exit codes
   'exitCodes','exitCodeProcessing','exitCodeText','exitCodeOutput',
-  // output
   'outputType','retryExitCodes','waitForOutput','outputFailureOnly',
   'outputReturnType','outputReturnFile','outputReturnSline','outputReturnNline','outputReturnText',
   'environment',
-  // task base
   'summary','startHeld','startHeldReason','resolveNameImmediately',
   'resPriority','resPriorityVar','holdResources',
   'retryMaximum','retryIndefinitely','retryInterval','retrySuppressFailure',
-  // runtime
   'maxRunTime','userEstimatedDuration','cpDuration','cpDurationUnit',
-  // late start
   'lsEnabled','lsType','lsTime','lsDayConstraint','lsNthAmount','lsDuration',
-  // late finish
   'lfEnabled','lfType','lfTime','lfDayConstraint','lfNthAmount','lfDuration',
   'lfOffsetType','lfOffsetPercentage','lfOffsetDuration','lfOffsetDurationUnit',
-  // early finish
   'efEnabled','efType','efTime','efDayConstraint','efNthAmount','efDuration',
   'efOffsetType','efOffsetPercentage','efOffsetDuration','efOffsetDurationUnit',
-  // time window
   'twWaitType','twWaitAmount','twWaitTime','twWaitDuration','twWaitDayConstraint',
   'twDelayType','twDelayAmount','twDelayDuration','twWorkflowOnly',
-  // restriction
   'executionRestriction','restrictionPeriod',
   'restrictionPeriodBeforeDate','restrictionPeriodAfterDate',
   'restrictionPeriodBeforeTime','restrictionPeriodAfterTime','restrictionPeriodDateList',
-  // misc
   'logLevel','exclusiveWithSelf','timeZonePref',
   'opswiseGroups','variables','notes','actions','virtualResources','exclusiveTasks',
   'enforceVariables','lockVariables','simulation','overrideInstanceWait',
   'retainSysIds','excludeRelated',
-  // custom fields
   'customField1','customField2',
-  // Windows-specific
   'createConsole','desktopInteract','elevateUser',
-  // SQL/StoredProc
   'connection','connectionVar','sqlCommand','storedProcName','storedProcParams',
   'resultProcessing','maxRows','autoCleanup','columnName','columnOp','columnValue',
-  // Email
   'toRecipients','ccRecipients','bccRecipients','subject','body','replyTo',
   'template','templateVar','report','reportVar','attachLocalFile','localAttachment',
-  // Web Service
   'url','httpMethod','httpPayloadType','payload','payloadScript','payloadSource',
   'httpHeaders','httpAuth','timeout','protocol','mimeType',
-  // Sleep/Timer
   'sleepAmount','sleepType','sleepDuration','sleepTime','sleepDayConstraint',
 ]);
 
 export const ALLOWED_TRIGGER_FIELDS = new Set([
   'type','name','tasks','enabled','description',
-  // schedule
   'time','timeZone','timeInterval','timeIntervalUnits','timeStyle',
   'startingAt','startTimeEnable',
   'dayStyle','dayInterval','intervalStartingDate','simpleDateType',
   'daily','sun','mon','tue','wed','thu','fri','sat','custom','businessDays',
   'dateAdjective','dateNoun','dateNouns','dateQualifier','dateQualifiers',
   'dateAdjustment','adjustmentAmount','adjustmentType','nthAmount','adjustInterval',
-  // restricted times (UNTIL)
   'restrictedTimes','enabledStart','enabledEnd',
-  // restriction
   'restriction','restrictionSimple','restrictionComplex','restrictionMode',
   'restrictionAdjective','restrictionNthAmount',
   'restrictionNoun','restrictionNouns','restrictionQualifier','restrictionQualifiers',
-  // skip
   'skipCount','skipActive','skipCondition','skipRestriction',
   'skipAfterDate','skipAfterTime','skipBeforeDate','skipBeforeTime','skipDateList',
-  // other
   'calendar','forecast','action','situation','simulationOption','simulateTasks',
   'executionUser','opswiseGroups','variables','notes',
   'retentionDurationPurge','retentionDuration','retentionDurationUnit','rdExcludeBackup',
   'enforceVariables','lockVariables','retainSysIds','excludeRelated',
+  // custom fields on trigger
+  'customField1','customField2',
 ]);
 
-// Never send these to the API
 const READ_ONLY = new Set([
   'sysId','version','exportReleaseLevel','exportTable',
   'nextScheduledTime','enabledBy','enabledTime','disabledBy','disabledTime',
@@ -98,14 +76,11 @@ const READ_ONLY = new Set([
 ]);
 
 // ── Universal Excel Row ───────────────────────────────────────────────────────
-// All fields optional except task_name, task_type, agent, command
 export interface ExcelRow {
-  // Required
   task_name:          string;
   task_type:          string;
   agent:              string;
   command:            string;
-  // Common optional
   credential?:        string;
   description?:       string;
   enabled?:           string;
@@ -116,12 +91,12 @@ export interface ExcelRow {
   frequency_value?:   string;
   max_runtime?:       string;
   ref_job?:           string;
-  // New fields
-  business_services?: string;   // comma-separated → opswiseGroups
-  servicenow_ticket?: string;   // → customField2.value
-  schedule_string?:   string;   // raw schedule string e.g. "AT 0130 EVERY 1200 UNTIL 2100"
-  job_doc?:           string;   // full job doc text → notes.text
-  // Pass-through: any extra column goes directly to API if it's in ALLOWED_TASK_FIELDS
+  business_services?: string;
+  servicenow_ticket?: string;
+  schedule_string?:   string;
+  job_doc?:           string;
+  recovery1?:         string;   // Job Recovery1 — goes into customField1
+  recovery2?:         string;   // Job Recovery2 — goes into customField1
   [key: string]: any;
 }
 
@@ -129,7 +104,7 @@ export interface ExcelRow {
 export interface TaskPayload {
   type:                  string;
   name:                  string;
-  command?:              string;   // optional — not all task types use command
+  command?:              string;
   agentCluster?:         string;
   agent?:                string;
   commandOrScript?:      string;
@@ -187,8 +162,11 @@ function minutesToDuration(minutes: number): string {
   return `${pad(d)}:${pad(h)}:${pad(m)}:00`;
 }
 
-// ── Task type groups ──────────────────────────────────────────────────────────
-// Fields that are only valid for specific task type families
+// Trigger name uses hyphen separator — matches UAC convention (e.g. JOBNAME-TR001)
+function triggerName(taskName: string): string {
+  return `${taskName}-TR001`;
+}
+
 const SCRIPT_TASK_TYPES = new Set([
   'taskUnix','taskWindows','taskUcmd','taskIbmi','taskZos',
 ]);
@@ -204,11 +182,10 @@ export function buildTaskPayload(
   maxRunTime?: number | null,
   agentResolved?: { field: 'agent' | 'agentCluster'; value: string }
 ): TaskPayload {
-  const taskType = row.task_type || 'taskUnix';
+  const taskType    = row.task_type || 'taskUnix';
   const isScriptTask = SCRIPT_TASK_TYPES.has(taskType);
   const isAgentTask  = AGENT_TASK_TYPES.has(taskType);
 
-  // ── Base fields valid for ALL task types ──────────────────────────────────
   const payload: TaskPayload = {
     type:                  taskType,
     name:                  row.task_name,
@@ -216,11 +193,9 @@ export function buildTaskPayload(
     startHeld:             false,
   };
 
-  // Optional base fields — only set if provided
-  if (row.credential)   payload.credentials = row.credential;
-  if (row.description)  payload.summary      = row.description;
+  if (row.credential)  payload.credentials = row.credential;
+  if (row.description) payload.summary      = row.description;
 
-  // ── Script-based task defaults (Unix, Windows, UCMD, etc.) ───────────────
   if (isScriptTask) {
     if (row.command) payload.command = row.command;
     payload.commandOrScript    = 'Command';
@@ -238,20 +213,21 @@ export function buildTaskPayload(
     payload.retrySuppressFailure = false;
   }
 
-  // runAsSudo only for Unix
   if (taskType === 'taskUnix') {
     payload.runAsSudo = true;
   }
 
-  // ── Agent resolution — only for agent-based tasks ─────────────────────────
+  // ── customField1 = Recovery instructions (matches UAC convention) ─────────
+  // Real jobs store: "Re-run job;Raise Low priority ticket to support"
   if (isAgentTask && row.agent) {
-    if (agentResolved?.value) {
-      payload[agentResolved.field] = agentResolved.value;
-      payload.customField1 = { label: 'Instructions', value: agentResolved.value };
-    } else {
-      payload.agentCluster = row.agent;
-      payload.customField1 = { label: 'Instructions', value: row.agent };
-    }
+    const resolvedAgent = agentResolved?.value || row.agent;
+    payload[agentResolved?.field ?? 'agentCluster'] = resolvedAgent;
+
+    // Build recovery string from job doc fields if available
+    const rec1 = row.recovery1?.trim() || '';
+    const rec2 = row.recovery2?.trim() || '';
+    const recoveryValue = [rec1, rec2].filter(Boolean).join(';') || resolvedAgent;
+    payload.customField1 = { label: 'Instructions', value: recoveryValue };
   }
 
   // ── Business Services ─────────────────────────────────────────────────────
@@ -266,23 +242,21 @@ export function buildTaskPayload(
     payload.customField2 = { label: 'ServiceNow Ticket', value: row.servicenow_ticket.trim() };
   }
 
-  // ── Notes ─────────────────────────────────────────────────────────────────
-  const noteTitle = row.servicenow_ticket?.trim() || '';
-  const noteText  = row.job_doc?.trim()
-    || [
-        `Job Name = ${row.task_name}`,
-        `Job Description = ${row.description || ''}`,
-        `Job Script = ${row.command || ''}`,
-        `Job Workstation = ${row.agent || ''}`,
-        `Job Login Account = ${row.credential || ''}`,
-        `Firstrun Date = ${row.first_run_date || ''}`,
-        `Job Timezone = ${row.timezone || ''}`,
-        `Maximum Runtime = ${row.max_runtime || ''}`,
-        `ServiceNow ticket = ${noteTitle}`,
-      ].join('\n');
-  if (noteTitle || noteText) {
-    payload.notes = [{ title: noteTitle || 'Job Details', text: noteText }];
-  }
+  // ── Notes — full job doc stored as note, title = ticket number ───────────
+  const noteTitle = row.servicenow_ticket?.trim() || 'Job Details';
+  const noteText  = row.job_doc?.trim() || [
+    `Job Name = ${row.task_name}`,
+    `Job Description = ${row.description || ''}`,
+    `Job Script = ${row.command || ''}`,
+    `Job Workstation = ${row.agent || ''}`,
+    `Job Login Account = ${row.credential || ''}`,
+    `Firstrun Date = ${row.first_run_date || ''}`,
+    `Job Timezone = ${row.timezone || ''}`,
+    `Maximum Runtime = ${row.max_runtime || ''}`,
+    `ServiceNow Ticket = ${noteTitle}`,
+  ].join('\n');
+
+  payload.notes = [{ title: noteTitle, text: noteText }];
 
   // ── maxRunTime + Late Finish ──────────────────────────────────────────────
   const mr = row.max_runtime ? parseInt(row.max_runtime) : (maxRunTime ?? null);
@@ -293,12 +267,12 @@ export function buildTaskPayload(
     payload.lfDuration = minutesToDuration(mr);
   }
 
-  // ── Pass-through: any extra Excel column → API field ─────────────────────
-  // Anything in the Excel that matches an OpenAPI field name goes straight through
+  // ── Pass-through extra columns ────────────────────────────────────────────
   const STANDARD_COLS = new Set([
     'task_name','task_type','agent','command','credential','description','enabled',
     'first_run_date','start_time','timezone','frequency_type','frequency_value',
-    'max_runtime','ref_job','business_services','servicenow_ticket','schedule_string','job_doc',
+    'max_runtime','ref_job','business_services','servicenow_ticket','schedule_string',
+    'job_doc','recovery1','recovery2',
   ]);
   Object.keys(row).forEach(k => {
     if (!STANDARD_COLS.has(k) && ALLOWED_TASK_FIELDS.has(k) && row[k] !== '' && row[k] !== undefined) {
@@ -327,15 +301,22 @@ export function buildTriggerPayload(
   ]);
 
   const base: Record<string, any> = {
-    type:    'triggerTime',
-    name:    `${row.task_name}_TR001`,
-    tasks:   [row.task_name],
-    enabled: row.enabled === 'true',
+    type:           'triggerTime',
+    name:           triggerName(row.task_name),   // hyphen separator: JOBNAME-TR001
+    tasks:          [row.task_name],
+    enabled:        row.enabled !== 'false',       // default enabled
     dayStyle:       'Simple',
     simpleDateType: 'Daily',
+    // Standard trigger defaults matching UAC convention
+    calendar:       'System Default',
+    situation:      'Holiday',
+    action:         'Do Not Trigger',
+    retentionDurationPurge: true,
+    retentionDuration:      1,
+    retentionDurationUnit:  'Days',
   };
 
-  // Copy ONLY schedule fields from ref trigger
+  // Copy schedule fields from ref trigger
   if (rawRefTrigger) {
     Object.keys(rawRefTrigger).forEach(k => {
       if (SCHEDULE_ONLY.has(k) && rawRefTrigger[k] !== null && rawRefTrigger[k] !== undefined) {
@@ -344,18 +325,15 @@ export function buildTriggerPayload(
     });
   }
 
-  // Parse schedule_string if provided (e.g. "AT 0130 EVERY 1200 UNTIL 2100")
+  // Parse schedule_string
   if (row.schedule_string?.trim()) {
     const parsed = parseScheduleString(row.schedule_string, row.start_time, row.timezone);
     Object.assign(base, parsed);
-    // Remove human_readable — not an API field
     delete base.human_readable;
   } else {
-    // Use individual columns
     if (row.start_time) base.time     = row.start_time;
     if (row.timezone)   base.timeZone = row.timezone;
 
-    // Map frequency_type/value to API fields
     if (row.frequency_type) {
       const ft = row.frequency_type.toUpperCase();
       if (ft === 'DAILY') {
@@ -379,23 +357,51 @@ export function buildTriggerPayload(
         base.timeIntervalUnits = 'Hours';
       }
     } else if (!rawRefTrigger) {
-      // Default
-      base.timeStyle      = 'Absolute';
+      base.timeStyle = 'Absolute';
     }
   }
 
-  // First run date → intervalStartingDate
-  // This is the correct way to control first execution in UAC
-  // DO NOT use skipCondition/skipBeforeDate — "Before" is not a valid value
+  // ── First run date ────────────────────────────────────────────────────────
   if (row.first_run_date) {
     base.intervalStartingDate = row.first_run_date;
+    // skipBeforeDate + skipRestriction = "Before" ensures trigger doesn't fire
+    // before the first run date — matches how UAC creates jobs manually
+    base.skipRestriction = 'Before';
+    base.skipBeforeDate  = row.first_run_date;
+  } else {
+    base.skipCondition   = 'None';
+    base.skipRestriction = 'None';
   }
 
-  // Explicitly set skip to None (safe defaults)
-  base.skipCondition  = 'None';
-  base.skipRestriction = 'None';
+  // ── Description = job description ─────────────────────────────────────────
+  if (row.description) {
+    base.description = row.description;
+  }
 
-  // Business Services on trigger
+  // ── customField1 = Agent Cluster Name (matches UAC convention on triggers) ─
+  const agentValue = row.agent?.trim();
+  if (agentValue) {
+    base.customField1 = { label: 'Agent Cluster Name', value: agentValue };
+  }
+
+  // ── customField2 = ServiceNow Ticket ─────────────────────────────────────
+  if (row.servicenow_ticket?.trim()) {
+    base.customField2 = { label: 'ServiceNow Ticket', value: row.servicenow_ticket.trim() };
+  }
+
+  // ── Notes — same job doc as task ─────────────────────────────────────────
+  const noteTitle = row.servicenow_ticket?.trim() || 'Job Details';
+  const noteText  = row.job_doc?.trim() || [
+    `Job Name = ${row.task_name}`,
+    `Job Description = ${row.description || ''}`,
+    `Job Workstation = ${row.agent || ''}`,
+    `Firstrun Date = ${row.first_run_date || ''}`,
+    `Job Timezone = ${row.timezone || ''}`,
+    `ServiceNow Ticket = ${noteTitle}`,
+  ].join('\n');
+  base.notes = [{ title: noteTitle, text: noteText }];
+
+  // ── Business Services ─────────────────────────────────────────────────────
   const bsTrigger = String(row.business_services ?? '').trim();
   if (bsTrigger) {
     const sep = bsTrigger.includes(';') ? ';' : ',';
@@ -405,7 +411,7 @@ export function buildTriggerPayload(
   return filterPayload(base, ALLOWED_TRIGGER_FIELDS, 'TRIGGER') as TriggerPayload;
 }
 
-// ── Filter + log ──────────────────────────────────────────────────────────────
+// ── Filter payload — remove read-only and unknown fields ─────────────────────
 function filterPayload(
   payload: Record<string, any>,
   allowed: Set<string>,
@@ -427,6 +433,5 @@ function filterPayload(
   if (removed.length > 0) {
     console.warn(`[PAYLOAD] ${label} removed: ${removed.join(', ')}`);
   }
-  console.log(`[PAYLOAD] Final ${label}:\n${JSON.stringify(clean, null, 2)}`);
   return clean;
 }

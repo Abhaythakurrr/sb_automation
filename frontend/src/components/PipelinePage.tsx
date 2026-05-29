@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ApiClient } from '@/services/api';
+import GlobalHeader from '@/components/GlobalHeader';
+import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
 import { JobRow } from '@/types';
 import { DropZone, ParsedTable, JsonPanel, MergeTable } from './PipelineComponents';
 import JobBuilderChat from './JobBuilderChat';
@@ -26,17 +27,12 @@ const Tag = ({ label, color }: { label: string; color: 'cyan'|'green'|'red'|'yel
 };
 
 // ─── types ───────────────────────────────────────────────────────────────────
-type ConnStatus = 'idle'|'checking'|'ok'|'fail';
 type ExecResult = { id:string; type:'task'|'trigger'; name:string; status:'success'|'failed'; message?:string; sbId?:string };
 type CompRow    = { taskName:string; field:string; inputValue:string; referenceValue:string; finalValue:string; isInherited:boolean };
 
 export default function PipelinePage() {
-  // auth
-  const [tokenInput, setTokenInput]   = useState('');
-  const [baseUrlInput, setBaseUrlInput] = useState('https://adient.stonebranch.cloud');
-  const [connStatus, setConnStatus]   = useState<ConnStatus>('idle');
-  const [activeToken, setActiveToken] = useState('');
-  const [activeBaseUrl, setActiveBaseUrl] = useState('');
+  // Global connection state — shared across all automations
+  const { connected } = useConnectionStore();
 
   // data
   const [rows, setRows]               = useState<JobRow[]>([]);
@@ -54,10 +50,6 @@ export default function PipelinePage() {
   const [logs, setLogs]               = useState<string[]>([]);
   const logsRef = useRef<HTMLDivElement>(null);
 
-  const api = useRef(new ApiClient(activeToken, activeBaseUrl));
-  useEffect(() => { api.current.setToken(activeToken); }, [activeToken]);
-  useEffect(() => { api.current.setBaseUrl(activeBaseUrl); }, [activeBaseUrl]);
-
   const log = useCallback((msg: string) => {
     setLogs(p => [...p, `[${new Date().toLocaleTimeString()}] ${msg}`]);
   }, []);
@@ -66,25 +58,13 @@ export default function PipelinePage() {
     if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight;
   }, [logs]);
 
-  // ── Token validation ────────────────────────────────────────────────────────
-  const handleValidate = async () => {
-    if (!tokenInput.trim() || !baseUrlInput.trim()) return;
-    setConnStatus('checking');
-    const ok = await api.current.validateToken(tokenInput.trim(), baseUrlInput.trim());
-    if (ok) {
-      setActiveToken(tokenInput.trim());
-      setActiveBaseUrl(baseUrlInput.trim());
-      setConnStatus('ok');
-    } else {
-      setConnStatus('fail');
-    }
-  };
+  // ── Token validation is handled by GlobalHeader / useConnectionStore ──────
 
   // ── File upload ─────────────────────────────────────────────────────────────
   const handleFile = async (file: File) => {
     log(`[INFO] Uploading ${file.name}...`);
     try {
-      const res     = await api.current.uploadFile(file);
+      const res     = await globalApi.uploadFile(file);
       const payload = res.data?.data;
       const parsed: JobRow[] = Array.isArray(payload?.rows) ? payload.rows : [];
       setRows(parsed);
@@ -142,7 +122,7 @@ export default function PipelinePage() {
 
     for (const refJob of uniqueRefs) {
       try {
-        const res = await api.current.resolveRefJobTrigger(refJob);
+        const res = await globalApi.resolveRefJobTrigger(refJob);
 
         if (!res.data?.success) throw new Error(res.data?.error || 'Unknown error');
 
@@ -296,7 +276,7 @@ export default function PipelinePage() {
     let done = 0;
 
     try {
-      const res = await api.current.executeBatch(rows, resolvedRefs);
+      const res = await globalApi.executeBatch(rows, resolvedRefs);
       const r: ExecResult[] = res.data?.data?.results ?? res.data?.results ?? [];
       setResults(r);
       done = r.length;
@@ -316,75 +296,11 @@ export default function PipelinePage() {
   };
 
   const hasData     = rows.length > 0;
-  const canExecute  = hasData && refResolved && !executing;
+  const canExecute  = hasData && refResolved && !executing && connected;
 
   return (
     <div className="min-h-screen" style={{ background: '#050B1A' }}>
-
-      {/* ── TOP BAR ── */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-cyan-500/10"
-        style={{ background: 'rgba(2,8,18,0.85)', backdropFilter: 'blur(16px)' }}>
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
-          {/* Logo + back */}
-          <div className="flex items-center gap-4">
-            <a href="/" className="flex items-center gap-1.5 text-slate-600 hover:text-slate-400 transition-colors text-xs">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Home
-            </a>
-            <div className="w-px h-4 bg-slate-800" />
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold"
-                style={{ background: 'linear-gradient(135deg,#06b6d4,#3b82f6)', boxShadow: '0 0 12px rgba(6,182,212,0.4)' }}>
-                SB
-              </div>
-              <div>
-                <p className="text-sm font-semibold neon-text leading-none">Job Creation</p>
-                <p className="text-[10px] text-slate-600 mt-0.5">Stonebranch Automation</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Base URL + Token panel */}
-          <div className="flex items-center gap-2">
-            {/* Base URL */}
-            <div className="flex items-center gap-2 rounded-xl border border-slate-700/60 bg-slate-900/60 px-3 py-2">
-              <svg className="w-4 h-4 text-slate-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
-              </svg>
-              <input
-                type="text"
-                value={baseUrlInput}
-                onChange={e => setBaseUrlInput(e.target.value)}
-                placeholder="https://your-instance.stonebranch.cloud"
-                className="bg-transparent text-sm text-slate-300 placeholder-slate-600 outline-none w-64"
-              />
-            </div>
-            {/* Token */}
-            <div className="flex items-center gap-2 rounded-xl border border-slate-700/60 bg-slate-900/60 px-3 py-2">
-              <svg className="w-4 h-4 text-slate-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-              </svg>
-              <input
-                type="password"
-                value={tokenInput}
-                onChange={e => setTokenInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleValidate()}
-                placeholder="Bearer token..."
-                className="bg-transparent text-sm text-slate-300 placeholder-slate-600 outline-none w-44"
-              />
-            </div>
-            <button onClick={handleValidate} disabled={connStatus === 'checking'}
-              className="px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50"
-              style={{ background: 'linear-gradient(135deg,#0891b2,#2563eb)', boxShadow: connStatus === 'ok' ? '0 0 14px rgba(34,197,94,0.4)' : '0 0 14px rgba(6,182,212,0.3)' }}>
-              {connStatus === 'checking' ? '...' : 'Connect'}
-            </button>
-            {connStatus === 'ok'   && <span className="flex items-center gap-1.5 text-xs text-green-400"><span className="w-2 h-2 rounded-full bg-green-400 animate-pulse inline-block"/>Connected</span>}
-            {connStatus === 'fail' && <span className="flex items-center gap-1.5 text-xs text-red-400"><span className="w-2 h-2 rounded-full bg-red-400 inline-block"/>Invalid</span>}
-          </div>
-        </div>
-      </header>
+      <GlobalHeader title="Job Creation" subtitle="Stonebranch Automation" />
 
       <main className="pt-20 pb-16 px-4 max-w-7xl mx-auto space-y-8 grid-bg min-h-screen">
 
@@ -419,7 +335,7 @@ export default function PipelinePage() {
                     {(['task','trigger'] as const).map(v => (
                       <button key={v} onClick={() => setJsonView(v)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${jsonView===v ? 'bg-cyan-600 text-white shadow-[0_0_12px_rgba(6,182,212,0.4)]' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                        {v === 'task' ? '⚙️ Task JSON' : '🔗 Trigger JSON'}
+                        {v === 'task' ? 'Task JSON' : 'Trigger JSON'}
                       </button>
                     ))}
                   </div>
@@ -514,7 +430,7 @@ export default function PipelinePage() {
                       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
-                      🚀 Create Tasks
+                      Create Tasks
                     </span>
                   </motion.button>
                 </div>
@@ -568,14 +484,30 @@ export default function PipelinePage() {
                     <motion.div key={r.id} initial={{ opacity:0, x:-16 }} animate={{ opacity:1, x:0 }} transition={{ delay: i*0.04 }}
                       className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-700/40 bg-slate-900/60">
                       <div className="flex items-center gap-3">
-                        <span className="text-xl">{r.type === 'task' ? '⚙️' : '🔗'}</span>
+                        {/* Task / Trigger icon */}
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                          style={{
+                            background: r.type === 'task' ? 'rgba(6,182,212,0.1)' : 'rgba(139,92,246,0.1)',
+                            border: r.type === 'task' ? '1px solid rgba(6,182,212,0.25)' : '1px solid rgba(139,92,246,0.25)',
+                          }}>
+                          {r.type === 'task' ? (
+                            <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                          ) : (
+                            <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                            </svg>
+                          )}
+                        </div>
                         <div>
                           <p className="text-sm font-medium text-slate-200">{r.name}</p>
                           <p className="text-xs text-slate-500 capitalize">{r.type}{r.sbId ? ` · ${r.sbId}` : ''}</p>
                         </div>
                       </div>
                       <Tag
-                        label={r.status === 'success' ? '✅ Success' : '❌ Failed'}
+                        label={r.status === 'success' ? 'Success' : 'Failed'}
                         color={r.status === 'success' ? 'green' : 'red'}
                       />
                     </motion.div>

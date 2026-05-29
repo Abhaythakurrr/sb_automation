@@ -6,7 +6,7 @@ import { derivMaxRunTimeFromLF } from '../utils/payloadMapper';
 export interface ResolvedRefJob {
   triggerName:       string;
   schedule:          ParsedSchedule;
-  maxRunTime:        number | null;   // minutes, from lfDuration only
+  maxRunTime:        number | null;
   maxRunTimeDisplay: string | null;
   rawTrigger:        Record<string, any>;
 }
@@ -17,7 +17,8 @@ export class StoneBranchService {
   constructor(
     token: string,
     baseURL: string = process.env.BASE_URL || process.env.SB_API_BASE_URL || 'https://adient.stonebranch.cloud'
-  ) {    this.client = axios.create({
+  ) {
+    this.client = axios.create({
       baseURL,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -27,6 +28,7 @@ export class StoneBranchService {
     });
   }
 
+  // ── Tasks ──────────────────────────────────────────────────────────────────
   async getTask(taskname: string): Promise<any> {
     const res = await this.client.get('/resources/task', { params: { taskname } });
     return res.data;
@@ -41,17 +43,59 @@ export class StoneBranchService {
     return resolveAgent(agentValue, this.client, logFn);
   }
 
+  // ── Agent Control ──────────────────────────────────────────────────────────
   /**
-   * Full ref_job resolution:
-   * 1. POST /resources/trigger/list { tasks: refJob } → trigger name
-   * 2. GET  /resources/trigger?triggername=<name>     → full trigger JSON
-   * 3. GET  /resources/task?taskname=<refJob>         → lfType + lfDuration → maxRunTime
-   * 4. Parse schedule
+   * Returns ONLY agents (not clusters).
+   * Agents have: name, status, suspended, hostName, ipAddress, type, version
+   * Clusters are separate — different schema, no status/hostName fields.
    */
+  async listAgents(): Promise<any[]> {
+    const res = await this.client.get('/resources/agent/list');
+    const raw = res.data;
+    return Array.isArray(raw) ? raw : (raw?.agent ?? []);
+  }
+
+  /**
+   * Returns agent clusters separately.
+   * Clusters have: name, suspended, type, agents[], distribution, etc.
+   * No status/hostName/ipAddress fields.
+   */
+  async listAgentClusters(): Promise<any[]> {
+    const res = await this.client.get('/resources/agentcluster/list');
+    const raw = res.data;
+    return Array.isArray(raw) ? raw : (raw?.agentCluster ?? []);
+  }
+
+  async suspendAgents(agentNames: string[]): Promise<any[]> {
+    const results = [];
+    for (const agentName of agentNames) {
+      try {
+        const res = await this.client.post('/resources/agent/ops-suspend-agent', { agentName });
+        results.push({ agentName, status: 'success', response: res.data });
+      } catch (e: any) {
+        results.push({ agentName, status: 'failed', error: e.response?.data ?? e.message });
+      }
+    }
+    return results;
+  }
+
+  async resumeAgents(agentNames: string[]): Promise<any[]> {
+    const results = [];
+    for (const agentName of agentNames) {
+      try {
+        const res = await this.client.post('/resources/agent/ops-resume-agent', { agentName });
+        results.push({ agentName, status: 'success', response: res.data });
+      } catch (e: any) {
+        results.push({ agentName, status: 'failed', error: e.response?.data ?? e.message });
+      }
+    }
+    return results;
+  }
+
+  // ── Ref Job Resolution ─────────────────────────────────────────────────────
   async resolveRefJob(refJob: string, logFn?: (msg: string) => void): Promise<ResolvedRefJob> {
     const log = logFn ?? (() => {});
 
-    // Step 1 — find trigger name
     log(`[INFO] POST /resources/trigger/list { tasks: "${refJob}" }`);
     const listRes = await this.client.post('/resources/trigger/list', { tasks: refJob });
     const raw = listRes.data;
@@ -65,12 +109,10 @@ export class StoneBranchService {
     const summary = summaries.find(t => t.type === 'Time' || t.type === 'triggerTime') ?? summaries[0];
     if (!summary?.name) throw new Error(`No TIME trigger found for ref_job: "${refJob}"`);
 
-    // Step 2 — full trigger
     log(`[INFO] GET /resources/trigger?triggername=${summary.name}`);
     const triggerRes = await this.client.get('/resources/trigger', { params: { triggername: summary.name } });
     const fullTrigger = triggerRes.data;
 
-    // Step 3 — maxRunTime from lfDuration (FIX #1)
     log(`[INFO] GET /resources/task?taskname=${refJob} (for lfType/lfDuration)`);
     let maxRunTime: number | null = null;
     let maxRunTimeDisplay: string | null = null;
@@ -88,7 +130,6 @@ export class StoneBranchService {
       log(`[WARN] Could not fetch task for maxRunTime`);
     }
 
-    // Step 4 — parse schedule
     log(`[INFO] Parsing schedule (dayStyle: "${fullTrigger.dayStyle}")`);
     const schedule = parseSchedule(fullTrigger);
     log(`[SUCCESS] Schedule: ${schedule.human_readable} (${schedule.schedule_type})`);
@@ -96,6 +137,7 @@ export class StoneBranchService {
     return { triggerName: summary.name, schedule, maxRunTime, maxRunTimeDisplay, rawTrigger: fullTrigger };
   }
 
+  // ── Triggers ───────────────────────────────────────────────────────────────
   async createTrigger(triggerData: any): Promise<any> {
     const res = await this.client.post('/resources/trigger', triggerData);
     return res.data;

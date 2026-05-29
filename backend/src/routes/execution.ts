@@ -1,16 +1,51 @@
 import { Router, Response, NextFunction } from 'express';
+import { z } from 'zod';
 import { StoneBranchService } from '../services/stoneBranchService';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest } from '../middleware/session';
 import { buildTaskPayload, buildTriggerPayload, ExcelRow } from '../utils/payloadMapper';
+import { auditLog } from '../middleware/auditLogger';
 
 const router = Router();
 
+// Zod schema for batch execution input
+const ExcelRowSchema = z.object({
+  task_name: z.string().min(1, 'task_name is required'),
+  task_type: z.string().min(1, 'task_type is required'),
+}).passthrough(); // allow additional fields
+
+const BatchRequestSchema = z.object({
+  rows: z.array(ExcelRowSchema).min(1, 'rows must be a non-empty array'),
+  resolvedRefs: z.record(z.any()).optional().default({}),
+});
+
 router.post('/batch', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { rows, resolvedRefs } = req.body as {
+    const parsed = BatchRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid request body',
+        details: parsed.error.flatten().fieldErrors,
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    const { rows, resolvedRefs } = parsed.data as {
       rows: ExcelRow[];
       resolvedRefs: Record<string, any>;
     };
+
+    // Audit: log batch execution start
+    auditLog({
+      timestamp: new Date().toISOString(),
+      requestId: (req as any).requestId || '',
+      action: 'BATCH_EXECUTE',
+      resource: 'tasks',
+      details: `${rows.length} tasks`,
+      result: 'pending',
+      sessionId: req.sessionId,
+    });
 
     // Both token and baseUrl come from the UI via request headers
     const token   = req.token   || process.env.AUTH_TOKEN || '';
@@ -93,7 +128,29 @@ router.post('/batch', async (req: AuthRequest, res: Response, next: NextFunction
       },
       timestamp: new Date().toISOString(),
     });
-  } catch (e) { next(e); }
+
+    // Audit: log batch execution result
+    const failedCount = results.filter(r => r.status === 'failed').length;
+    auditLog({
+      timestamp: new Date().toISOString(),
+      requestId: (req as any).requestId || '',
+      action: 'BATCH_EXECUTE',
+      resource: 'tasks',
+      details: `${rows.length} tasks`,
+      result: failedCount === results.length ? 'failure' : 'success',
+      sessionId: req.sessionId,
+    });
+  } catch (e) {
+    auditLog({
+      timestamp: new Date().toISOString(),
+      requestId: (req as any).requestId || '',
+      action: 'BATCH_EXECUTE',
+      resource: 'tasks',
+      result: 'failure',
+      sessionId: req.sessionId,
+    });
+    next(e);
+  }
 });
 
 export { router as executionRouter };

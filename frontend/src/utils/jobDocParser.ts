@@ -22,7 +22,9 @@ export interface JobRow {
   business_services: string;
   servicenow_ticket: string;
   schedule_string:   string;
-  job_doc:           string;   // full original job doc text → notes
+  job_doc:           string;
+  recovery1:         string;   // Job Recovery1 → customField1
+  recovery2:         string;   // Job Recovery2 → customField1
 }
 
 export const EMPTY_ROW: JobRow = {
@@ -31,7 +33,7 @@ export const EMPTY_ROW: JobRow = {
   first_run_date: '', start_time: '', timezone: '',
   frequency_type: '', frequency_value: '', max_runtime: '',
   ref_job: '', business_services: '', servicenow_ticket: '',
-  schedule_string: '', job_doc: '',
+  schedule_string: '', job_doc: '', recovery1: '', recovery2: '',
 };
 
 function extract(text: string, ...keys: string[]): string {
@@ -177,6 +179,10 @@ export function parseJobDoc(text: string): JobRow {
   const addInfo = extract(text, 'Additional Information', 'Additional Info');
   const refMatch = addInfo.match(/same as\s+([\w\-]+)/i) || text.match(/ref_job\s*[=:]\s*([\w\-]+)/i);
   row.ref_job = refMatch?.[1] ?? '';
+
+  // Recovery instructions
+  row.recovery1 = extract(text, 'Job Recovery1', 'Job Recovery 1', 'Recovery1');
+  row.recovery2 = extract(text, 'Job Recovery2', 'Job Recovery 2', 'Recovery2');
 
   // ServiceNow ticket — explicit field first, then auto-detect from text
   const explicitTicket = extract(text, 'ServiceNow Ticket', 'ServiceNow Ticket Number', 'RITM', 'Ticket', 'Snow Ticket');

@@ -7,11 +7,11 @@ export interface Automation {
   id:          string;
   title:       string;
   description: string;
-  icon:        string;        // SVG path or emoji
-  status:      'live' | 'beta' | 'coming-soon';
+  icon:        string;
+  status:      'live' | 'beta' | 'coming-soon' | 'maintenance' | 'wip';
   category:    string;
   features:    string[];
-  route:       string;        // internal route or '#' for modal
+  route:       string;
 }
 
 export const AUTOMATIONS: Automation[] = [
@@ -32,25 +32,69 @@ export const AUTOMATIONS: Automation[] = [
     ],
     route: '/job-creation',
   },
-  // ── Add future automations below ──────────────────────────────────────────
-  // {
-  //   id:          'job-monitoring',
-  //   title:       'Job Monitoring',
-  //   description: 'Real-time monitoring dashboard for Stonebranch task instances.',
-  //   icon:        'monitor',
-  //   status:      'coming-soon',
-  //   category:    'Monitoring',
-  //   features:    ['Live status feed', 'Alert configuration', 'SLA tracking'],
-  //   route:       '/monitoring',
-  // },
-  // {
-  //   id:          'bulk-update',
-  //   title:       'Bulk Job Update',
-  //   description: 'Update multiple existing tasks and triggers in one operation.',
-  //   icon:        'update',
-  //   status:      'coming-soon',
-  //   category:    'Management',
-  //   features:    ['Mass schedule updates', 'Agent migration', 'Credential rotation'],
-  //   route:       '/bulk-update',
-  // },
+  {
+    id:          'agent-control',
+    title:       'Agent Control',
+    description: 'Suspend and resume Stonebranch agents individually or in bulk. Execute immediately or schedule for a specific date and time.',
+    icon:        'agent',
+    status:      'live',
+    category:    'Operations',
+    features:    [
+      'Bulk suspend / resume',
+      'Immediate or scheduled execution',
+      'Agent and cluster support',
+      'Manual agent name input',
+      'Scheduled job management',
+      'Real-time execution logs',
+    ],
+    route: '/agent-control',
+  },
+  {
+    id:          'monitoring',
+    title:       'Monitoring & Alerts',
+    description: 'Monitor Stonebranch agents and job failures. Send real-time alerts to MS Teams with rich Adaptive Cards. Auto-updates operational memo on failures.',
+    icon:        'monitor',
+    status:      'live',
+    category:    'Monitoring',
+    features:    [
+      'Agent offline detection',
+      'Job failure alerts',
+      'MS Teams Adaptive Cards',
+      'Configurable poll interval',
+      'Alert deduplication',
+      'Operational memo auto-update',
+    ],
+    route: '/monitoring',
+  },
+  {
+    id:          'job-deletion',
+    title:       'Job Deletion',
+    description: 'Safely delete Stonebranch tasks, triggers, and workflows following the correct removal sequence with full audit trail.',
+    icon:        'delete',
+    status:      'live',
+    category:    'Management',
+    features:    [
+      'Trigger → Task safe sequence',
+      'Active instance check before delete',
+      'Bulk deletion support',
+      'Trigger disable before delete',
+      'Per-job result reporting',
+    ],
+    route:       '/job-deletion',
+  },
+  {
+    id:          'bulk-update',
+    title:       'Bulk Job Update',
+    description: 'Update multiple existing tasks and triggers in one operation — reschedule, migrate agents, rotate credentials.',
+    icon:        'update',
+    status:      'maintenance',
+    category:    'Management',
+    features:    [
+      'Mass schedule updates',
+      'Agent migration',
+      'Credential rotation',
+      'Business Services update',
+    ],
+    route:       '#',
+  },
 ];

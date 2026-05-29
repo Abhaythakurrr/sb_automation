@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import { FileParserService } from '../services/fileParserService';
 
 const router = Router();
@@ -23,8 +24,7 @@ const upload = multer({
       'text/csv',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.oasis.opendocument.spreadsheet',
-      'application/octet-stream',   // some browsers send this for xlsx/ods
-      'application/vnd.ms-excel',   // older xlsx
+      'application/vnd.ms-excel',
     ];
     const allowedExts = ['.csv', '.xlsx', '.ods'];
     const ext = path.extname(file.originalname).toLowerCase();
@@ -46,6 +46,9 @@ router.post('/', upload.single('file'), async (req: Request, res: Response, next
     }
 
     const data = await fileParserService.parseFile(req.file.path, req.file.mimetype);
+
+    // Delete file immediately after parsing — don't keep uploads on disk
+    try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
 
     res.json({
       success: true,

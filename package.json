@@ -5,8 +5,8 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"npm run dev -w frontend\" \"npm run dev -w backend\"",
-    "build": "npm run build -w shared && npm run build -w backend && npm run build -w frontend",
-    "type-check": "npm run type-check -w frontend && npm run type-check -w backend && npm run type-check -w shared"
+    "build": "npm run build -w backend && npm run build -w frontend",
+    "type-check": "npm run type-check -w frontend && npm run type-check -w backend"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

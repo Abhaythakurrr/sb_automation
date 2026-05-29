@@ -27,15 +27,32 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
 
   const handleDownload = () => {
     if (!rows.length) return;
-    const ws = XLSX.utils.json_to_sheet(rows);
+    // Map internal field names → UI-friendly column names (matches UAC interface)
+    const uiRows = rows.map(r => ({
+      'Job Name':                    r.task_name,
+      'Job Type':                    r.task_type,
+      'Job Workstation':             r.agent,
+      'Job Script':                  r.command,
+      'Job Login Account':           r.credential,
+      'Job Description':             r.description,
+      'Active':                      r.enabled,
+      'Firstrun Date':               r.first_run_date,
+      'Job Starttime':               r.schedule_string || r.start_time,
+      'Maximum Runtime':             r.max_runtime,
+      'Reference Job':               r.ref_job,
+      'Member of Business Services': r.business_services,
+      'ServiceNow Ticket':           r.servicenow_ticket,
+      'Job Documentation':           r.job_doc,
+    }));
+    const ws = XLSX.utils.json_to_sheet(uiRows);
     ws['!cols'] = [
-      { wch: 35 }, { wch: 12 }, { wch: 20 }, { wch: 95 },
-      { wch: 12 }, { wch: 45 }, { wch: 8  }, { wch: 15 },
-      { wch: 12 }, { wch: 16 }, { wch: 15 }, { wch: 15 },
-      { wch: 12 }, { wch: 35 }, { wch: 30 }, { wch: 18 }, { wch: 60 },
+      { wch: 40 }, { wch: 14 }, { wch: 35 }, { wch: 100 },
+      { wch: 18 }, { wch: 45 }, { wch: 8  }, { wch: 14  },
+      { wch: 55 }, { wch: 10 }, { wch: 35 }, { wch: 30  },
+      { wch: 18 }, { wch: 80 },
     ];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'tasks');
+    XLSX.utils.book_append_sheet(wb, ws, 'Jobs');
     XLSX.writeFile(wb, 'stonebranch_jobs.xlsx');
   };
 
@@ -46,10 +63,31 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
   };
 
   const handleDownloadTemplate = () => {
-    const template = [{ ...EMPTY_ROW, task_name: 'EXAMPLE_TASK', agent: 'A0021377P3_DD_94', command: '/path/to/script.sh' }];
+    const template = [{
+      'Job Name':                    'PMFG-BU-XX1-MFG-XXX-JOBNAME',
+      'Job Type':                    'taskUnix',
+      'Job Workstation':             'A0021XXXP3_DD_94_unixCluster',
+      'Job Script':                  'sh /global/mfgpro/usr/script_name.sh param1 param2',
+      'Job Login Account':           'mfgeb',
+      'Job Description':             'APAC - Job Description Here',
+      'Active':                      'true',
+      'Firstrun Date':               '2026-05-08',
+      'Job Starttime':               'AT 0200 TIMEZONE Asia/Kolkata',
+      'Maximum Runtime':             '60',
+      'Reference Job':               '',
+      'Member of Business Services': 'BJA-QAD, BJA-QAD - AP',
+      'ServiceNow Ticket':           'SCTASK0000000',
+      'Job Documentation':           'Job Type = Production\nBusiness Unit = XX\nJob Name = PMFG-BU-XX1-MFG-XXX-JOBNAME\nJob Description = APAC - Job Description Here\nJob Workstation = A0021XXXP3_DD_94_unixCluster\nJob Script = sh /global/mfgpro/usr/script_name.sh param1 param2\nJob Login Account = mfgeb\nFirstrun Date = 2026-05-08\nJob Starttime = AT 0200 TIMEZONE Asia/Kolkata\nMaximum Runtime = 0060\nServiceNow Ticket = SCTASK0000000\nBusiness Services = BJA-QAD, BJA-QAD - AP',
+    }];
     const ws = XLSX.utils.json_to_sheet(template);
+    ws['!cols'] = [
+      { wch: 40 }, { wch: 14 }, { wch: 35 }, { wch: 100 },
+      { wch: 18 }, { wch: 45 }, { wch: 8  }, { wch: 14  },
+      { wch: 55 }, { wch: 10 }, { wch: 35 }, { wch: 30  },
+      { wch: 18 }, { wch: 80 },
+    ];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'tasks');
+    XLSX.utils.book_append_sheet(wb, ws, 'Template');
     XLSX.writeFile(wb, 'stonebranch_template.xlsx');
   };
 
@@ -60,7 +98,11 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
-          <span className="w-7 h-7 rounded-lg bg-purple-500/20 text-purple-400 text-xs font-bold flex items-center justify-center">✦</span>
+          <span className="w-7 h-7 rounded-lg bg-purple-500/20 flex items-center justify-center shrink-0">
+            <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+            </svg>
+          </span>
           <div>
             <h2 className="text-sm font-semibold text-slate-200">Job Builder Chat</h2>
             <p className="text-[10px] text-slate-500">Paste job doc → auto-parsed into Excel row</p>
@@ -95,7 +137,7 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
                   : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
               }`}
             >
-              <span>{t.icon}</span>
+              <span className="font-mono text-[10px] opacity-70">{t.icon}</span>
               <span>{t.label}</span>
             </button>
           ))}
@@ -165,7 +207,7 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
                       return (
                         <tr key={i} className="hover:bg-slate-800/30">
                           <td className="px-3 py-2 text-cyan-300 font-medium whitespace-nowrap">{row.task_name}</td>
-                          <td className="px-3 py-2 text-slate-400 whitespace-nowrap">{tc?.icon} {tc?.label || row.task_type}</td>
+                          <td className="px-3 py-2 text-slate-400 whitespace-nowrap">{tc?.label || row.task_type}</td>
                           <td className="px-3 py-2 text-slate-400 whitespace-nowrap">{row.agent}</td>
                           <td className="px-3 py-2 text-slate-400 max-w-[160px] truncate">{row.schedule_string || row.start_time || '—'}</td>
                           <td className="px-3 py-2 text-slate-400">{row.servicenow_ticket || '—'}</td>
