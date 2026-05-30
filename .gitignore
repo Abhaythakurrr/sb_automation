@@ -14,14 +14,16 @@ build/
 .next/
 **/.next/
 
-# Environment files — NEVER commit secrets
+# Environment files — NEVER commit secrets or env templates
 .env
+.env.*
+.env.example
+.env.production.example
 .env.local
 .env.development
 .env.production
-.env.*.local
 **/.env
-**/.env.local
+**/.env.*
 
 # Uploads — user files, not source code
 uploads/
