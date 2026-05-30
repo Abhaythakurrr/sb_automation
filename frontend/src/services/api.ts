@@ -1,5 +1,8 @@
 import axios, { AxiosInstance } from 'axios';
 
+// Backend URL — must be set via NEXT_PUBLIC_API_BASE_URL in production
+// In dev: http://localhost:3001
+// In prod: https://sb-automation.adient.internal (or whatever the internal domain is)
 const BACKEND = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
 
 export class ApiClient {

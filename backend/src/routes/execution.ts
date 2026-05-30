@@ -47,11 +47,13 @@ router.post('/batch', async (req: AuthRequest, res: Response, next: NextFunction
       sessionId: req.sessionId,
     });
 
-    // Both token and baseUrl come from the UI via request headers
-    const token   = req.token   || process.env.AUTH_TOKEN || '';
-    const baseUrl = req.sbBaseUrl || process.env.BASE_URL   || 'https://adient.stonebranch.cloud';
+    const token   = req.token     || process.env.AUTH_TOKEN || '';
+    const baseUrl = req.sbBaseUrl || process.env.BASE_URL   || '';
+    if (!baseUrl) {
+      res.status(400).json({ success: false, error: 'No Stonebranch base URL configured. Connect from the home page first.' });
+      return;
+    }
     const service = new StoneBranchService(token, baseUrl);
-
     const results: any[] = [];
     const id = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 

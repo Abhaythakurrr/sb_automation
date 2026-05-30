@@ -1,0 +1,31 @@
+---
+# Stonebranch Automation Platform — Ansible Inventory
+# Edit server IPs and variables before running the playbook.
+
+all:
+  children:
+    sb_automation:
+      hosts:
+        # Production server
+        sb-automation-prd:
+          ansible_host: 10.x.x.x          # replace with actual prod server IP
+          ansible_user: root               # or your sudo user
+          domain_name:  sb-automation.adient.internal
+          ssl_cert_path: /etc/ssl/certs/sb-automation.adient.internal.crt
+          ssl_key_path:  /etc/ssl/private/sb-automation.adient.internal.key
+
+        # Test server
+        sb-automation-tst:
+          ansible_host: 10.x.x.x          # replace with actual test server IP
+          ansible_user: root
+          domain_name:  sb-automation-tst.adient.internal
+          ssl_cert_path: /etc/ssl/certs/sb-automation-tst.adient.internal.crt
+          ssl_key_path:  /etc/ssl/private/sb-automation-tst.adient.internal.key
+
+      vars:
+        app_dir:      /opt/sb-automation
+        app_user:     sbautomation
+        repo_url:     https://github.com/Abhaythakurrr/sb_automation.git
+        backend_port: 3001
+        frontend_port: 3000
+        node_version: 18

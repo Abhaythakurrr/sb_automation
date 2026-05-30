@@ -16,8 +16,11 @@ export class StoneBranchService {
 
   constructor(
     token: string,
-    baseURL: string = process.env.BASE_URL || process.env.SB_API_BASE_URL || 'https://adient.stonebranch.cloud'
+    baseURL: string = process.env.BASE_URL || process.env.SB_API_BASE_URL || ''
   ) {
+    if (!baseURL) {
+      throw new Error('Stonebranch base URL is required. Connect from the home page first.');
+    }
     this.client = axios.create({
       baseURL,
       headers: {

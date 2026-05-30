@@ -9,7 +9,7 @@ const router = Router();
 const svc = (req: AuthRequest) =>
   new StoneBranchService(
     req.token     || process.env.AUTH_TOKEN || '',
-    req.sbBaseUrl || process.env.BASE_URL   || 'https://adient.stonebranch.cloud'
+    req.sbBaseUrl || process.env.BASE_URL   || ''
   );
 
 // In-memory timer map — rebuilt on startup from persisted jobs

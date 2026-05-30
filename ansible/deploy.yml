@@ -1,0 +1,209 @@
+---
+# Stonebranch Automation Platform — Ansible Deployment Playbook
+# Usage:
+#   ansible-playbook -i inventory.yml ansible/deploy.yml
+#   ansible-playbook -i inventory.yml ansible/deploy.yml --tags update  (update only)
+#
+# Variables (set in inventory or group_vars):
+#   app_dir:          /opt/sb-automation
+#   app_user:         sbautomation
+#   repo_url:         https://github.com/Abhaythakurrr/sb_automation.git
+#   backend_port:     3001
+#   frontend_port:    3000
+#   domain_name:      sb-automation.adient.internal
+#   ssl_cert_path:    /etc/ssl/certs/sb-automation.adient.internal.crt
+#   ssl_key_path:     /etc/ssl/private/sb-automation.adient.internal.key
+#   node_version:     18
+#   encryption_key:   (set in vault — never in plaintext)
+#   teams_webhook:    (set in vault — never in plaintext)
+
+- name: Deploy Stonebranch Automation Platform
+  hosts: sb_automation
+  become: true
+  vars:
+    app_dir:       /opt/sb-automation
+    app_user:      sbautomation
+    repo_url:      https://github.com/Abhaythakurrr/sb_automation.git
+    backend_port:  3001
+    frontend_port: 3000
+    domain_name:   sb-automation.adient.internal
+    node_version:  18
+
+  tasks:
+
+    # ── System prerequisites ──────────────────────────────────────────────────
+    - name: Install system packages
+      package:
+        name:
+          - git
+          - nginx
+          - curl
+        state: present
+      tags: [setup]
+
+    - name: Add NodeSource repo (Node.js {{ node_version }})
+      shell: |
+        curl -fsSL https://rpm.nodesource.com/setup_{{ node_version }}.x | bash -
+      args:
+        creates: /etc/yum.repos.d/nodesource-el8.repo
+      tags: [setup]
+
+    - name: Install Node.js
+      package:
+        name: nodejs
+        state: present
+      tags: [setup]
+
+    - name: Install PM2 globally
+      npm:
+        name: pm2
+        global: true
+        state: present
+      tags: [setup]
+
+    # ── Application user ──────────────────────────────────────────────────────
+    - name: Create application user
+      user:
+        name:    "{{ app_user }}"
+        system:  true
+        shell:   /bin/bash
+        home:    "{{ app_dir }}"
+        create_home: true
+      tags: [setup]
+
+    # ── Clone / update repository ─────────────────────────────────────────────
+    - name: Clone repository
+      git:
+        repo:    "{{ repo_url }}"
+        dest:    "{{ app_dir }}"
+        version: main
+        force:   true
+      become_user: "{{ app_user }}"
+      tags: [setup, update]
+
+    # ── Environment configuration ─────────────────────────────────────────────
+    - name: Write .env file
+      template:
+        src:   templates/env.j2
+        dest:  "{{ app_dir }}/.env"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode:  '0600'   # owner read/write only — no group/world access
+      tags: [setup, config]
+
+    # ── Create log directory ──────────────────────────────────────────────────
+    - name: Create logs directory
+      file:
+        path:  "{{ app_dir }}/logs"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode:  '0755'
+      tags: [setup]
+
+    # ── Install dependencies ──────────────────────────────────────────────────
+    - name: Install backend dependencies
+      npm:
+        path:        "{{ app_dir }}/backend"
+        production:  true
+        ci:          true
+      become_user: "{{ app_user }}"
+      tags: [setup, update]
+
+    - name: Install frontend dependencies
+      npm:
+        path: "{{ app_dir }}/frontend"
+        ci:   true
+      become_user: "{{ app_user }}"
+      tags: [setup, update]
+
+    # ── Build ─────────────────────────────────────────────────────────────────
+    - name: Build backend
+      command: npm run build
+      args:
+        chdir: "{{ app_dir }}/backend"
+      become_user: "{{ app_user }}"
+      environment:
+        NODE_ENV: production
+      tags: [setup, update]
+
+    - name: Build frontend
+      command: npm run build
+      args:
+        chdir: "{{ app_dir }}/frontend"
+      become_user: "{{ app_user }}"
+      environment:
+        NODE_ENV: production
+        NEXT_PUBLIC_API_BASE_URL: "https://{{ domain_name }}"
+      tags: [setup, update]
+
+    # ── PM2 process manager ───────────────────────────────────────────────────
+    - name: Configure PM2 startup on boot
+      command: pm2 startup systemd -u {{ app_user }} --hp {{ app_dir }}
+      register: pm2_startup
+      changed_when: false
+      tags: [setup]
+
+    - name: Start application with PM2
+      command: pm2 start {{ app_dir }}/ecosystem.config.js --env production
+      args:
+        chdir: "{{ app_dir }}"
+      become_user: "{{ app_user }}"
+      environment:
+        NODE_ENV: production
+      register: pm2_start
+      changed_when: pm2_start.rc == 0
+      tags: [setup]
+
+    - name: Restart application with PM2 (update)
+      command: pm2 restart {{ app_dir }}/ecosystem.config.js --env production
+      args:
+        chdir: "{{ app_dir }}"
+      become_user: "{{ app_user }}"
+      tags: [update]
+
+    - name: Save PM2 process list
+      command: pm2 save
+      become_user: "{{ app_user }}"
+      tags: [setup, update]
+
+    # ── Nginx ─────────────────────────────────────────────────────────────────
+    - name: Deploy Nginx config
+      template:
+        src:   templates/nginx.conf.j2
+        dest:  /etc/nginx/conf.d/sb-automation.conf
+        mode:  '0644'
+      notify: Reload Nginx
+      tags: [setup, config]
+
+    - name: Enable and start Nginx
+      service:
+        name:    nginx
+        state:   started
+        enabled: true
+      tags: [setup]
+
+    # ── Firewall ──────────────────────────────────────────────────────────────
+    - name: Allow HTTPS through firewall
+      firewalld:
+        service:   https
+        permanent: true
+        state:     enabled
+        immediate: true
+      ignore_errors: true
+      tags: [setup]
+
+    - name: Allow HTTP through firewall (for redirect)
+      firewalld:
+        service:   http
+        permanent: true
+        state:     enabled
+        immediate: true
+      ignore_errors: true
+      tags: [setup]
+
+  handlers:
+    - name: Reload Nginx
+      service:
+        name:  nginx
+        state: reloaded
