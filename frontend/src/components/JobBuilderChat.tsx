@@ -14,10 +14,9 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
   const handleParse = () => {
     if (!input.trim()) return;
     const parsed = parseJobDoc(input);
-    // Override task_type with the selected one if not detected from doc
-    if (!parsed.task_type || parsed.task_type === 'taskUnix') {
-      parsed.task_type = selectedType;
-    }
+    // Always use the selected task type from the UI — never from the job doc
+    // "Job Type = Production" in the doc means environment, not task type
+    parsed.task_type = selectedType;
     const errs = validateRow(parsed);
     if (errs.length > 0) { setError(errs.join(' · ')); return; }
     setError('');

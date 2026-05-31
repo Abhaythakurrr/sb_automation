@@ -313,7 +313,6 @@ export function buildTriggerPayload(
     calendar:       'System Default',
     situation:      'Holiday',
     action:         'Do Not Trigger',
-    retentionDurationPurge: true,
     retentionDuration:      1,
     retentionDurationUnit:  'Days',
   };
