@@ -38,9 +38,9 @@ async function findTriggersForTask(client: any, taskname: string): Promise<any[]
   }
   if (found.length > 0) return found;
 
-  // Strategy 2: listadv with taskname (may be slow)
+  // Strategy 2: listadv with taskname (may be slow — skip in bulk to avoid timeouts)
   try {
-    const r = await client.get('/resources/trigger/listadv', { params: { taskname }, timeout: 10000 });
+    const r = await client.get('/resources/trigger/listadv', { params: { taskname }, timeout: 5000 });
     const list = Array.isArray(r.data) ? r.data : (r.data?.trigger ?? []);
     if (list.length > 0) return list;
   } catch { /* timeout or error — fall through */ }

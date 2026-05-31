@@ -242,21 +242,23 @@ export function buildTaskPayload(
     payload.customField2 = { label: 'ServiceNow Ticket', value: row.servicenow_ticket.trim() };
   }
 
-  // ── Notes — full job doc stored as note, title = ticket number ───────────
+  // ── Notes — auto-generated from all fields, no separate job_doc needed ────
   const noteTitle = row.servicenow_ticket?.trim() || 'Job Details';
-  const noteText  = row.job_doc?.trim() || [
+  const noteText = [
     `Job Name = ${row.task_name}`,
     `Job Description = ${row.description || ''}`,
     `Job Script = ${row.command || ''}`,
     `Job Workstation = ${row.agent || ''}`,
     `Job Login Account = ${row.credential || ''}`,
     `Firstrun Date = ${row.first_run_date || ''}`,
-    `Job Timezone = ${row.timezone || ''}`,
+    `Job Starttime = ${row.schedule_string || row.start_time || row.frequency_type || ''}`,
     `Maximum Runtime = ${row.max_runtime || ''}`,
-    `ServiceNow Ticket = ${noteTitle}`,
-  ].join('\n');
+    `Business Services = ${row.business_services || ''}`,
+    `ServiceNow Ticket = ${row.servicenow_ticket || ''}`,
+    row.ref_job ? `Reference Job = ${row.ref_job}` : '',
+  ].filter(Boolean).join('\n');
 
-  payload.notes = [{ title: noteTitle, text: noteText }];
+  payload.notes = [{ title: noteTitle, text: row.job_doc?.trim() || noteText }];
 
   // ── maxRunTime + Late Finish ──────────────────────────────────────────────
   const mr = row.max_runtime ? parseInt(row.max_runtime) : (maxRunTime ?? null);
@@ -304,7 +306,7 @@ export function buildTriggerPayload(
     type:           'triggerTime',
     name:           triggerName(row.task_name),   // hyphen separator: JOBNAME-TR001
     tasks:          [row.task_name],
-    enabled:        row.enabled !== 'false',       // default enabled
+    enabled:        false,  // Always create disabled — user enables after verification
     dayStyle:       'Simple',
     simpleDateType: 'Daily',
     // Standard trigger defaults matching UAC convention
@@ -325,40 +327,87 @@ export function buildTriggerPayload(
     });
   }
 
-  // Parse schedule_string
-  if (row.schedule_string?.trim()) {
-    const parsed = parseScheduleString(row.schedule_string, row.start_time, row.timezone);
-    Object.assign(base, parsed);
-    delete base.human_readable;
+  // Parse schedule — unified approach
+  // Job Starttime handles everything: "Daily at 03:30 Asia/Kolkata", "Monday every 7 minutes", etc.
+  const schedInput = row.schedule_string?.trim() || row.frequency_type?.trim() || '';
+
+  if (schedInput) {
+    // Old AT/EVERY/UNTIL format — backward compatible
+    if (schedInput.match(/^AT\s+\d{4}/i) || schedInput.startsWith('FREQ=')) {
+      const parsed = parseScheduleString(schedInput, row.start_time, row.timezone);
+      Object.assign(base, parsed);
+      delete base.human_readable;
+    } else {
+      // Natural language — parse inline
+      const lower = schedInput.toLowerCase();
+
+      // Extract time: "at HH:MM"
+      const timeMatch = schedInput.match(/(?:at\s+)?(\d{1,2}):(\d{2})/i);
+      if (timeMatch) base.time = timeMatch[1].padStart(2, '0') + ':' + timeMatch[2];
+
+      // Extract timezone
+      const tzMatch = schedInput.match(/((?:Asia|Europe|America|Pacific|Africa|Australia)\/[\w\/]+|UTC|GMT)/i);
+      if (tzMatch) base.timeZone = tzMatch[1];
+
+      // Extract interval: "every N minutes/hours"
+      const intMatch = lower.match(/every\s+(\d+)\s*(min|mins|minutes?|hr|hrs|hours?)/);
+      if (intMatch) {
+        base.timeStyle = 'Interval';
+        base.timeInterval = parseInt(intMatch[1]);
+        base.timeIntervalUnits = intMatch[2].startsWith('h') ? 'Hours' : 'Minutes';
+      }
+
+      // Extract window: "from HH:MM to HH:MM"
+      const windowMatch = schedInput.match(/from\s+(\d{1,2}:\d{2})\s+to\s+(\d{1,2}:\d{2})/i);
+      if (windowMatch) {
+        base.enabledStart = windowMatch[1];
+        base.enabledEnd = windowMatch[2];
+        base.restrictedTimes = true;
+      }
+
+      // Determine day pattern
+      const dayMap: Record<string, string> = { monday:'mon',tuesday:'tue',wednesday:'wed',thursday:'thu',friday:'fri',saturday:'sat',sunday:'sun' };
+      const foundDays: string[] = [];
+      Object.entries(dayMap).forEach(([full, short]) => { if (lower.includes(full)) foundDays.push(short); });
+
+      // Monthly patterns
+      const monthRange = lower.match(/monthly\s+day\s+(\d+)[\-to\s]+(\d+)/);
+      const monthOrd = lower.match(/monthly\s+(1st|2nd|3rd|4th|5th|last)\s+(\w+)/);
+
+      if (monthRange) {
+        const start = parseInt(monthRange[1]), end = parseInt(monthRange[2]);
+        base.dayStyle = 'Complex';
+        base.dateAdjective = 'Every';
+        base.dateNouns = [];
+        for (let d = start; d <= end; d++) base.dateNouns.push({ value: `Month Day ${String(d).padStart(2, '0')}` });
+        base.dateQualifiers = [{ value: 'Year' }];
+      } else if (monthOrd) {
+        const ordMap: Record<string, string> = { '1st':'1st','2nd':'2nd','3rd':'3rd','4th':'4th','5th':'5th','last':'Last' };
+        base.dayStyle = 'Complex';
+        base.dateAdjective = ordMap[monthOrd[1].toLowerCase()] || monthOrd[1];
+        base.dateNouns = [{ value: monthOrd[2].charAt(0).toUpperCase() + monthOrd[2].slice(1) }];
+        base.dateQualifiers = [{ value: 'Every Month' }];
+      } else if (lower.includes('weekday') || lower.includes('business day')) {
+        base.dayStyle = 'Simple';
+        base.simpleDateType = 'Weekly';
+        base.mon = true; base.tue = true; base.wed = true; base.thu = true; base.fri = true;
+      } else if (foundDays.length > 0) {
+        base.dayStyle = 'Simple';
+        base.simpleDateType = 'Weekly';
+        foundDays.forEach(d => { (base as any)[d] = true; });
+      } else {
+        base.dayStyle = 'Simple';
+        base.simpleDateType = 'Daily';
+      }
+
+      // Set timeStyle if not already set
+      if (!base.timeStyle && base.time) base.timeStyle = 'Absolute';
+    }
   } else {
+    // No schedule input — use individual fields
     if (row.start_time) base.time     = row.start_time;
     if (row.timezone)   base.timeZone = row.timezone;
-
-    if (row.frequency_type) {
-      const ft = row.frequency_type.toUpperCase();
-      if (ft === 'DAILY') {
-        base.timeStyle      = 'Absolute';
-        base.dayStyle       = 'Simple';
-        base.simpleDateType = 'Daily';
-        if (row.frequency_value && parseInt(row.frequency_value) > 1) {
-          base.dayInterval = parseInt(row.frequency_value);
-        }
-      } else if (ft === 'WEEKLY') {
-        base.timeStyle      = 'Absolute';
-        base.dayStyle       = 'Simple';
-        base.simpleDateType = 'Weekly';
-      } else if (ft === 'MONTHLY') {
-        base.timeStyle      = 'Absolute';
-        base.dayStyle       = 'Simple';
-        base.simpleDateType = 'Monthly';
-      } else if (ft === 'INTERVAL') {
-        base.timeStyle         = 'Interval';
-        base.timeInterval      = parseInt(row.frequency_value ?? '1');
-        base.timeIntervalUnits = 'Hours';
-      }
-    } else if (!rawRefTrigger) {
-      base.timeStyle = 'Absolute';
-    }
+    if (!rawRefTrigger) base.timeStyle = 'Absolute';
   }
 
   // ── First run date ────────────────────────────────────────────────────────
@@ -389,17 +438,17 @@ export function buildTriggerPayload(
     base.customField2 = { label: 'ServiceNow Ticket', value: row.servicenow_ticket.trim() };
   }
 
-  // ── Notes — same job doc as task ─────────────────────────────────────────
-  const noteTitle = row.servicenow_ticket?.trim() || 'Job Details';
-  const noteText  = row.job_doc?.trim() || [
+  // ── Notes — same info as task, auto-generated ─────────────────────────────
+  const trigNoteTitle = row.servicenow_ticket?.trim() || 'Job Details';
+  const trigNoteText = [
     `Job Name = ${row.task_name}`,
     `Job Description = ${row.description || ''}`,
     `Job Workstation = ${row.agent || ''}`,
     `Firstrun Date = ${row.first_run_date || ''}`,
-    `Job Timezone = ${row.timezone || ''}`,
-    `ServiceNow Ticket = ${noteTitle}`,
-  ].join('\n');
-  base.notes = [{ title: noteTitle, text: noteText }];
+    `Job Starttime = ${row.schedule_string || row.start_time || row.frequency_type || ''}`,
+    `ServiceNow Ticket = ${row.servicenow_ticket || ''}`,
+  ].filter(l => !l.endsWith('= ')).join('\n');
+  base.notes = [{ title: trigNoteTitle, text: row.job_doc?.trim() || trigNoteText }];
 
   // ── Business Services ─────────────────────────────────────────────────────
   const bsTrigger = String(row.business_services ?? '').trim();

@@ -146,6 +146,11 @@ export class StoneBranchService {
     return res.data;
   }
 
+  async enableTrigger(triggerName: string): Promise<any> {
+    const res = await this.client.post('/resources/trigger/enabledisable', [{ name: triggerName, enable: true }]);
+    return res.data;
+  }
+
   async validateToken(): Promise<boolean> {
     try {
       await this.client.post('/resources/trigger/list', {});

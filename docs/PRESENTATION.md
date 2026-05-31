@@ -346,7 +346,7 @@ GET /api/monitoring/alerts → return alert_history.json
 ## 12. Repository Structure
 
 ```
-sb_automation/
+stonebranch-automation/
 ├── frontend/               Next.js 14 app
 │   └── src/
 │       ├── app/            Pages (/, /job-creation, /agent-control, /monitoring)

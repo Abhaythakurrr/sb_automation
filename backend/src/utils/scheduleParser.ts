@@ -207,3 +207,249 @@ function extractRawFields(trigger: Record<string, any>): Record<string, any> {
   SCHEDULE_FIELDS.forEach(f => { if (trigger[f] !== undefined && trigger[f] !== null) raw[f] = trigger[f]; });
   return raw;
 }
+
+// ── Parse Scheduled Frequency field from Excel ────────────────────────────────
+// Converts natural language frequency descriptions into UAC trigger fields.
+//
+// Supported formats:
+//   "Daily"                          → Simple Daily
+//   "Weekdays" / "Mon-Fri"          → Weekly Mon-Fri
+//   "Mon,Wed,Fri"                   → Weekly specific days
+//   "Weekly"                        → Weekly all days
+//   "Monthly"                       → Monthly (day from first_run_date)
+//   "Monthly Day 15"               → Monthly on 15th
+//   "Monthly 2nd Sunday"           → Complex: 2nd Sunday of every month
+//   "Monthly Last Business Day"    → Complex: last business day
+//   "Monthly Day 5 to Day 12"     → Complex: month days 5-12
+//   "From Date 5 to Date 12"      → Complex: month days 5-12
+//   "Business Days"                → Simple Daily with businessDays=true
+//   "Every 7 minutes"             → Interval 7 minutes
+//   "Every 15 mins"               → Interval 15 minutes
+//   "Every 4 hours"               → Interval 4 hours
+
+const DAY_MAP: Record<string, string> = {
+  'mon': 'mon', 'monday': 'mon',
+  'tue': 'tue', 'tuesday': 'tue',
+  'wed': 'wed', 'wednesday': 'wed',
+  'thu': 'thu', 'thursday': 'thu',
+  'fri': 'fri', 'friday': 'fri',
+  'sat': 'sat', 'saturday': 'sat',
+  'sun': 'sun', 'sunday': 'sun',
+};
+
+const ORDINALS: Record<string, string> = {
+  '1st': '1st', 'first': '1st',
+  '2nd': '2nd', 'second': '2nd',
+  '3rd': '3rd', 'third': '3rd',
+  '4th': '4th', 'fourth': '4th',
+  '5th': '5th', 'fifth': '5th',
+  'last': 'Last',
+};
+
+export interface FrequencyFields {
+  dayStyle:        string;
+  simpleDateType?: string;
+  dayInterval?:    number;
+  businessDays?:   boolean;
+  sun?: boolean; mon?: boolean; tue?: boolean; wed?: boolean;
+  thu?: boolean; fri?: boolean; sat?: boolean;
+  dateAdjective?:  string;
+  dateNoun?:       { value: string };
+  dateNouns?:      { value: string }[];
+  dateQualifier?:  { value: string };
+  dateQualifiers?: { value: string }[];
+  timeStyle?:      string;
+  time?:           string;
+  timeZone?:       string;
+  timeInterval?:   number;
+  timeIntervalUnits?: string;
+  enabledStart?:   string;
+  enabledEnd?:     string;
+  restrictedTimes?: boolean;
+}
+
+export function parseFrequencyString(freq: string): FrequencyFields | null {
+  if (!freq || !freq.trim()) return null;
+  const f = freq.trim();
+  const lower = f.toLowerCase();
+
+  // ── Extract time and timezone from anywhere in the string ─────────────────
+  // These apply regardless of which frequency pattern matches
+  let extractedTime: string | undefined;
+  let extractedTz: string | undefined;
+  let extractedStart: string | undefined;
+  let extractedEnd: string | undefined;
+  let hasWindow = false;
+
+  // Time: "at HH:MM" or standalone "HH:MM" (but not inside "from/to")
+  const timeMatch = f.match(/(?:at\s+)?(\d{1,2}):(\d{2})(?!\s*to)/i);
+  if (timeMatch) {
+    extractedTime = timeMatch[1].padStart(2, '0') + ':' + timeMatch[2];
+  }
+
+  // Timezone: Asia/Kolkata, UTC, America/New_York etc.
+  const tzMatch = f.match(/((?:Asia|Europe|America|Pacific|Africa|Australia)\/[\w\/]+|UTC|GMT)/i);
+  if (tzMatch) extractedTz = tzMatch[1];
+
+  // Window: "from HH:MM to HH:MM"
+  const windowMatch = f.match(/from\s+(\d{1,2}:\d{2})\s+to\s+(\d{1,2}:\d{2})/i);
+  if (windowMatch) {
+    extractedStart = windowMatch[1];
+    extractedEnd   = windowMatch[2];
+    hasWindow = true;
+  }
+
+  // Helper to apply time fields to result
+  function applyTime(result: FrequencyFields): void {
+    if (extractedTime) result.time = extractedTime;
+    if (extractedTz)   result.timeZone = extractedTz;
+    if (hasWindow) {
+      result.enabledStart = extractedStart;
+      result.enabledEnd   = extractedEnd;
+      result.restrictedTimes = true;
+    }
+    // Set timeStyle if not already set
+    if (!result.timeStyle && extractedTime) result.timeStyle = 'Absolute';
+  }
+
+  // ── Combined: "Monday Every 7 minutes" / "Mon-Fri Every 15 mins" ──────────
+  const combinedMatch = lower.match(/^(.+?)\s+every\s+(\d+)\s*(min|mins|minutes?|hr|hrs|hours?)/i);
+  if (combinedMatch) {
+    const daysPart    = combinedMatch[1].trim();
+    const amount      = parseInt(combinedMatch[2]);
+    const unitRaw     = combinedMatch[3].toLowerCase();
+    const units       = unitRaw.startsWith('h') ? 'Hours' : 'Minutes';
+
+    // Parse the days part
+    const result: FrequencyFields = {
+      dayStyle:          'Simple',
+      simpleDateType:    'Weekly',
+      timeStyle:         'Interval',
+      timeInterval:      amount,
+      timeIntervalUnits: units,
+    };
+
+    // Check if days part is "weekdays", "mon-fri", or specific days
+    const daysLower = daysPart.toLowerCase();
+    if (daysLower === 'weekdays' || daysLower === 'mon-fri' || daysLower === 'business days') {
+      result.mon = true; result.tue = true; result.wed = true; result.thu = true; result.fri = true;
+    } else if (daysLower === 'daily' || daysLower === 'everyday') {
+      result.simpleDateType = 'Daily';
+    } else {
+      // Parse individual days: "Mon,Wed,Fri" or "Monday" or "Mon Wed Fri"
+      const days = daysPart.split(/[,\s]+/).map(d => DAY_MAP[d.toLowerCase()]).filter(Boolean);
+      if (days.length > 0) {
+        days.forEach(d => { (result as any)[d] = true; });
+      } else {
+        // Single day name without comma
+        const singleDay = DAY_MAP[daysLower];
+        if (singleDay) (result as any)[singleDay] = true;
+      }
+    }
+
+    applyTime(result);
+    return result;
+  }
+
+  // ── Interval only: "Every N minutes/hours" ────────────────────────────────
+  const intervalMatch = lower.match(/every\s+(\d+)\s*(min|mins|minutes?|hr|hrs|hours?)/i);
+  if (intervalMatch) {
+    const amount = parseInt(intervalMatch[1]);
+    const unitRaw = intervalMatch[2].toLowerCase();
+    const units = unitRaw.startsWith('h') ? 'Hours' : 'Minutes';
+    return {
+      dayStyle:          'Simple',
+      simpleDateType:    'Daily',
+      timeStyle:         'Interval',
+      timeInterval:      amount,
+      timeIntervalUnits: units,
+    };
+  }
+
+  // ── Business Days ─────────────────────────────────────────────────────────
+  if (lower === 'business days' || lower === 'businessdays' || lower === 'weekdays' || lower === 'mon-fri') {
+    return {
+      dayStyle:       'Simple',
+      simpleDateType: 'Weekly',
+      mon: true, tue: true, wed: true, thu: true, fri: true,
+    };
+  }
+
+  // ── Weekly specific days: "Mon,Wed,Fri" or "Mon, Wed, Fri" ────────────────
+  const dayList = f.split(/[,\s]+/).map(d => DAY_MAP[d.toLowerCase()]).filter(Boolean);
+  if (dayList.length >= 2 && dayList.length <= 7) {
+    const result: FrequencyFields = { dayStyle: 'Simple', simpleDateType: 'Weekly' };
+    dayList.forEach(d => { (result as any)[d] = true; });
+    applyTime(result);
+    return result;
+  }
+
+  // ── Complex: "Monthly Day 5 to Day 12" or "From Date 5 to Date 12" ───────
+  const dayRangeMatch = lower.match(/(?:monthly\s+)?(?:from\s+)?date?\s*(\d+)\s*to\s*date?\s*(\d+)/i);
+  if (dayRangeMatch) {
+    const start = parseInt(dayRangeMatch[1]);
+    const end   = parseInt(dayRangeMatch[2]);
+    const nouns: { value: string }[] = [];
+    for (let d = start; d <= end; d++) {
+      nouns.push({ value: `Month Day ${String(d).padStart(2, '0')}` });
+    }
+    return {
+      dayStyle:       'Complex',
+      dateAdjective:  'Every',
+      dateNouns:      nouns,
+      dateQualifier:  { value: 'Year' },
+      dateQualifiers: [{ value: 'Year' }],
+    };
+  }
+
+  // ── Complex: "Monthly 2nd Sunday" / "Monthly Last Business Day" ───────────
+  const complexMatch = lower.match(/monthly\s+(1st|2nd|3rd|4th|5th|first|second|third|fourth|fifth|last)\s+(.+)/i);
+  if (complexMatch) {
+    const ordinal = ORDINALS[complexMatch[1].toLowerCase()] || complexMatch[1];
+    const noun    = complexMatch[2].trim();
+    // Capitalize first letter of each word
+    const nounValue = noun.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    return {
+      dayStyle:       'Complex',
+      dateAdjective:  ordinal,
+      dateNoun:       { value: nounValue },
+      dateNouns:      [{ value: nounValue }],
+      dateQualifier:  { value: 'Every Month' },
+      dateQualifiers: [{ value: 'Every Month' }],
+    };
+  }
+
+  // ── Monthly on specific day: "Monthly Day 15" or "Monthly" ────────────────
+  const monthlyDayMatch = lower.match(/monthly\s+day\s+(\d+)/i);
+  if (monthlyDayMatch) {
+    return {
+      dayStyle:       'Complex',
+      dateAdjective:  'Every',
+      dateNouns:      [{ value: `Month Day ${String(parseInt(monthlyDayMatch[1])).padStart(2, '0')}` }],
+      dateQualifier:  { value: 'Every Month' },
+      dateQualifiers: [{ value: 'Every Month' }],
+    };
+  }
+
+  if (lower === 'monthly') {
+    return { dayStyle: 'Simple', simpleDateType: 'Monthly' };
+  }
+
+  // ── Weekly ────────────────────────────────────────────────────────────────
+  if (lower === 'weekly') {
+    return { dayStyle: 'Simple', simpleDateType: 'Weekly' };
+  }
+
+  // ── Daily (default) ───────────────────────────────────────────────────────
+  if (lower === 'daily' || lower === 'everyday' || lower === 'every day') {
+    return { dayStyle: 'Simple', simpleDateType: 'Daily' };
+  }
+
+  // ── FREQ= format (already handled by parseScheduleString, but catch here too)
+  if (f.startsWith('FREQ=')) {
+    return null; // let parseScheduleString handle it
+  }
+
+  // Unknown — return null, let the default (Daily) apply
+  return null;
+}

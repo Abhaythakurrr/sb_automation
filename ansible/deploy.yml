@@ -7,7 +7,7 @@
 # Variables (set in inventory or group_vars):
 #   app_dir:          /opt/sb-automation
 #   app_user:         sbautomation
-#   repo_url:         https://github.com/Abhaythakurrr/sb_automation.git
+#   repo_url:         <private-repo-url>
 #   backend_port:     3001
 #   frontend_port:    3000
 #   domain_name:      sb-automation.adient.internal
@@ -23,7 +23,7 @@
   vars:
     app_dir:       /opt/sb-automation
     app_user:      sbautomation
-    repo_url:      https://github.com/Abhaythakurrr/sb_automation.git
+    repo_url:      ''  # Set to the private repo URL at deployment time
     backend_port:  3001
     frontend_port: 3000
     domain_name:   sb-automation.adient.internal

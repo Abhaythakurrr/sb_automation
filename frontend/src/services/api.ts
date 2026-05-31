@@ -82,8 +82,76 @@ export class ApiClient {
     return this.http.get('/api/stonebranch/trigger/resolve', { params: { refJob } });
   }
 
+  async enableTriggers(triggerNames: string[]): Promise<any> {
+    return this.http.post('/api/stonebranch/triggers/enable', { triggerNames });
+  }
+
   async executeBatch(rows: any[], resolvedRefs: Record<string, any>): Promise<any> {
     return this.http.post('/api/execution/batch', { rows, resolvedRefs });
+  }
+
+  // SSE stream execution — real-time updates for each job
+  executeStream(
+    rows: any[],
+    resolvedRefs: Record<string, any>,
+    onEvent: (event: string, data: any) => void,
+    onDone: () => void,
+    onError: (err: string) => void
+  ): () => void {
+    const controller = new AbortController();
+
+    fetch(`${BACKEND}/api/execution/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.sessionId ? { 'X-Session-ID': this.sessionId } : {}),
+      },
+      body: JSON.stringify({ rows, resolvedRefs }),
+      signal: controller.signal,
+    })
+      .then(async response => {
+        if (!response.ok) {
+          const text = await response.text();
+          onError(text || `HTTP ${response.status}`);
+          return;
+        }
+        const reader = response.body?.getReader();
+        if (!reader) { onError('No response body'); return; }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          let currentEvent = '';
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7);
+            } else if (line.startsWith('data: ') && currentEvent) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                onEvent(currentEvent, data);
+              } catch { /* skip malformed */ }
+              currentEvent = '';
+            }
+          }
+        }
+        onDone();
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          onError(err.message || 'Stream connection failed');
+        }
+      });
+
+    // Return abort function
+    return () => controller.abort();
   }
 
   // ── Agent Control ──────────────────────────────────────────────────────────
@@ -143,15 +211,15 @@ export class ApiClient {
 
   // ── Job Deletion ───────────────────────────────────────────────────────────
   async inspectJob(taskname: string): Promise<any> {
-    return this.http.get('/api/deletion/inspect', { params: { taskname } });
+    return this.http.get('/api/deletion/inspect', { params: { taskname }, timeout: 45000 });
   }
 
   async deleteJob(taskname: string): Promise<any> {
-    return this.http.delete('/api/deletion/job', { data: { taskname } });
+    return this.http.delete('/api/deletion/job', { data: { taskname }, timeout: 90000 });
   }
 
   async deleteJobsBulk(tasknames: string[]): Promise<any> {
-    return this.http.delete('/api/deletion/jobs', { data: { tasknames } });
+    return this.http.delete('/api/deletion/jobs', { data: { tasknames }, timeout: 300000 });
   }
 
   async forceFinishJob(taskname: string): Promise<any> {

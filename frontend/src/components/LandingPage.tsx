@@ -206,7 +206,7 @@ function ConnectionPanel() {
     setEnvironment, setSessionId, setBaseUrlHint, disconnect,
   } = useConnectionStore();
 
-  const [baseUrl, setBaseUrl] = useState('');
+  const [baseUrl, setBaseUrl] = useState(process.env.NEXT_PUBLIC_SB_BASE_URL || '');
   const [token, setToken]     = useState('');
 
   const handleConnect = async () => {
@@ -249,14 +249,13 @@ function ConnectionPanel() {
     <motion.section
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 0.35 }}
-      className="max-w-3xl mx-auto px-6 mb-16"
+      transition={{ duration: 0.5, delay: 0.25 }}
+      className="max-w-7xl mx-auto px-6 mb-12"
     >
-      <div className="rounded-2xl border p-6"
+      <div className="rounded-2xl border p-5"
         style={{
-          background: 'rgba(15,23,42,0.6)',
-          borderColor: connected ? 'rgba(34,197,94,0.3)' : 'rgba(51,65,85,0.5)',
-          boxShadow: connected ? '0 0 30px rgba(34,197,94,0.06)' : 'none',
+          background: connected ? 'rgba(6,15,30,0.6)' : 'rgba(6,15,30,0.8)',
+          borderColor: connected ? 'rgba(34,197,94,0.25)' : 'rgba(6,182,212,0.15)',
         }}>
 
         {/* Panel header */}
@@ -309,10 +308,12 @@ function ConnectionPanel() {
           <div className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <input className={inputCls} style={inputStyle}
-                placeholder="https://your-instance.stonebranch.cloud"
+                placeholder="https://instance.stonebranch.cloud"
                 value={baseUrl} onChange={e => setBaseUrl(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleConnect()}
-                autoComplete="off" />
+                autoComplete="off"
+                disabled={!!process.env.NEXT_PUBLIC_SB_BASE_URL}
+                title={process.env.NEXT_PUBLIC_SB_BASE_URL ? 'Pre-configured by server admin' : ''} />
               <input className={inputCls} style={inputStyle}
                 placeholder="Bearer token" type="password"
                 value={token} onChange={e => setToken(e.target.value)}
@@ -339,7 +340,7 @@ function ConnectionPanel() {
               <p className="text-xs text-red-400 px-1">{connError}</p>
             )}
             <p className="text-[10px] text-slate-700 px-1">
-              Your token is sent once to establish a secure session and is never stored in the browser.
+              The token is sent once to establish a secure session and is never stored in the browser.
             </p>
           </div>
         )}
@@ -383,47 +384,55 @@ export default function LandingPage() {
 
       <main className="pt-14">
 
-        {/* Hero */}
-        <section className="relative flex flex-col items-center justify-center text-center px-6 py-24 overflow-hidden">
+        {/* Hero — compact, purposeful */}
+        <section className="relative px-6 py-12 overflow-hidden">
           <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] rounded-full opacity-10"
+            <div className="absolute top-0 right-0 w-[500px] h-[300px] rounded-full opacity-[0.07]"
               style={{ background: 'radial-gradient(ellipse, #06b6d4, transparent 70%)' }} />
+            <div className="absolute bottom-0 left-0 w-[400px] h-[250px] rounded-full opacity-[0.05]"
+              style={{ background: 'radial-gradient(ellipse, #3b82f6, transparent 70%)' }} />
           </div>
 
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-            <p className="text-xs font-semibold tracking-[0.3em] uppercase text-cyan-500/70 mb-4">
-              Enterprise Automation Platform
-            </p>
-            <div className="flex items-center justify-center mb-6">
-              <img src="/logo.png" alt="Stonebranch" className="w-20 h-20 object-contain opacity-90"
-                style={{ filter: 'drop-shadow(0 0 20px rgba(6,182,212,0.4))' }} />
-            </div>
-            <h1 className="text-5xl sm:text-6xl font-bold tracking-tight mb-5">
-              <span className="neon-text">Welcome to</span>
-              <br />
-              <span className="text-slate-100">Stonebranch Automation</span>
-            </h1>
-            <p className="text-lg text-slate-500 max-w-xl mx-auto leading-relaxed">
-              A unified control center for automating Stonebranch UAC operations.
-              Connect below, then select an automation to get started.
-            </p>
-          </motion.div>
-
-          {/* Stats */}
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="flex items-center gap-8 mt-10">
-            {[
-              { label: 'Automations', value: AUTOMATIONS.length },
-              { label: 'Live Now',    value: liveCount },
-              { label: 'API Version', value: '7.8' },
-            ].map(({ label, value }) => (
-              <div key={label} className="text-center">
-                <div className="text-2xl font-bold text-slate-200">{value}</div>
-                <div className="text-xs text-slate-600 mt-0.5">{label}</div>
+          <div className="max-w-7xl mx-auto">
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+              className="flex items-start gap-6 mb-8">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden"
+                style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.15), rgba(59,130,246,0.15))', border: '1px solid rgba(6,182,212,0.2)', boxShadow: '0 0 30px rgba(6,182,212,0.15)' }}>
+                <img src="/logo.png" alt="SB" className="w-10 h-10 object-contain" />
               </div>
-            ))}
-          </motion.div>
+              <div>
+                <h1 className="text-3xl font-bold text-slate-100 tracking-tight">
+                  Stonebranch Automation
+                </h1>
+                <p className="text-sm text-slate-500 mt-1 max-w-xl leading-relaxed">
+                  Job creation, agent control, monitoring, and deletion — powered by the UAC REST API.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Capabilities strip */}
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.15 }}
+              className="flex flex-wrap gap-2 mb-6">
+              {[
+                'Unix / Linux Tasks',
+                'Windows Tasks',
+                'Time Triggers',
+                'Interval Schedules',
+                'Complex Schedules',
+                'Ref Job Inheritance',
+                'Agent Suspend / Resume',
+                'Scheduled Maintenance',
+                'Bulk Operations',
+                'Safe Deletion',
+              ].map(cap => (
+                <span key={cap} className="px-2.5 py-1 rounded-md text-[10px] font-medium tracking-wide"
+                  style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.15)', color: '#94a3b8' }}>
+                  {cap}
+                </span>
+              ))}
+            </motion.div>
+          </div>
         </section>
 
         {/* Connection Panel */}

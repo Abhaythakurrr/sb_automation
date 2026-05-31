@@ -33,7 +33,7 @@ router.post('/connect', async (req: AuthRequest, res: Response, next: NextFuncti
         result: 'failure',
         baseUrl: baseUrl.trim(),
       });
-      res.status(401).json({ success: false, error: 'Token validation failed — check your token and base URL' });
+      res.status(401).json({ success: false, error: 'Token validation failed — verify the token and base URL' });
       return;
     }
     const sessionId = createSession(token.trim(), baseUrl.trim());
@@ -117,6 +117,38 @@ router.post('/trigger', async (req: AuthRequest, res: Response, next: NextFuncti
   try {
     const data = await svc(req).createTrigger(req.body);
     res.json({ success: true, data, timestamp: new Date().toISOString() });
+  } catch (e) { next(e); }
+});
+
+// ── Enable triggers (bulk) — called after user verifies jobs ───────────────
+router.post('/triggers/enable', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { triggerNames } = req.body as { triggerNames: string[] };
+    if (!triggerNames?.length) { res.status(400).json({ error: 'triggerNames array required' }); return; }
+
+    const service = svc(req);
+    const results: any[] = [];
+
+    for (const name of triggerNames) {
+      try {
+        await service.enableTrigger(name);
+        results.push({ name, status: 'enabled' });
+      } catch (e: any) {
+        results.push({ name, status: 'failed', error: e.response?.data ?? e.message });
+      }
+    }
+
+    auditLog({
+      timestamp: new Date().toISOString(),
+      requestId: (req as any).requestId || '',
+      action: 'TRIGGERS_ENABLE',
+      resource: triggerNames.join(','),
+      details: `${results.filter(r => r.status === 'enabled').length}/${triggerNames.length} enabled`,
+      result: 'success',
+      sessionId: req.sessionId,
+    });
+
+    res.json({ success: true, data: { results }, timestamp: new Date().toISOString() });
   } catch (e) { next(e); }
 });
 

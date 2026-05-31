@@ -58,7 +58,7 @@ pm2 startup systemd
 
 ```bash
 cd /opt
-git clone https://github.com/Abhaythakurrr/sb_automation.git sb-automation
+git clone <private-repo-url> sb-automation
 cd sb-automation
 ```
 
@@ -91,7 +91,7 @@ openssl rand -hex 32
 
 ## Step 3 — Install SSL certificate
 
-Ask your PKI/Security team to issue an internal SSL certificate for `sb-automation.adient.internal`.
+Ask the PKI/Security team to issue an internal SSL certificate for `sb-automation.adient.internal`.
 
 Place the files at:
 ```

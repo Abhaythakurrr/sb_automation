@@ -40,7 +40,7 @@ export function DropZone({ onFile, hasData }: { onFile: (f: File) => void; hasDa
           }
         </div>
         <p className="text-sm font-medium text-slate-300">
-          {hasData ? 'File parsed — drop another to replace' : 'Drag & drop your job file here'}
+          {hasData ? 'File parsed — drop another to replace' : 'Drag and drop the job file here'}
         </p>
         <p className="text-xs text-slate-500">CSV · XLSX · ODS · Max 10 MB</p>
         {error && <p className="text-xs text-red-400 mt-1">{error}</p>}

@@ -27,7 +27,6 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
 
   const handleDownload = () => {
     if (!rows.length) return;
-    // Map internal field names → UI-friendly column names (matches UAC interface)
     const uiRows = rows.map(r => ({
       'Job Name':                    r.task_name,
       'Job Type':                    r.task_type,
@@ -35,14 +34,12 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
       'Job Script':                  r.command,
       'Job Login Account':           r.credential,
       'Job Description':             r.description,
-      'Active':                      r.enabled,
       'Firstrun Date':               r.first_run_date,
-      'Job Starttime':               r.schedule_string || r.start_time,
+      'Job Starttime':               r.schedule_string || r.start_time || r.frequency_type,
       'Maximum Runtime':             r.max_runtime,
       'Reference Job':               r.ref_job,
       'Member of Business Services': r.business_services,
       'ServiceNow Ticket':           r.servicenow_ticket,
-      'Job Documentation':           r.job_doc,
     }));
     const ws = XLSX.utils.json_to_sheet(uiRows);
     ws['!cols'] = [
@@ -64,27 +61,24 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
 
   const handleDownloadTemplate = () => {
     const template = [{
-      'Job Name':                    'PMFG-BU-XX1-MFG-XXX-JOBNAME',
+      'Job Name':                    '',
       'Job Type':                    'taskUnix',
-      'Job Workstation':             'A0021XXXP3_DD_94_unixCluster',
-      'Job Script':                  'sh /global/mfgpro/usr/script_name.sh param1 param2',
-      'Job Login Account':           'mfgeb',
-      'Job Description':             'APAC - Job Description Here',
-      'Active':                      'true',
-      'Firstrun Date':               '2026-05-08',
-      'Job Starttime':               'AT 0200 TIMEZONE Asia/Kolkata',
-      'Maximum Runtime':             '60',
+      'Job Workstation':             '',
+      'Job Script':                  '',
+      'Job Login Account':           '',
+      'Job Description':             '',
+      'Firstrun Date':               '',
+      'Job Starttime':               '',
+      'Maximum Runtime':             '',
       'Reference Job':               '',
-      'Member of Business Services': 'BJA-QAD, BJA-QAD - AP',
-      'ServiceNow Ticket':           'SCTASK0000000',
-      'Job Documentation':           'Job Type = Production\nBusiness Unit = XX\nJob Name = PMFG-BU-XX1-MFG-XXX-JOBNAME\nJob Description = APAC - Job Description Here\nJob Workstation = A0021XXXP3_DD_94_unixCluster\nJob Script = sh /global/mfgpro/usr/script_name.sh param1 param2\nJob Login Account = mfgeb\nFirstrun Date = 2026-05-08\nJob Starttime = AT 0200 TIMEZONE Asia/Kolkata\nMaximum Runtime = 0060\nServiceNow Ticket = SCTASK0000000\nBusiness Services = BJA-QAD, BJA-QAD - AP',
+      'Member of Business Services': '',
+      'ServiceNow Ticket':           '',
     }];
     const ws = XLSX.utils.json_to_sheet(template);
     ws['!cols'] = [
       { wch: 40 }, { wch: 14 }, { wch: 35 }, { wch: 100 },
-      { wch: 18 }, { wch: 45 }, { wch: 8  }, { wch: 14  },
-      { wch: 55 }, { wch: 10 }, { wch: 35 }, { wch: 30  },
-      { wch: 18 }, { wch: 80 },
+      { wch: 18 }, { wch: 45 }, { wch: 14 }, { wch: 55 },
+      { wch: 10 }, { wch: 35 }, { wch: 30 }, { wch: 18 },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Template');

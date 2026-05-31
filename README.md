@@ -9,7 +9,7 @@ Automates task and time trigger creation from Excel, ODS, or CSV files. Supports
 ## Architecture
 
 ```
-sb_automation/
+stonebranch-automation/
   backend/          Node.js + Express API server
   frontend/         Next.js 14 + TailwindCSS UI
 ```
@@ -28,8 +28,8 @@ sb_automation/
 **1. Clone the repository**
 
 ```bash
-git clone https://github.com/Abhaythakurrr/sb_automation.git
-cd sb_automation
+git clone <private-repo-url>
+cd sb-automation
 ```
 
 **2. Install dependencies**
@@ -47,7 +47,7 @@ cd ../frontend && npm install
 
 **3. Configure environment**
 
-Copy the example and fill in your values:
+Copy the example and fill in the required values:
 
 ```bash
 cp .env.example .env
@@ -56,15 +56,15 @@ cp .env.example .env
 `.env` variables:
 
 ```env
-BASE_URL=https://your-instance.stonebranch.cloud
-AUTH_TOKEN=your_bearer_token_here
+BASE_URL=https://instance.stonebranch.cloud
+AUTH_TOKEN=bearer_token_here
 BACKEND_PORT=3001
-SB_API_BASE_URL=https://your-instance.stonebranch.cloud
+SB_API_BASE_URL=https://instance.stonebranch.cloud
 MAX_FILE_SIZE=10485760
 UPLOAD_DIR=./backend/uploads
 ```
 
-> The token in `.env` is a fallback only. The UI always takes priority — enter your token and base URL directly in the browser header.
+> The token in `.env` is a fallback only. The UI always takes priority — enter the token and base URL directly in the browser header.
 
 **4. Create uploads directory**
 
@@ -103,7 +103,7 @@ Navigate to http://localhost:3000/job-creation.
 
 **Step 1 — Connect**
 
-Enter your Stonebranch base URL and Bearer token in the header. Click "Connect" to validate.
+Enter the Stonebranch base URL and Bearer token in the header. Click "Connect" to validate.
 
 **Step 2 — Build jobs**
 

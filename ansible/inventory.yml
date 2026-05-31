@@ -9,7 +9,7 @@ all:
         # Production server
         sb-automation-prd:
           ansible_host: 10.x.x.x          # replace with actual prod server IP
-          ansible_user: root               # or your sudo user
+          ansible_user: root               # or the sudo user
           domain_name:  sb-automation.adient.internal
           ssl_cert_path: /etc/ssl/certs/sb-automation.adient.internal.crt
           ssl_key_path:  /etc/ssl/private/sb-automation.adient.internal.key
@@ -25,7 +25,7 @@ all:
       vars:
         app_dir:      /opt/sb-automation
         app_user:     sbautomation
-        repo_url:     https://github.com/Abhaythakurrr/sb_automation.git
+        repo_url:     ''  # Set to the private repo URL
         backend_port: 3001
         frontend_port: 3000
         node_version: 18

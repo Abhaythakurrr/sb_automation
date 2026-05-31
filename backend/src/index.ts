@@ -47,10 +47,10 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// Stricter limit for execution endpoints
+// Stricter limit for execution endpoints — but allow bulk operations
 const executionLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 20,
+  max: 200,  // same as global — bulk ops need many calls per job
   message: { success: false, error: 'Execution rate limit exceeded' },
 });
 app.use('/api/execution', executionLimiter);

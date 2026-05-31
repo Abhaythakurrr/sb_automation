@@ -174,7 +174,7 @@ export default function PipelinePage() {
         // Copy ALL raw schedule fields from ref (dayStyle, dateNouns, etc.)
         ...raw,
         // These always override raw — input wins
-        name:    `${row.task_name}_TR001`,
+        name:    `${row.task_name}-TR001`,
         tasks:   [row.task_name],
         enabled: row.enabled === 'true',
         intervalStartingDate: row.first_run_date || raw.intervalStartingDate || '',
@@ -224,7 +224,7 @@ export default function PipelinePage() {
   const triggerJSON = mergedTriggers.length ? mergedTriggers : rows.map(r => {
     const base: any = {
       type:    'triggerTime',
-      name:    `${r.task_name}_TR001`,
+      name:    `${r.task_name}-TR001`,
       tasks:   [r.task_name],
       enabled: r.enabled === 'true',
       intervalStartingDate: r.first_run_date,
@@ -266,32 +266,82 @@ export default function PipelinePage() {
     return base;
   });
 
-  // ── Execute ─────────────────────────────────────────────────────────────────
-  const handleExecute = async () => {
+  // ── Execute via SSE stream — real-time updates ──────────────────────────────
+  const [streamSteps, setStreamSteps] = useState<{index:number; name:string; step:string; status:string; message?:string}[]>([]);
+  const [streamSummary, setStreamSummary] = useState<{total:number; successful:number; failed:number} | null>(null);
+  const [triggersEnabled, setTriggersEnabled] = useState(false);
+  const [enablingTriggers, setEnablingTriggers] = useState(false);
+  const abortRef = useRef<(() => void) | null>(null);
+
+  const handleExecute = () => {
     if (!rows.length) return;
-    setExecuting(true); setResults([]); setProgress(0);
-    log(`[INFO] Starting execution — ${rows.length} task(s)...`);
+    setExecuting(true); setResults([]); setProgress(0); setStreamSteps([]); setStreamSummary(null);
+    log(`[INFO] Starting execution — ${rows.length} task(s) via stream...`);
 
-    const total = taskJSON.length + triggerJSON.length;
-    let done = 0;
+    const total = rows.length * 2; // task + trigger per row
 
+    const abort = globalApi.executeStream(
+      rows,
+      resolvedRefs,
+      // onEvent
+      (event, data) => {
+        if (event === 'start') {
+          log(`[INFO] Stream connected — processing ${data.total} jobs`);
+        } else if (event === 'job_start') {
+          log(`[INFO] Processing: ${data.name} (${data.index + 1}/${data.total})`);
+        } else if (event === 'step') {
+          setStreamSteps(prev => [...prev, data]);
+          if (data.status === 'success') {
+            log(`[SUCCESS] ${data.name}: ${data.step}`);
+            setProgress(p => Math.min(100, p + Math.round(100 / total)));
+          } else if (data.status === 'error') {
+            log(`[ERROR] ${data.name}: ${data.step}${data.message ? ' — ' + data.message : ''}`);
+            setProgress(p => Math.min(100, p + Math.round(100 / total)));
+          }
+        } else if (event === 'job_done') {
+          // Job completed — could update per-job status here
+        } else if (event === 'complete') {
+          setStreamSummary(data);
+          setProgress(100);
+          log(`[INFO] Done — ${data.successful} success, ${data.failed} failed out of ${data.total}`);
+        }
+      },
+      // onDone
+      () => { setExecuting(false); },
+      // onError
+      (err) => { log(`[ERROR] Stream error: ${err}`); setExecuting(false); }
+    );
+
+    abortRef.current = abort;
+  };
+
+  const handleAbort = () => {
+    if (abortRef.current) { abortRef.current(); abortRef.current = null; }
+    setExecuting(false);
+    log('[WARN] Execution aborted by user');
+  };
+
+  const handleEnableTriggers = async () => {
+    setEnablingTriggers(true);
+    // Build trigger names from the rows that were successfully created
+    const triggerNames = rows.map(r => `${r.task_name}-TR001`);
+    log(`[INFO] Enabling ${triggerNames.length} trigger(s)...`);
     try {
-      const res = await globalApi.executeBatch(rows, resolvedRefs);
-      const r: ExecResult[] = res.data?.data?.results ?? res.data?.results ?? [];
-      setResults(r);
-      done = r.length;
-      setProgress(Math.round((done / total) * 100));
-      r.forEach(x => {
-        if (x.status === 'success') log(`[SUCCESS] ${x.type} "${x.name}" created (ID: ${x.sbId ?? 'n/a'})`);
-        else                        log(`[ERROR] ${x.type} "${x.name}" failed: ${x.message}`);
-      });
-      const ok = r.filter(x => x.status === 'success').length;
-      log(`[INFO] Done — ${ok}/${r.length} successful`);
-      setProgress(100);
+      const res = await globalApi.enableTriggers(triggerNames);
+      const results = res.data?.data?.results ?? [];
+      const enabled = results.filter((r: any) => r.status === 'enabled').length;
+      const failed  = results.filter((r: any) => r.status === 'failed').length;
+      log(`[SUCCESS] ${enabled} trigger(s) enabled, ${failed} failed`);
+      if (failed > 0) {
+        results.filter((r: any) => r.status === 'failed').forEach((r: any) => {
+          log(`[ERROR] ${r.name}: ${r.error}`);
+        });
+      }
+      setTriggersEnabled(true);
     } catch (e: any) {
-      log(`[ERROR] ${e.response?.data?.error ?? e.message}`);
+      log(`[ERROR] Enable triggers failed: ${e.message}`);
     } finally {
-      setExecuting(false);
+      setEnablingTriggers(false);
     }
   };
 
@@ -439,89 +489,135 @@ export default function PipelinePage() {
           )}
         </AnimatePresence>
 
-        {/* ── SECTION 8: EXECUTION DASHBOARD ── */}
+        {/* ── SECTION 8: EXECUTION DASHBOARD — Live Stream ── */}
         <AnimatePresence>
-          {(executing || results.length > 0) && (
+          {(executing || streamSteps.length > 0 || streamSummary) && (
             <motion.div key="s8" initial={{ opacity:0, y:24 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}>
               <G>
-                <div className="flex items-center gap-3 mb-5">
-                  <span className="w-7 h-7 rounded-lg bg-cyan-500/20 text-cyan-400 text-xs font-bold flex items-center justify-center">5</span>
-                  <h2 className="text-base font-semibold text-slate-200">Execution Dashboard</h2>
+                <div className="flex items-center justify-between mb-5">
+                  <div className="flex items-center gap-3">
+                    <span className="w-7 h-7 rounded-lg bg-cyan-500/20 text-cyan-400 text-xs font-bold flex items-center justify-center">5</span>
+                    <h2 className="text-base font-semibold text-slate-200">Execution Dashboard</h2>
+                    {executing && (
+                      <motion.span className="w-2 h-2 rounded-full bg-cyan-400 inline-block"
+                        animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }} />
+                    )}
+                  </div>
+                  {executing && (
+                    <button onClick={handleAbort}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                      style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
+                      Abort
+                    </button>
+                  )}
                 </div>
 
-                {/* Global progress */}
-                <div className="mb-6">
+                {/* Progress bar */}
+                <div className="mb-5">
                   <div className="flex justify-between text-xs text-slate-400 mb-1.5">
-                    <span>Overall Progress</span><span>{progress}%</span>
+                    <span>Progress</span><span>{progress}%</span>
                   </div>
                   <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
                     <motion.div className="h-full rounded-full"
                       style={{ background: 'linear-gradient(90deg,#06b6d4,#3b82f6)', boxShadow: '0 0 8px rgba(6,182,212,0.6)' }}
-                      initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 0.4 }} />
+                      initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 0.3 }} />
                   </div>
                 </div>
 
-                {/* Summary */}
-                {results.length > 0 && (
-                  <div className="grid grid-cols-3 gap-4 mb-6">
+                {/* Summary cards */}
+                {streamSummary && (
+                  <div className="grid grid-cols-3 gap-3 mb-5">
                     {[
-                      { label:'Successful', val: results.filter(r=>r.status==='success').length, color:'#22c55e', glow:'rgba(34,197,94,0.3)' },
-                      { label:'Failed',     val: results.filter(r=>r.status==='failed').length,  color:'#ef4444', glow:'rgba(239,68,68,0.3)' },
-                      { label:'Total',      val: results.length,                                  color:'#94a3b8', glow:'transparent' },
-                    ].map(({ label, val, color, glow }) => (
-                      <div key={label} className="rounded-xl border border-slate-700/50 bg-slate-900/60 p-4"
-                        style={{ boxShadow: `0 0 16px ${glow}` }}>
-                        <div className="text-3xl font-bold" style={{ color }}>{val}</div>
-                        <div className="text-xs text-slate-500 mt-1">{label}</div>
+                      { label: 'Successful', val: streamSummary.successful, color: '#22c55e' },
+                      { label: 'Failed',     val: streamSummary.failed,     color: '#ef4444' },
+                      { label: 'Total',      val: streamSummary.total,      color: '#94a3b8' },
+                    ].map(s => (
+                      <div key={s.label} className="rounded-xl p-3 text-center"
+                        style={{ background: 'rgba(2,8,18,0.6)', border: '1px solid rgba(51,65,85,0.4)' }}>
+                        <div className="text-2xl font-bold" style={{ color: s.color }}>{s.val}</div>
+                        <div className="text-[10px] text-slate-600 uppercase tracking-wider mt-0.5">{s.label}</div>
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* Result cards */}
-                <div className="space-y-2">
-                  {results.map((r, i) => (
-                    <motion.div key={r.id} initial={{ opacity:0, x:-16 }} animate={{ opacity:1, x:0 }} transition={{ delay: i*0.04 }}
-                      className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-700/40 bg-slate-900/60">
-                      <div className="flex items-center gap-3">
-                        {/* Task / Trigger icon */}
-                        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                          style={{
-                            background: r.type === 'task' ? 'rgba(6,182,212,0.1)' : 'rgba(139,92,246,0.1)',
-                            border: r.type === 'task' ? '1px solid rgba(6,182,212,0.25)' : '1px solid rgba(139,92,246,0.25)',
-                          }}>
-                          {r.type === 'task' ? (
-                            <svg className="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                          ) : (
-                            <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                            </svg>
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-slate-200">{r.name}</p>
-                          <p className="text-xs text-slate-500 capitalize">{r.type}{r.sbId ? ` · ${r.sbId}` : ''}</p>
-                        </div>
+                {/* Enable Triggers — shown after execution completes */}
+                {streamSummary && streamSummary.successful > 0 && !triggersEnabled && (
+                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                    className="mb-5 rounded-xl p-4"
+                    style={{ background: 'rgba(234,179,8,0.06)', border: '1px solid rgba(234,179,8,0.2)' }}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-amber-300">Triggers created as disabled</p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Verify the jobs in UAC, then enable all triggers when ready.
+                        </p>
                       </div>
-                      <Tag
-                        label={r.status === 'success' ? 'Success' : 'Failed'}
-                        color={r.status === 'success' ? 'green' : 'red'}
-                      />
-                    </motion.div>
-                  ))}
-                  {executing && (
-                    <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5">
-                      <motion.div animate={{ rotate:360 }} transition={{ repeat:Infinity, duration:1, ease:'linear' }}>
-                        <svg className="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                      </motion.div>
-                      <span className="text-sm text-cyan-400">Executing...</span>
+                      <button onClick={handleEnableTriggers} disabled={enablingTriggers}
+                        className="px-5 py-2.5 rounded-lg text-sm font-bold transition-all shrink-0"
+                        style={{
+                          background: enablingTriggers ? 'rgba(15,23,42,0.6)' : 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(16,185,129,0.2))',
+                          border: '1px solid rgba(34,197,94,0.4)',
+                          color: '#4ade80',
+                          opacity: enablingTriggers ? 0.6 : 1,
+                        }}>
+                        {enablingTriggers ? 'Enabling...' : 'Enable All Triggers'}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Triggers enabled confirmation */}
+                {triggersEnabled && (
+                  <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
+                    className="mb-5 rounded-xl p-4 flex items-center gap-3"
+                    style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)' }}>
+                    <svg className="w-5 h-5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-400">All triggers enabled</p>
+                      <p className="text-xs text-slate-500">Jobs will fire on their configured schedules.</p>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Live step feed */}
+                <div className="max-h-80 overflow-auto space-y-1 rounded-xl p-4"
+                  style={{ background: 'rgba(2,8,18,0.8)', border: '1px solid rgba(51,65,85,0.3)' }}>
+                  {streamSteps.length === 0 && executing && (
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      <motion.div className="w-3 h-3 rounded-full border-2 border-cyan-500 border-t-transparent"
+                        animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }} />
+                      Connecting to execution stream...
                     </div>
                   )}
+                  {streamSteps.map((s, i) => (
+                    <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+                      className="flex items-center gap-2 py-1">
+                      {/* Status icon */}
+                      {s.status === 'success' ? (
+                        <svg className="w-3 h-3 shrink-0 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : s.status === 'error' ? (
+                        <svg className="w-3 h-3 shrink-0 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      ) : (
+                        <motion.div className="w-3 h-3 rounded-full border-2 border-cyan-400 border-t-transparent shrink-0"
+                          animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }} />
+                      )}
+                      {/* Job name + step */}
+                      <span className="text-xs font-mono truncate" style={{
+                        color: s.status === 'success' ? '#4ade80' : s.status === 'error' ? '#f87171' : '#67e8f9',
+                      }}>
+                        <span className="text-slate-500">{s.name}</span>
+                        {' — '}
+                        {s.step}
+                      </span>
+                    </motion.div>
+                  ))}
                 </div>
               </G>
             </motion.div>

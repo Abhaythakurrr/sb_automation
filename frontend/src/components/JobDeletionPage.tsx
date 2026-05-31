@@ -286,6 +286,8 @@ export default function JobDeletionPage() {
       addStep(name, { label: `Deletion error: ${e.message}`, status: 'error', ts: new Date().toISOString() });
       updateJob(name, { phase: 'done', success: false });
     }
+    // Small delay between jobs to avoid hammering UAC node
+    await new Promise(r => setTimeout(r, 500));
   }, [updateJob, addStep]);
 
   const handleForceFinish = useCallback(async (name: string) => {
@@ -310,37 +312,54 @@ export default function JobDeletionPage() {
   }, [updateJob, addStep]);
 
   // ── Run all jobs sequentially ─────────────────────────────────────────────
+  const jobsRef = useRef(jobs);
+  useEffect(() => { jobsRef.current = jobs; }, [jobs]);
+
   const handleRun = async () => {
     if (!jobs.length || !connected) return;
     setRunning(true);
     setSummary(null);
 
-    for (const job of jobs) {
-      if (job.phase !== 'idle') continue;
-      await processJob(job.name);
+    for (let i = 0; i < jobs.length; i++) {
+      const jobName = jobs[i].name;
+      const currentPhase = jobsRef.current[i]?.phase;
+      if (currentPhase !== 'idle') continue;
 
-      // Wait if job is in prompt state (user needs to respond)
+      await processJob(jobName);
+
+      // Wait until this job reaches a terminal state or needs user input
       await new Promise<void>(resolve => {
-        const check = setInterval(() => {
-          setJobs(current => {
-            const j = current.find(x => x.name === job.name);
-            if (j && j.phase !== 'prompt_force_finish' && j.phase !== 'force_finishing' && j.phase !== 'deleting' && j.phase !== 'inspecting') {
-              clearInterval(check);
-              resolve();
-            }
-            return current;
-          });
-        }, 300);
+        const poll = setInterval(() => {
+          const j = jobsRef.current.find(x => x.name === jobName);
+          if (!j) { clearInterval(poll); resolve(); return; }
+          if (j.phase === 'done' || j.phase === 'prompt_force_finish') {
+            clearInterval(poll);
+            resolve();
+          }
+        }, 200);
+        // Safety timeout — don't hang forever
+        setTimeout(() => { clearInterval(poll); resolve(); }, 120000);
       });
+
+      // If job needs force finish prompt, wait for user to respond
+      const afterInspect = jobsRef.current.find(x => x.name === jobName);
+      if (afterInspect?.phase === 'prompt_force_finish') {
+        // Wait until user responds (force finish or skip)
+        await new Promise<void>(resolve => {
+          const poll = setInterval(() => {
+            const j = jobsRef.current.find(x => x.name === jobName);
+            if (!j || j.phase === 'done') { clearInterval(poll); resolve(); }
+          }, 300);
+          setTimeout(() => { clearInterval(poll); resolve(); }, 300000);
+        });
+      }
     }
 
     setRunning(false);
-    setJobs(current => {
-      const done    = current.filter(j => j.phase === 'done' && j.success).length;
-      const failed  = current.filter(j => j.phase === 'done' && !j.success).length;
-      setSummary({ done, failed, total: current.length });
-      return current;
-    });
+    const final = jobsRef.current;
+    const done   = final.filter(j => j.phase === 'done' && j.success).length;
+    const failed = final.filter(j => j.phase === 'done' && !j.success).length;
+    setSummary({ done, failed, total: final.length });
   };
 
   const allDone    = jobs.length > 0 && jobs.every(j => j.phase === 'done');

@@ -84,8 +84,8 @@ if [ ! -d "$APP_DIR" ]; then
     mkdir -p "$APP_DIR"
     echo "      Created: $APP_DIR"
     echo ""
-    echo "      Next step: clone your repo into $APP_DIR"
-    echo "      git clone https://github.com/Abhaythakurrr/sb_automation.git $APP_DIR"
+    echo "      Next step: clone the repo into $APP_DIR"
+    echo "      git clone <private-repo-url> $APP_DIR"
 else
     echo "      Directory already exists: $APP_DIR"
 fi

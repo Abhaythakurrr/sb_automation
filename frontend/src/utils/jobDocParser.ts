@@ -91,24 +91,6 @@ function parseStartTime(schedStr: string): { start_time: string; timezone: strin
   return { start_time: '', timezone: '', schedule_string: schedStr };
 }
 
-function parseFrequency(freqStr: string): { frequency_type: string; frequency_value: string } {
-  if (!freqStr) return { frequency_type: '', frequency_value: '' };
-
-  // FREQ=DAILY;INTERVAL=1
-  if (freqStr.includes('FREQ=')) {
-    const type  = freqStr.match(/FREQ=([^;]+)/i)?.[1]?.toUpperCase() ?? 'DAILY';
-    const value = freqStr.match(/INTERVAL=(\d+)/i)?.[1] ?? '1';
-    return { frequency_type: type, frequency_value: value };
-  }
-
-  const upper = freqStr.toUpperCase();
-  if (upper.includes('DAILY'))   return { frequency_type: 'DAILY',   frequency_value: '1' };
-  if (upper.includes('WEEKLY'))  return { frequency_type: 'WEEKLY',  frequency_value: '1' };
-  if (upper.includes('MONTHLY')) return { frequency_type: 'MONTHLY', frequency_value: '1' };
-
-  return { frequency_type: freqStr, frequency_value: '' };
-}
-
 function mapTaskType(typeStr: string): string {
   const map: Record<string, string> = {
     'unix':        'taskUnix',
@@ -165,11 +147,19 @@ export function parseJobDoc(text: string): JobRow {
   const explicitTz = extract(text, 'Job Timezone', 'Timezone', 'Time Zone');
   row.timezone = explicitTz || timezone;
 
-  // Frequency
-  const freqStr = extract(text, 'Scheduled Frequency', 'Frequency', 'Schedule Frequency');
-  const { frequency_type, frequency_value } = parseFrequency(freqStr);
-  row.frequency_type  = frequency_type;
-  row.frequency_value = frequency_value;
+  // Frequency — extract from job doc and understand natural language
+  const freqStr = extract(text, 'Scheduled Frequency', 'Frequency', 'Schedule Frequency', 'Schedule');
+  // Also check for inline frequency patterns in additional info
+  const addInfoFreq = extract(text, 'Additional Information', 'Additional Info');
+  const freqFromInfo = addInfoFreq.match(/every\s+(?:month\s+)?(\d+(?:st|nd|rd|th)\s+\w+|last\s+\w+\s+\w+)/i)?.[0]
+    || addInfoFreq.match(/((?:from\s+)?date?\s*\d+\s*to\s*date?\s*\d+)/i)?.[0]
+    || addInfoFreq.match(/(every\s+\d+\s*(?:min|hour|day)s?)/i)?.[0]
+    || '';
+
+  // Use the most specific frequency found
+  const finalFreq = freqStr || freqFromInfo;
+  row.frequency_type  = finalFreq;
+  row.frequency_value = '';
 
   // Max runtime
   const maxRaw = extract(text, 'Maximum Runtime', 'Max Runtime', 'MAXDUR', 'Max Run Time');
