@@ -37,7 +37,7 @@ export const AUTOMATIONS: Automation[] = [
     title:       'Agent Control',
     description: 'Suspend and resume Stonebranch agents individually or in bulk. Execute immediately or schedule for a specific date and time.',
     icon:        'agent',
-    status:      'live',
+    status:      'maintenance',
     category:    'Operations',
     features:    [
       'Bulk suspend / resume',
@@ -52,9 +52,9 @@ export const AUTOMATIONS: Automation[] = [
   {
     id:          'monitoring',
     title:       'Monitoring & Alerts',
-    description: 'Monitor Stonebranch agents and job failures. Send real-time alerts to MS Teams with rich Adaptive Cards. Auto-updates operational memo on failures.',
+    description: 'Monitor Stonebranch agents and job failures. Send real-time alerts to MS Teams with rich Adaptive Cards.',
     icon:        'monitor',
-    status:      'live',
+    status:      'maintenance',
     category:    'Monitoring',
     features:    [
       'Agent offline detection',

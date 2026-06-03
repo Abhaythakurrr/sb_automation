@@ -319,8 +319,8 @@ export default function JobDeletionPage() {
           </AnimatePresence>
         </div>
 
-        {/* Recovery Section */}
-        {summary && summary.done > 0 && backupData.length > 0 && (
+        {/* Recovery Section — shows as soon as backup data exists */}
+        {backupData.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-5">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.15)' }}>

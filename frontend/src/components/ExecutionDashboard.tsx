@@ -84,47 +84,6 @@ export default function ExecutionDashboard({
   const verifiedCount = verifications.filter(v => v.status === 'done').length;
   const allVerified = verifications.length > 0 && verifiedCount === verifications.length;
   const passedAll = verifications.every(v => v.checks.every(c => c.status === 'pass'));
-  const [pushing, setPushing] = useState(false);
-  const [pushDone, setPushDone] = useState(false);
-  const [startId, setStartId] = useState(1);
-
-  // Reset push state when new execution starts
-  useEffect(() => { if (streamSummary === null) { setPushDone(false); } }, [streamSummary]);
-
-  const handlePushToExcel = async () => {
-    if (!rows.length) return;
-    setPushing(true); setPushDone(false);
-    const payloadRows = rows.map((r, i) => {
-      const rec1 = r.recovery1?.trim() || '';
-      const rec2 = r.recovery2?.trim() || '';
-      let instruction = [rec1, rec2].filter(Boolean).join('. ');
-      if (!instruction && r.job_doc) {
-        const r1 = r.job_doc.match(/Job Recovery1\s*[=:]\s*(.+?)(?:\n|$)/i)?.[1]?.trim();
-        const r2 = r.job_doc.match(/Job Recovery2\s*[=:]\s*(.+?)(?:\n|$)/i)?.[1]?.trim();
-        instruction = [r1, r2].filter(Boolean).join('. ');
-      }
-      const taskTypeMap: Record<string, string> = { 'taskUnix': 'UNIX', 'taskWindows': 'WINDOWS' };
-      return {
-        ID: startId + i,
-        JOB_ID: `${r.agent || ''}#${r.task_name || ''}`,
-        INSTRUCTION: instruction || '',
-        TICKET: r.servicenow_ticket || '',
-        SCRIPT: r.command || '',
-        JOB_WORKSTATION: r.agent || '',
-        JOB_NAME: r.task_name || '',
-        STREAMLOGON: r.credential || '',
-        DESCRIPTION: r.description || '',
-        TASKTYPE: taskTypeMap[r.task_type] || r.task_type?.replace('task','').toUpperCase() || 'UNIX',
-        QUEUE: r.servicenow_group || '',
-      };
-    });
-    try {
-      await globalApi.pushJobDoc(payloadRows);
-      setStartId(startId + rows.length);
-      setPushDone(true);
-    } catch { /* silent */ }
-    setPushing(false);
-  };
 
   // Download proof
   const handleDownloadProof = async () => {
@@ -426,49 +385,6 @@ export default function ExecutionDashboard({
                   </svg>
                   Download Proof
                 </motion.button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Push to Excel / Power Automate — shows as soon as jobs are created */}
-          {streamSummary && streamSummary.successful > 0 && (
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              className="rounded-xl p-5"
-              style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.03), rgba(6,182,212,0.03))', border: '1px solid rgba(59,130,246,0.12)' }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-blue-200">Job Documentation</p>
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    Push {rows.length} job(s) to the shared Excel via Power Automate.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] text-slate-600 font-mono">START ID</span>
-                    <input type="number" value={startId}
-                      onChange={e => setStartId(parseInt(e.target.value) || 1)}
-                      className="w-12 px-2 py-1.5 rounded text-xs text-slate-200 text-center font-mono outline-none"
-                      style={{ background: 'rgba(2,8,18,0.8)', border: '1px solid rgba(51,65,85,0.3)' }} min={1} />
-                  </div>
-                  <motion.button onClick={handlePushToExcel} disabled={pushing || pushDone}
-                    whileHover={!pushing && !pushDone ? { scale: 1.02 } : {}}
-                    whileTap={!pushing && !pushDone ? { scale: 0.98 } : {}}
-                    className="px-5 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
-                    style={{
-                      background: pushDone ? 'rgba(34,197,94,0.1)' : 'linear-gradient(135deg, rgba(59,130,246,0.2), rgba(6,182,212,0.2))',
-                      border: pushDone ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(59,130,246,0.35)',
-                      color: pushDone ? '#4ade80' : '#93c5fd',
-                      opacity: pushing ? 0.6 : 1,
-                    }}>
-                    {pushing ? (
-                      <><motion.div className="w-3 h-3 rounded-full border-2 border-blue-400 border-t-transparent" animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }}/>Pushing...</>
-                    ) : pushDone ? (
-                      <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg>Pushed</>
-                    ) : (
-                      <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>Push to Excel</>
-                    )}
-                  </motion.button>
-                </div>
               </div>
             </motion.div>
           )}
