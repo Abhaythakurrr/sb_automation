@@ -160,31 +160,37 @@ export default function JobDeletionPage() {
         const names = jobs.map(j => j.name);
         const res = await globalApi.backupJobs(names);
         const backups = res.data?.data?.backups || [];
+        const templateRows = res.data?.data?.templateRows || [];
         setBackupData(backups);
         setBackupDone(true);
 
-        // Auto-download backup Excel
-        const rows = backups.map((b: any) => ({
-          'Task Name': b.taskName,
+        // Download backup as job creation template format (same as upload template)
+        const wb = XLSX.utils.book_new();
+
+        // Sheet 1: Job creation template format — can be uploaded to recreate jobs
+        const ws1 = XLSX.utils.json_to_sheet(templateRows);
+        ws1['!cols'] = [
+          { wch: 40 }, { wch: 14 }, { wch: 35 }, { wch: 100 }, { wch: 18 },
+          { wch: 45 }, { wch: 30 }, { wch: 14 }, { wch: 55 }, { wch: 20 },
+          { wch: 35 }, { wch: 10 }, { wch: 35 }, { wch: 30 }, { wch: 18 },
+          { wch: 35 }, { wch: 45 },
+        ];
+        XLSX.utils.book_append_sheet(wb, ws1, 'Job_Creation_Template');
+
+        // Sheet 2: Raw backup data (for manual reference)
+        const rawRows = backups.map((b: any) => ({
+          'Job Name': b.taskName,
           'Type': b.task?.type || '',
-          'Command': b.task?.command || '',
           'Agent': b.task?.agentCluster || b.task?.agent || '',
-          'Credential': b.task?.credentials || '',
+          'Command': b.task?.command || '',
           'Triggers': b.triggers?.map((t: any) => t.name).join(', ') || '',
-          'Time': b.triggers?.[0]?.time || '',
-          'TimeZone': b.triggers?.[0]?.timeZone || '',
-          'DayStyle': b.triggers?.[0]?.dayStyle || '',
           'Status': b.error ? 'FETCH ERROR' : 'BACKED UP',
         }));
-        const ws = XLSX.utils.json_to_sheet(rows);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Backup');
-        // Also store raw JSON for recovery
-        const rawSheet = XLSX.utils.json_to_sheet(backups.map((b: any) => ({ json: JSON.stringify(b) })));
-        XLSX.utils.book_append_sheet(wb, rawSheet, 'Recovery_Data');
+        const ws2 = XLSX.utils.json_to_sheet(rawRows);
+        XLSX.utils.book_append_sheet(wb, ws2, 'Backup_Summary');
+
         XLSX.writeFile(wb, `backup_${new Date().toISOString().slice(0, 10)}_${names.length}jobs.xlsx`);
       } catch (e: any) {
-        // Backup failed — still proceed with deletion
         console.warn('Backup failed:', e.message);
       }
       setBackingUp(false);
@@ -322,33 +328,90 @@ export default function JobDeletionPage() {
         {/* Recovery Section — shows as soon as backup data exists */}
         {backupData.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.15)' }}>
-                <svg className="w-3 h-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+                style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.2)' }}>
+                <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
               </div>
-              <h3 className="text-xs font-bold text-slate-300">Recovery Available</h3>
-              <span className="text-[9px] font-mono text-slate-600 ml-auto">{backupData.filter((b: any) => b.task).length} recoverable</span>
+              <div>
+                <h3 className="text-xs font-bold text-slate-300">Recovery Center</h3>
+                <p className="text-[9px] text-slate-600 font-mono">{backupData.filter((b: any) => b.task).length} JOB(S) RECOVERABLE</p>
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                {/* Upload Excel to restore */}
+                <label className="px-3 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center gap-1.5"
+                  style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)', color: '#67e8f9' }}>
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 11l3-3m0 0l3 3m-3-3v12"/>
+                  </svg>
+                  Upload to Restore
+                  <input type="file" accept=".xlsx,.ods,.csv" className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        // Parse Excel and send to job creation pipeline
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        const res = await globalApi.uploadFile(file);
+                        const parsed = res.data?.data?.rows || [];
+                        // Restore each job via the recover endpoint
+                        for (const row of parsed) {
+                          const match = backupData.find((b: any) => b.taskName === row.task_name);
+                          if (match?.task) {
+                            await globalApi.recoverJob(match.task, match.triggers);
+                          }
+                        }
+                        alert(`Restored ${parsed.length} job(s) from uploaded file.`);
+                      } catch (err: any) {
+                        alert('Restore failed: ' + err.message);
+                      }
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              </div>
             </div>
+
             <p className="text-[10px] text-slate-500 mb-3">
-              Backup was saved before deletion. Click to recover individual jobs or download the full backup.
+              Backup downloaded as job creation template — upload it to restore, or click individual job buttons below.
             </p>
-            <div className="flex flex-wrap gap-2">
-              {backupData.filter((b: any) => b.task).slice(0, 10).map((b: any) => (
-                <button key={b.taskName}
-                  onClick={async () => {
-                    try {
-                      await globalApi.recoverJob(b.task, b.triggers);
-                      setBackupData(prev => prev.filter(x => x.taskName !== b.taskName));
-                    } catch {}
-                  }}
-                  className="px-2.5 py-1 rounded-md text-[9px] font-mono font-bold transition-all hover:scale-105"
-                  style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)', color: '#c4b5fd' }}>
-                  Recover: {b.taskName}
-                </button>
+
+            {/* All recoverable jobs */}
+            <div className="max-h-64 overflow-auto custom-scroll space-y-1">
+              {backupData.filter((b: any) => b.task).map((b: any) => (
+                <motion.div key={b.taskName} layout
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg transition-all"
+                  style={{ background: 'rgba(139,92,246,0.04)', border: '1px solid rgba(139,92,246,0.1)' }}>
+                  <span className="text-[10px] font-mono text-slate-400 flex-1 truncate">{b.taskName}</span>
+                  <span className="text-[9px] font-mono text-slate-600">{b.task?.type || ''}</span>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await globalApi.recoverJob(b.task, b.triggers);
+                        setBackupData(prev => prev.filter((x: any) => x.taskName !== b.taskName));
+                      } catch (err: any) {
+                        alert('Recovery failed: ' + err.message);
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded text-[9px] font-bold shrink-0 transition-all hover:scale-105"
+                    style={{ background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.25)', color: '#c4b5fd' }}>
+                    Recover
+                  </button>
+                </motion.div>
               ))}
             </div>
+
+            {backupData.filter((b: any) => !b.task && b.error).length > 0 && (
+              <div className="mt-3">
+                <p className="text-[9px] font-mono text-red-400/70 mb-1">FETCH ERRORS:</p>
+                {backupData.filter((b: any) => b.error).map((b: any) => (
+                  <p key={b.taskName} className="text-[9px] font-mono text-slate-600">{b.taskName}: {b.error}</p>
+                ))}
+              </div>
+            )}
           </motion.div>
         )}
 

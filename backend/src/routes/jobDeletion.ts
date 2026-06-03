@@ -360,7 +360,7 @@ router.delete('/jobs', async (req: AuthRequest, res: Response, next: NextFunctio
   } catch (e) { next(e); }
 });
 
-// ── Backup — fetch full task + trigger details for recovery ──────────────────
+// ── Backup — fetch full task + trigger details, return in job creation template format ──
 router.post('/backup', async (req: AuthRequest, res: Response): Promise<void> => {
   const { tasknames } = req.body;
   if (!Array.isArray(tasknames) || !tasknames.length) {
@@ -369,35 +369,74 @@ router.post('/backup', async (req: AuthRequest, res: Response): Promise<void> =>
   }
 
   const client = sbClient(req);
-  const backups: any[] = [];
+  const backups: any[] = [];        // raw UAC data for in-memory recovery
+  const templateRows: any[] = [];   // job creation template format for Excel download
 
   for (const name of tasknames) {
     const entry: any = { taskName: name, task: null, triggers: [] };
     try {
-      // Fetch task
       const taskRes = await client.get('/resources/task', { params: { taskname: name } });
       entry.task = taskRes.data;
+      const task = taskRes.data;
 
-      // Fetch triggers for this task
+      // Fetch triggers
       try {
         const trigRes = await client.post('/resources/trigger/list', { tasks: name });
         const triggers = Array.isArray(trigRes.data) ? trigRes.data : (trigRes.data?.trigger ?? []);
         for (const trig of triggers) {
           if (trig.name) {
             try {
-              const fullTrig = await client.get('/resources/trigger', { params: { triggername: trig.name } });
-              entry.triggers.push(fullTrig.data);
+              const full = await client.get('/resources/trigger', { params: { triggername: trig.name } });
+              entry.triggers.push(full.data);
             } catch { entry.triggers.push(trig); }
           }
         }
       } catch { /* no triggers */ }
+
+      // Convert to job creation template format
+      const trig = entry.triggers[0];
+      const schedString = trig
+        ? trig.timeStyle === 'Interval'
+          ? `Every ${trig.timeInterval} ${trig.timeIntervalUnits}${trig.enabledStart ? ` from ${trig.enabledStart}` : ''}${trig.enabledEnd ? ` to ${trig.enabledEnd}` : ''}${trig.timeZone ? ` ${trig.timeZone}` : ''}`
+          : `AT ${(trig.time || '00:00').replace(':','')} TIMEZONE ${trig.timeZone || 'UTC'}`
+        : '';
+
+      // Parse recovery from notes
+      const notesText = task.notes?.[0]?.text || '';
+      const rec1Match = notesText.match(/Job Recovery1\s*=\s*(.+?)(?:\n|$)/i);
+      const rec2Match = notesText.match(/Job Recovery2\s*=\s*(.+?)(?:\n|$)/i);
+      const snGroupMatch = notesText.match(/ServiceNow Group\s*=\s*(.+?)(?:\n|$)/i);
+
+      templateRows.push({
+        'Job Name':                    task.name,
+        'Job Type':                    task.type || 'taskUnix',
+        'Job Workstation':             task.agentCluster || task.agent || '',
+        'Job Script':                  task.command || '',
+        'Job Login Account':           task.credentials || '',
+        'Job Description':             task.summary || '',
+        'ServiceNow Group':            snGroupMatch?.[1]?.trim() || task.customField1?.value || '',
+        'Firstrun Date':               trig?.intervalStartingDate || '',
+        'Job Starttime':               schedString,
+        'Job Timezone':                trig?.timeZone || '',
+        'Scheduled Frequency':         '',
+        'Maximum Runtime':             task.maxRunTime ? String(task.maxRunTime) : '',
+        'Reference Job':               '',
+        'Member of Business Services': (task.opswiseGroups || []).join(', '),
+        'ServiceNow Ticket':           task.customField2?.value || '',
+        'Job Recovery1':               rec1Match?.[1]?.trim() || '',
+        'Job Recovery2':               rec2Match?.[1]?.trim() || '',
+      });
     } catch (e: any) {
       entry.error = e.response?.data || e.message;
+      templateRows.push({ 'Job Name': name, 'Error': entry.error });
     }
     backups.push(entry);
   }
 
-  res.json({ success: true, data: { backups, count: backups.length } });
+  res.json({
+    success: true,
+    data: { backups, templateRows, count: backups.length },
+  });
 });
 
 // ── Recover — recreate task + trigger from backup data ───────────────────────

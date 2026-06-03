@@ -12,7 +12,7 @@ const UNIX_CLUSTER    = 'S021S172_unixCluster';
 const WIN_CLUSTER     = 'S021S172_winCluster';
 const CRED_UNIX       = 'mfg';
 const CRED_WIN        = 'mfgwin';
-const TICKET          = 'SCTASK0900000';
+const TICKET          = 'SCTASK0900001';
 const BS              = 'QAD';
 const SN_GROUP        = 'QAD DBA Progress Global';
 
