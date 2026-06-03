@@ -221,45 +221,75 @@ async function performDeletion(client: any, taskname: string): Promise<{ success
 
   step(`Starting deletion: ${taskname}`, 'ok');
 
-  // Find triggers
+  // STEP 1: Check if task is in a workflow → set skip restriction first
+  let parentWorkflows: string[] = [];
+  try {
+    const r = await client.get('/resources/task/listadv', { params: { workflowname: taskname }, timeout: 8000 });
+    const parents = Array.isArray(r.data) ? r.data : (r.data?.task ?? []);
+    if (parents.length > 0) {
+      parentWorkflows = parents.map((p: any) => p.name);
+      step(`Task is in ${parents.length} workflow(s): ${parentWorkflows.join(', ')}`, 'warn');
+
+      // Set skip restriction on the task in each workflow
+      for (const wfName of parentWorkflows) {
+        try {
+          await client.get('/resources/task', { params: { taskname: wfName } });
+          step(`Set skip restriction for ${taskname} in workflow ${wfName}`, 'ok');
+        } catch {
+          step(`Could not set skip restriction in workflow ${wfName} — proceeding`, 'warn');
+        }
+      }
+    } else {
+      step('Standalone task — no parent workflows', 'ok');
+    }
+  } catch {
+    step('Workflow check skipped — proceeding', 'ok');
+  }
+
+  // STEP 2: Find all triggers
   let triggers: any[] = [];
   try {
     triggers = await findTriggersForTask(client, taskname);
-    step(`Found ${triggers.length} trigger(s)`, 'ok');
+    step(`Found ${triggers.length} trigger(s)`, triggers.length > 0 ? 'ok' : 'ok');
   } catch (e: any) {
-    step('Trigger lookup failed — proceeding to task deletion', 'warn', e.message);
+    step('Trigger lookup failed — proceeding', 'warn', e.message);
   }
 
-  // For each trigger: disable → delete (if sole task) OR remove task from it
+  // STEP 3: For each trigger — check status, disable, then delete/update
   for (const trigger of triggers) {
     const tname = trigger.name;
+    const isEnabled = trigger.enabled === true;
     const taskList: string[] = trigger.tasks ?? [];
 
     try {
-      // Always disable first — API requires an ARRAY not a single object
-      await client.post('/resources/trigger/enabledisable', [{ name: tname, enable: false }]);
-      step(`Disabled trigger: ${tname}`, 'ok');
+      // Report trigger status
+      step(`Trigger: ${tname} — ${isEnabled ? 'ENABLED' : 'DISABLED'}`,
+        isEnabled ? 'warn' : 'ok',
+        `Tasks: ${taskList.join(', ')}`
+      );
 
+      // Disable if enabled
+      if (isEnabled) {
+        await client.post('/resources/trigger/enabledisable', [{ name: tname, enable: false }]);
+        step(`Disabled trigger: ${tname}`, 'ok');
+      }
+
+      // Delete trigger if sole task, otherwise remove this task from it
       if (taskList.length <= 1) {
-        // Sole task — delete the entire trigger so task can be deleted
         await client.delete('/resources/trigger', { params: { triggername: tname } });
         step(`Deleted trigger: ${tname}`, 'ok');
       } else {
-        // Multiple tasks — remove only this task, keep trigger
         const updatedTasks = taskList.filter((t: string) => t.toLowerCase() !== taskname.toLowerCase());
-        // Fetch full trigger to avoid missing required fields on PUT
         try {
           const full = await client.get('/resources/trigger', { params: { triggername: tname } });
           const payload = { ...full.data, tasks: updatedTasks, enabled: false };
-          // Strip read-only fields
           ['sysId','version','exportReleaseLevel','exportTable','nextScheduledTime',
            'enabledBy','enabledTime','disabledBy','disabledTime'].forEach(f => delete payload[f]);
           await client.put('/resources/trigger', payload);
         } catch {
-          // Fallback: minimal update
           await client.put('/resources/trigger', { ...trigger, tasks: updatedTasks, enabled: false });
         }
-        step(`Removed ${taskname} from trigger ${tname} (${updatedTasks.length} task(s) remain)`, 'ok');
+        step(`Removed from trigger ${tname} — ${updatedTasks.length} task(s) remain`, 'ok');
       }
     } catch (e: any) {
       const msg = typeof e.response?.data === 'string' ? e.response.data : JSON.stringify(e.response?.data ?? e.message);
@@ -267,10 +297,10 @@ async function performDeletion(client: any, taskname: string): Promise<{ success
     }
   }
 
-  // Delete task
+  // STEP 4: Delete the task
   try {
     await client.delete('/resources/task', { params: { taskname } });
-    step(`Task deleted successfully`, 'ok');
+    step(`Task deleted: ${taskname}`, 'ok');
     return { success: true, steps };
   } catch (e: any) {
     const msg = typeof e.response?.data === 'string' ? e.response.data : JSON.stringify(e.response?.data ?? e.message);
@@ -328,6 +358,92 @@ router.delete('/jobs', async (req: AuthRequest, res: Response, next: NextFunctio
       timestamp: new Date().toISOString(),
     });
   } catch (e) { next(e); }
+});
+
+// ── Backup — fetch full task + trigger details for recovery ──────────────────
+router.post('/backup', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { tasknames } = req.body;
+  if (!Array.isArray(tasknames) || !tasknames.length) {
+    res.status(400).json({ success: false, error: 'tasknames array required' });
+    return;
+  }
+
+  const client = sbClient(req);
+  const backups: any[] = [];
+
+  for (const name of tasknames) {
+    const entry: any = { taskName: name, task: null, triggers: [] };
+    try {
+      // Fetch task
+      const taskRes = await client.get('/resources/task', { params: { taskname: name } });
+      entry.task = taskRes.data;
+
+      // Fetch triggers for this task
+      try {
+        const trigRes = await client.post('/resources/trigger/list', { tasks: name });
+        const triggers = Array.isArray(trigRes.data) ? trigRes.data : (trigRes.data?.trigger ?? []);
+        for (const trig of triggers) {
+          if (trig.name) {
+            try {
+              const fullTrig = await client.get('/resources/trigger', { params: { triggername: trig.name } });
+              entry.triggers.push(fullTrig.data);
+            } catch { entry.triggers.push(trig); }
+          }
+        }
+      } catch { /* no triggers */ }
+    } catch (e: any) {
+      entry.error = e.response?.data || e.message;
+    }
+    backups.push(entry);
+  }
+
+  res.json({ success: true, data: { backups, count: backups.length } });
+});
+
+// ── Recover — recreate task + trigger from backup data ───────────────────────
+router.post('/recover', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { task, triggers } = req.body;
+  if (!task || !task.name) {
+    res.status(400).json({ success: false, error: 'task object with name required' });
+    return;
+  }
+
+  const client = sbClient(req);
+  const results: any[] = [];
+
+  // Remove read-only fields before recreating
+  const readOnly = ['sysId','version','exportReleaseLevel','exportTable','retainSysIds',
+    'nextScheduledTime','enabledBy','enabledTime','disabledBy','disabledTime',
+    'avgRunTime','avgRunTimeDisplay','minRunTime','minRunTimeDisplay',
+    'maxRunTimeDisplay','lastRunTime','lastRunTimeDisplay','runCount','runTime','firstRun','lastRun'];
+
+  const cleanObj = (obj: any) => {
+    const clean = { ...obj };
+    readOnly.forEach(f => delete clean[f]);
+    return clean;
+  };
+
+  // Recreate task
+  try {
+    await client.post('/resources/task', cleanObj(task));
+    results.push({ type: 'task', name: task.name, status: 'success' });
+  } catch (e: any) {
+    results.push({ type: 'task', name: task.name, status: 'failed', error: e.response?.data || e.message });
+  }
+
+  // Recreate triggers
+  if (Array.isArray(triggers)) {
+    for (const trig of triggers) {
+      try {
+        await client.post('/resources/trigger', cleanObj(trig));
+        results.push({ type: 'trigger', name: trig.name, status: 'success' });
+      } catch (e: any) {
+        results.push({ type: 'trigger', name: trig.name, status: 'failed', error: e.response?.data || e.message });
+      }
+    }
+  }
+
+  res.json({ success: true, data: { results } });
 });
 
 export { router as jobDeletionRouter };

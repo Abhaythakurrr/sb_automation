@@ -6,24 +6,26 @@ import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
 import { JobRow } from '@/types';
 import { DropZone, ParsedTable, JsonPanel, MergeTable } from './PipelineComponents';
 import JobBuilderChat from './JobBuilderChat';
+import ExecutionDashboard from './ExecutionDashboard';
 import { JobRow as ChatJobRow } from '@/utils/jobDocParser';
+import * as XLSX from 'xlsx';
 
 // ─── tiny helpers ────────────────────────────────────────────────────────────
 const G = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
-  <div className={`rounded-2xl border border-slate-700/60 bg-slate-900/50 backdrop-blur-md p-6 ${className}`}>
+  <div className={`glass-card p-6 ${className}`}>
     {children}
   </div>
 );
 
 const Tag = ({ label, color }: { label: string; color: 'cyan'|'green'|'red'|'yellow'|'purple' }) => {
   const c = {
-    cyan:   'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
-    green:  'bg-green-500/15 text-green-400 border-green-500/30',
-    red:    'bg-red-500/15 text-red-400 border-red-500/30',
-    yellow: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
-    purple: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+    cyan:   'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+    green:  'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    red:    'bg-red-500/10 text-red-400 border-red-500/20',
+    yellow: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    purple: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
   }[color];
-  return <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${c}`}>{label}</span>;
+  return <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold tracking-wide border ${c}`}>{label}</span>;
 };
 
 // ─── types ───────────────────────────────────────────────────────────────────
@@ -68,7 +70,7 @@ export default function PipelinePage() {
       const payload = res.data?.data;
       const parsed: JobRow[] = Array.isArray(payload?.rows) ? payload.rows : [];
       setRows(parsed);
-      setCompRows([]); setMergedTriggers([]); setRefResolved(false); setResults([]); setLogs([]);
+      setCompRows([]); setMergedTriggers([]); setRefResolved(false); setResults([]); setLogs([]); setPushDone(false);
       log(`[SUCCESS] Parsed ${parsed.length} row(s)`);
     } catch (e: any) {
       log(`[ERROR] Upload failed: ${e.message}`);
@@ -94,11 +96,14 @@ export default function PipelinePage() {
       ref_job:           r.ref_job ?? '',
       business_services: r.business_services ?? '',
       servicenow_ticket: r.servicenow_ticket ?? '',
+      servicenow_group:  r.servicenow_group ?? '',
       schedule_string:   r.schedule_string ?? '',
       job_doc:           r.job_doc ?? '',
+      recovery1:         r.recovery1 ?? '',
+      recovery2:         r.recovery2 ?? '',
     }));
     setRows(mapped);
-    setCompRows([]); setMergedTriggers([]); setRefResolved(false); setResults([]); setLogs([]);
+    setCompRows([]); setMergedTriggers([]); setRefResolved(false); setResults([]); setLogs([]); setPushDone(false);
     log(`[SUCCESS] Loaded ${mapped.length} row(s) from Job Builder`);
   };
 
@@ -221,50 +226,29 @@ export default function PipelinePage() {
     return t;
   });
 
-  const triggerJSON = mergedTriggers.length ? mergedTriggers : rows.map(r => {
-    const base: any = {
-      type:    'triggerTime',
-      name:    `${r.task_name}-TR001`,
-      tasks:   [r.task_name],
-      enabled: r.enabled === 'true',
-      intervalStartingDate: r.first_run_date,
-    };
+  // ── Preview payloads from backend (shows EXACT payload going to UAC) ────────
+  const [previewData, setPreviewData] = useState<any[]>([]);
+  const [previewSummaries, setPreviewSummaries] = useState<string[]>([]);
 
-    if (r.schedule_string?.trim()) {
-      // Parse schedule_string for preview
-      const s = r.schedule_string;
-      const atMatch    = s.match(/AT\s+(\d{4})/i);
-      const untilMatch = s.match(/UNTIL\s+(\d{4})/i);
-      const everyMatch = s.match(/EVERY\s+(\d{4})/i);
-      const tzMatch    = s.match(/TIMEZONE\s+(\S+)/i);
+  useEffect(() => {
+    if (!rows.length || !refResolved || !connected) { setPreviewData([]); setPreviewSummaries([]); return; }
+    // Fetch real preview from backend
+    globalApi.previewPayloads(rows, resolvedRefs).then(res => {
+      const previews = res.data?.data?.previews ?? [];
+      setPreviewData(previews);
+      setPreviewSummaries(previews.map((p: any) => p.summary));
+    }).catch(() => { /* silent — preview is optional */ });
+  }, [rows, refResolved, resolvedRefs, connected]);
 
-      if (everyMatch) {
-        const mins = parseInt(everyMatch[1].slice(0,2)) * 60 + parseInt(everyMatch[1].slice(2,4));
-        const hrs  = mins >= 60 && mins % 60 === 0 ? mins / 60 : null;
-        base.timeStyle         = 'Interval';
-        base.timeInterval      = hrs ?? mins;
-        base.timeIntervalUnits = hrs ? 'Hours' : 'Minutes';
-        if (atMatch) base.enabledStart = `${atMatch[1].slice(0,2)}:${atMatch[1].slice(2,4)}`;
-        if (untilMatch) { base.enabledEnd = `${untilMatch[1].slice(0,2)}:${untilMatch[1].slice(2,4)}`; base.restrictedTimes = true; }
-      } else if (atMatch) {
-        base.timeStyle = 'Absolute';
-        base.time      = `${atMatch[1].slice(0,2)}:${atMatch[1].slice(2,4)}`;
-      }
-      base.timeZone = r.timezone || tzMatch?.[1] || '';
-    } else {
-      base.time     = r.start_time  || '';
-      base.timeZone = r.timezone    || '';
-      if (r.frequency_type?.toUpperCase() === 'INTERVAL') {
-        base.timeStyle    = 'Interval';
-        base.timeInterval = parseInt(r.frequency_value ?? '1');
-        base.timeIntervalUnits = 'Hours';
-      } else {
-        base.timeStyle = 'Absolute';
-      }
-    }
-
-    return base;
-  });
+  const triggerJSON = previewData.length
+    ? previewData.map(p => p.trigger)
+    : rows.map(r => ({
+        type: 'triggerTime',
+        name: `${r.task_name}-TR001`,
+        tasks: [r.task_name],
+        enabled: false,
+        note: 'Connect and resolve refs for full preview',
+      }));
 
   // ── Execute via SSE stream — real-time updates ──────────────────────────────
   const [streamSteps, setStreamSteps] = useState<{index:number; name:string; step:string; status:string; message?:string}[]>([]);
@@ -275,10 +259,11 @@ export default function PipelinePage() {
 
   const handleExecute = () => {
     if (!rows.length) return;
-    setExecuting(true); setResults([]); setProgress(0); setStreamSteps([]); setStreamSummary(null);
+    setExecuting(true); setResults([]); setProgress(0); setStreamSteps([]); setStreamSummary(null); setPushDone(false);
     log(`[INFO] Starting execution — ${rows.length} task(s) via stream...`);
 
-    const total = rows.length * 2; // task + trigger per row
+    let completedJobs = 0;
+    const totalJobs = rows.length;
 
     const abort = globalApi.executeStream(
       rows,
@@ -293,13 +278,12 @@ export default function PipelinePage() {
           setStreamSteps(prev => [...prev, data]);
           if (data.status === 'success') {
             log(`[SUCCESS] ${data.name}: ${data.step}`);
-            setProgress(p => Math.min(100, p + Math.round(100 / total)));
           } else if (data.status === 'error') {
             log(`[ERROR] ${data.name}: ${data.step}${data.message ? ' — ' + data.message : ''}`);
-            setProgress(p => Math.min(100, p + Math.round(100 / total)));
           }
         } else if (event === 'job_done') {
-          // Job completed — could update per-job status here
+          completedJobs++;
+          setProgress(Math.round((completedJobs / totalJobs) * 100));
         } else if (event === 'complete') {
           setStreamSummary(data);
           setProgress(100);
@@ -345,14 +329,140 @@ export default function PipelinePage() {
     }
   };
 
+  // ── Download Job Doc Excel — matches the standard job tracking format ──────
+  const handleDownloadJobDoc = () => {
+    if (!rows.length) return;
+
+    // Build rows matching the exact format:
+    // ID, JOB_ID, INSTRUCTION, TICKET, SCRIPT, JOB_WORKSTATION, JOB_NAME, STREAMLOGON, DESCRIPTION, TASKTYPE, QUEUE
+    const docRows = rows.map((r, i) => {
+      // Build instruction from recovery fields or parse from job_doc
+      const rec1 = r.recovery1?.trim() || '';
+      const rec2 = r.recovery2?.trim() || '';
+      let instruction = [rec1, rec2].filter(Boolean).join('. ');
+
+      // If no recovery fields, try to extract from job_doc text
+      if (!instruction && r.job_doc) {
+        const doc = r.job_doc;
+        const r1Match = doc.match(/Job Recovery1\s*[=:]\s*(.+?)(?:\n|$)/i);
+        const r2Match = doc.match(/Job Recovery2\s*[=:]\s*(.+?)(?:\n|$)/i);
+        const parts = [r1Match?.[1]?.trim(), r2Match?.[1]?.trim()].filter(Boolean);
+        if (parts.length) instruction = parts.join('. ');
+      }
+
+      // TASKTYPE: UNIX or WINDOWS (uppercase, no prefix)
+      const taskTypeMap: Record<string, string> = { 'taskUnix': 'UNIX', 'taskWindows': 'WINDOWS' };
+      const taskType = taskTypeMap[r.task_type] || r.task_type?.replace('task', '').toUpperCase() || 'UNIX';
+
+      return {
+        'ID':              i + 1,
+        'JOB_ID':          `${r.agent}#${r.task_name}`,
+        'INSTRUCTION':     instruction,
+        'TICKET':          r.servicenow_ticket || '',
+        'SCRIPT':          r.command || '',
+        'JOB_WORKSTATION': r.agent || '',
+        'JOB_NAME':        r.task_name || '',
+        'STREAMLOGON':     r.credential || '',
+        'DESCRIPTION':     r.description || '',
+        'TASKTYPE':        taskType,
+        'QUEUE':           r.servicenow_group || '',
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(docRows);
+    ws['!cols'] = [
+      { wch: 6 },   // ID
+      { wch: 45 },  // JOB_ID
+      { wch: 80 },  // INSTRUCTION
+      { wch: 18 },  // TICKET
+      { wch: 100 }, // SCRIPT
+      { wch: 30 },  // JOB_WORKSTATION
+      { wch: 45 },  // JOB_NAME
+      { wch: 12 },  // STREAMLOGON
+      { wch: 40 },  // DESCRIPTION
+      { wch: 10 },  // TASKTYPE
+      { wch: 30 },  // QUEUE
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Job_Doc');
+    const timestamp = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `job_doc_${timestamp}_${rows.length}jobs.xlsx`);
+    log(`[SUCCESS] Job Doc Excel downloaded — ${rows.length} row(s)`);
+  };
+
+  // ── Push to Excel via Power Automate — injects rows directly into shared sheet ─
+  const [pushing, setPushing] = useState(false);
+  const [pushDone, setPushDone] = useState(false);
+  const [startId, setStartId] = useState(1);
+
+  const handlePushToExcel = async () => {
+    if (!rows.length) return;
+    setPushing(true);
+    setPushDone(false);
+    log(`[INFO] Pushing ${rows.length} row(s) to Excel via Power Automate (starting ID: ${startId})...`);
+
+    // Build all row payloads — same format as download
+    const payloadRows = rows.map((r, i) => {
+      // INSTRUCTION: from recovery1/recovery2, or parse from job_doc
+      const rec1 = r.recovery1?.trim() || '';
+      const rec2 = r.recovery2?.trim() || '';
+      let instruction = [rec1, rec2].filter(Boolean).join('. ');
+      if (!instruction && r.job_doc) {
+        const doc = r.job_doc;
+        const r1Match = doc.match(/Job Recovery1\s*[=:]\s*(.+?)(?:\n|$)/i);
+        const r2Match = doc.match(/Job Recovery2\s*[=:]\s*(.+?)(?:\n|$)/i);
+        const parts = [r1Match?.[1]?.trim(), r2Match?.[1]?.trim()].filter(Boolean);
+        if (parts.length) instruction = parts.join('. ');
+      }
+
+      // TASKTYPE: UNIX or WINDOWS (uppercase, no prefix)
+      const taskTypeMap: Record<string, string> = { 'taskUnix': 'UNIX', 'taskWindows': 'WINDOWS' };
+      const taskType = taskTypeMap[r.task_type] || r.task_type?.replace('task', '').toUpperCase() || 'UNIX';
+
+      return {
+        ID:               startId + i,
+        JOB_ID:           `${r.agent || ''}#${r.task_name || ''}`,
+        INSTRUCTION:      instruction || '',
+        TICKET:           r.servicenow_ticket || '',
+        SCRIPT:           r.command || '',
+        JOB_WORKSTATION:  r.agent || '',
+        JOB_NAME:         r.task_name || '',
+        STREAMLOGON:      r.credential || '',
+        DESCRIPTION:      r.description || '',
+        TASKTYPE:         taskType,
+        QUEUE:            r.servicenow_group || '',
+      };
+    });
+
+    try {
+      const res = await globalApi.pushJobDoc(payloadRows);
+      const data = res.data?.data;
+      const success = data?.summary?.success ?? 0;
+      const failed = data?.summary?.failed ?? 0;
+      if (failed > 0) {
+        data?.results?.filter((r: any) => r.status === 'failed').forEach((r: any) => {
+          log(`[ERROR] ${r.name}: ${r.error}`);
+        });
+      }
+      log(`[SUCCESS] Power Automate push complete — ${success} success, ${failed} failed`);
+      // Update startId for next push
+      setStartId(startId + rows.length);
+      setPushDone(true);
+    } catch (e: any) {
+      log(`[ERROR] Push failed: ${e.message}`);
+    } finally {
+      setPushing(false);
+    }
+  };
+
   const hasData     = rows.length > 0;
   const canExecute  = hasData && refResolved && !executing && connected;
 
   return (
-    <div className="min-h-screen" style={{ background: '#050B1A' }}>
-      <GlobalHeader title="Job Creation" subtitle="Stonebranch Automation" />
+    <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>
+      <GlobalHeader title="Job Creation" subtitle="BULK TASK + TRIGGER PIPELINE" />
 
-      <main className="pt-20 pb-16 px-4 max-w-7xl mx-auto space-y-8 grid-bg min-h-screen">
+      <main className="pb-16 px-4 max-w-7xl mx-auto space-y-6 min-h-screen">
 
         {/* ── JOB BUILDER CHAT ── */}
         <motion.div initial={{ opacity:0, y:24 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.4 }}>
@@ -394,6 +504,23 @@ export default function PipelinePage() {
                   <ParsedTable rows={rows} />
                   <JsonPanel data={jsonView === 'task' ? taskJSON : triggerJSON} />
                 </div>
+
+                {/* Schedule Summaries — plain English */}
+                {previewSummaries.length > 0 && (
+                  <div className="mt-4 rounded-lg p-3" style={{ background: 'rgba(6,182,212,0.04)', border: '1px solid rgba(6,182,212,0.1)' }}>
+                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-2">Schedule Summary — {previewSummaries.length} job(s)</p>
+                    <div className="space-y-1 max-h-64 overflow-auto">
+                      {previewSummaries.map((s, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs">
+                          <span className="text-cyan-500 font-mono text-[10px] shrink-0 w-6">{String(i+1).padStart(2,'0')}</span>
+                          <span className="text-slate-400 font-mono truncate max-w-[200px]">{rows[i]?.task_name}</span>
+                          <span className="text-slate-700 mx-0.5">—</span>
+                          <span className="text-emerald-400 font-medium text-[11px]">{s}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </G>
             </motion.div>
           )}
@@ -471,10 +598,10 @@ export default function PipelinePage() {
                   <p className="text-slate-400 text-sm">Pipeline ready — {rows.length} task(s) + {rows.length} trigger(s)</p>
                   <motion.button
                     onClick={handleExecute}
-                    whileHover={{ scale: 1.04 }}
-                    whileTap={{ scale: 0.97 }}
-                    className="px-12 py-4 rounded-2xl text-lg font-bold text-white relative overflow-hidden"
-                    style={{ background: 'linear-gradient(135deg,#0891b2,#2563eb)', boxShadow: '0 0 30px rgba(6,182,212,0.5), 0 0 60px rgba(6,182,212,0.2)' }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="px-10 py-3.5 rounded-xl text-base font-bold text-white relative overflow-hidden"
+                    style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.3), rgba(59,130,246,0.3))', border: '1px solid rgba(6,182,212,0.4)', boxShadow: '0 0 30px rgba(6,182,212,0.2)' }}
                   >
                     <span className="relative z-10 flex items-center gap-3">
                       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -489,154 +616,156 @@ export default function PipelinePage() {
           )}
         </AnimatePresence>
 
-        {/* ── SECTION 8: EXECUTION DASHBOARD — Live Stream ── */}
+        {/* ── SECTION 8: EXECUTION DASHBOARD ── */}
         <AnimatePresence>
           {(executing || streamSteps.length > 0 || streamSummary) && (
             <motion.div key="s8" initial={{ opacity:0, y:24 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}>
               <G>
-                <div className="flex items-center justify-between mb-5">
-                  <div className="flex items-center gap-3">
-                    <span className="w-7 h-7 rounded-lg bg-cyan-500/20 text-cyan-400 text-xs font-bold flex items-center justify-center">5</span>
-                    <h2 className="text-base font-semibold text-slate-200">Execution Dashboard</h2>
+                {/* Progress HUD */}
+                {/* ── PROGRESS — Holographic Command Display ── */}
+                <div className="mb-6 relative">
+                  <div className="rounded-xl p-5 relative overflow-hidden"
+                    style={{ background: 'rgba(2,6,14,0.8)', border: '1px solid rgba(6,182,212,0.1)' }}>
+                    <div className="absolute inset-0 opacity-[0.03]"
+                      style={{ backgroundImage: 'linear-gradient(rgba(6,182,212,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.5) 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
                     {executing && (
-                      <motion.span className="w-2 h-2 rounded-full bg-cyan-400 inline-block"
-                        animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }} />
+                      <motion.div className="absolute top-0 left-0 right-0 h-[1px]"
+                        style={{ background: 'linear-gradient(90deg, transparent, #06b6d4, #8b5cf6, transparent)' }}
+                        animate={{ opacity: [0.3, 1, 0.3] }}
+                        transition={{ duration: 2, repeat: Infinity }}
+                      />
                     )}
-                  </div>
-                  {executing && (
-                    <button onClick={handleAbort}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                      style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
-                      Abort
-                    </button>
-                  )}
-                </div>
-
-                {/* Progress bar */}
-                <div className="mb-5">
-                  <div className="flex justify-between text-xs text-slate-400 mb-1.5">
-                    <span>Progress</span><span>{progress}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-                    <motion.div className="h-full rounded-full"
-                      style={{ background: 'linear-gradient(90deg,#06b6d4,#3b82f6)', boxShadow: '0 0 8px rgba(6,182,212,0.6)' }}
-                      initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 0.3 }} />
-                  </div>
-                </div>
-
-                {/* Summary cards */}
-                {streamSummary && (
-                  <div className="grid grid-cols-3 gap-3 mb-5">
-                    {[
-                      { label: 'Successful', val: streamSummary.successful, color: '#22c55e' },
-                      { label: 'Failed',     val: streamSummary.failed,     color: '#ef4444' },
-                      { label: 'Total',      val: streamSummary.total,      color: '#94a3b8' },
-                    ].map(s => (
-                      <div key={s.label} className="rounded-xl p-3 text-center"
-                        style={{ background: 'rgba(2,8,18,0.6)', border: '1px solid rgba(51,65,85,0.4)' }}>
-                        <div className="text-2xl font-bold" style={{ color: s.color }}>{s.val}</div>
-                        <div className="text-[10px] text-slate-600 uppercase tracking-wider mt-0.5">{s.label}</div>
+                    <div className="relative z-10 flex items-center gap-5">
+                      <div className="relative w-16 h-16 shrink-0">
+                        <motion.svg className="absolute inset-0 w-16 h-16" viewBox="0 0 64 64"
+                          animate={executing ? { rotate: 360 } : {}}
+                          transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}>
+                          <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(6,182,212,0.1)" strokeWidth="1" strokeDasharray="4 4" />
+                        </motion.svg>
+                        <svg className="absolute inset-0 w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+                          <circle cx="32" cy="32" r="24" fill="none" stroke="rgba(51,65,85,0.2)" strokeWidth="3" />
+                          <motion.circle cx="32" cy="32" r="24" fill="none"
+                            stroke="url(#progGrad)" strokeWidth="3" strokeLinecap="round"
+                            strokeDasharray={`${2 * Math.PI * 24}`}
+                            animate={{ strokeDashoffset: 2 * Math.PI * 24 * (1 - progress / 100) }}
+                            transition={{ duration: 0.5, ease: 'easeOut' }}
+                          />
+                          <defs><linearGradient id="progGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor="#06b6d4" /><stop offset="100%" stopColor="#8b5cf6" /></linearGradient></defs>
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <span className="text-base font-black tabular-nums" style={{ color: progress === 100 ? '#4ade80' : '#e2e8f0' }}>{progress}%</span>
+                        </div>
                       </div>
-                    ))}
+                      <div className="flex-1">
+                        <p className="text-sm font-bold" style={{ color: progress === 100 ? '#4ade80' : '#e2e8f0' }}>
+                          {progress === 0 ? 'Initializing...' : progress < 100 ? 'Executing Pipeline' : 'Complete'}
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-mono">{Math.round(progress * rows.length / 100)}/{rows.length} JOBS</p>
+                        <div className="flex gap-[2px] h-1.5 mt-2">
+                          {Array.from({ length: Math.min(rows.length, 40) }).map((_, i) => (
+                            <div key={i} className="flex-1 rounded-sm" style={{
+                              background: i < (progress / 100) * Math.min(rows.length, 40)
+                                ? 'linear-gradient(180deg, #06b6d4, #3b82f6)' : 'rgba(30,41,59,0.5)',
+                            }} />
+                          ))}
+                        </div>
+                      </div>
+                      {executing && (
+                        <button onClick={handleAbort}
+                          className="px-3 py-1.5 rounded-lg text-[10px] font-semibold shrink-0"
+                          style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
+                          Abort
+                        </button>
+                      )}
+                    </div>
                   </div>
-                )}
+                </div>
 
-                {/* Enable Triggers — shown after execution completes */}
-                {streamSummary && streamSummary.successful > 0 && !triggersEnabled && (
+                {/* Execution + Verification Dashboard */}
+                <ExecutionDashboard
+                  rows={rows}
+                  executing={executing}
+                  progress={progress}
+                  streamSteps={streamSteps}
+                  streamSummary={streamSummary}
+                  onEnableTriggers={handleEnableTriggers}
+                  enablingTriggers={enablingTriggers}
+                  triggersEnabled={triggersEnabled}
+                />
+
+                {/* ── Job Doc Download + Push to Excel — shown immediately after execution ── */}
+                {streamSummary && streamSummary.successful > 0 && (
                   <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                    className="mb-5 rounded-xl p-4"
-                    style={{ background: 'rgba(234,179,8,0.06)', border: '1px solid rgba(234,179,8,0.2)' }}>
+                    className="mt-5 rounded-xl p-5"
+                    style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.04), rgba(139,92,246,0.04))', border: '1px solid rgba(59,130,246,0.12)' }}>
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-semibold text-amber-300">Triggers created as disabled</p>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Verify the jobs in UAC, then enable all triggers when ready.
+                        <p className="text-sm font-bold text-blue-300">Job Documentation</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          Download job doc or push directly to the shared Excel via Power Automate.
                         </p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="text-[9px] font-mono text-slate-600">Start ID:</span>
+                          <input
+                            type="number"
+                            value={startId}
+                            onChange={e => setStartId(parseInt(e.target.value) || 1)}
+                            className="w-14 px-2 py-1 rounded text-xs text-slate-200 text-center font-mono outline-none"
+                            style={{ background: 'rgba(2,8,18,0.8)', border: '1px solid rgba(51,65,85,0.3)' }}
+                            min={1}
+                          />
+                        </div>
                       </div>
-                      <button onClick={handleEnableTriggers} disabled={enablingTriggers}
-                        className="px-5 py-2.5 rounded-lg text-sm font-bold transition-all shrink-0"
-                        style={{
-                          background: enablingTriggers ? 'rgba(15,23,42,0.6)' : 'linear-gradient(135deg,rgba(34,197,94,0.2),rgba(16,185,129,0.2))',
-                          border: '1px solid rgba(34,197,94,0.4)',
-                          color: '#4ade80',
-                          opacity: enablingTriggers ? 0.6 : 1,
-                        }}>
-                        {enablingTriggers ? 'Enabling...' : 'Enable All Triggers'}
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={handleDownloadJobDoc}
+                          className="px-4 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+                          style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#93c5fd' }}>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          Download
+                        </button>
+                        <button onClick={handlePushToExcel} disabled={pushing || pushDone}
+                          className="px-4 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+                          style={{
+                            background: pushDone ? 'rgba(34,197,94,0.08)' : 'linear-gradient(135deg, rgba(34,197,94,0.15), rgba(16,185,129,0.15))',
+                            border: pushDone ? '1px solid rgba(34,197,94,0.2)' : '1px solid rgba(34,197,94,0.3)',
+                            color: pushDone ? '#4ade80' : '#6ee7b7',
+                            opacity: pushing ? 0.6 : 1,
+                          }}>
+                          {pushing ? (
+                            <><motion.div className="w-3 h-3 rounded-full border-2 border-emerald-400 border-t-transparent"
+                              animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }}/>Pushing...</>
+                          ) : pushDone ? (
+                            <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg>Pushed</>
+                          ) : (
+                            <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>Push to Excel</>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 )}
 
-                {/* Triggers enabled confirmation */}
-                {triggersEnabled && (
-                  <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
-                    className="mb-5 rounded-xl p-4 flex items-center gap-3"
-                    style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)' }}>
-                    <svg className="w-5 h-5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <div>
-                      <p className="text-sm font-semibold text-emerald-400">All triggers enabled</p>
-                      <p className="text-xs text-slate-500">Jobs will fire on their configured schedules.</p>
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Live step feed */}
-                <div className="max-h-80 overflow-auto space-y-1 rounded-xl p-4"
-                  style={{ background: 'rgba(2,8,18,0.8)', border: '1px solid rgba(51,65,85,0.3)' }}>
-                  {streamSteps.length === 0 && executing && (
-                    <div className="flex items-center gap-2 text-xs text-slate-600">
-                      <motion.div className="w-3 h-3 rounded-full border-2 border-cyan-500 border-t-transparent"
-                        animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }} />
-                      Connecting to execution stream...
-                    </div>
-                  )}
-                  {streamSteps.map((s, i) => (
-                    <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
-                      className="flex items-center gap-2 py-1">
-                      {/* Status icon */}
-                      {s.status === 'success' ? (
-                        <svg className="w-3 h-3 shrink-0 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : s.status === 'error' ? (
-                        <svg className="w-3 h-3 shrink-0 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      ) : (
-                        <motion.div className="w-3 h-3 rounded-full border-2 border-cyan-400 border-t-transparent shrink-0"
-                          animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }} />
-                      )}
-                      {/* Job name + step */}
-                      <span className="text-xs font-mono truncate" style={{
-                        color: s.status === 'success' ? '#4ade80' : s.status === 'error' ? '#f87171' : '#67e8f9',
-                      }}>
-                        <span className="text-slate-500">{s.name}</span>
-                        {' — '}
-                        {s.step}
-                      </span>
-                    </motion.div>
-                  ))}
-                </div>
               </G>
             </motion.div>
           )}
         </AnimatePresence>
 
         {/* ── SECTION 9: LIVE LOGS ── */}
+        {/* ── SECTION 9: LIVE LOGS ── */}
         <AnimatePresence>
           {logs.length > 0 && (
             <motion.div key="s9" initial={{ opacity:0, y:24 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}>
-              <div className="rounded-2xl border border-slate-800/60 overflow-hidden"
-                style={{ background: '#020810', boxShadow: '0 0 30px rgba(0,0,0,0.5)' }}>
-                <div className="px-5 py-3 border-b border-slate-800/60 flex items-center gap-2">
+              <div className="rounded-xl overflow-hidden"
+                style={{ background: 'rgba(2,8,16,0.9)', border: '1px solid rgba(6,182,212,0.08)' }}>
+                <div className="px-5 py-2.5 border-b flex items-center gap-2" style={{ borderColor: 'rgba(51,65,85,0.2)', background: 'rgba(6,15,30,0.5)' }}>
                   <div className="flex gap-1.5">
-                    <div className="w-3 h-3 rounded-full bg-red-500/70" />
-                    <div className="w-3 h-3 rounded-full bg-yellow-500/70" />
-                    <div className="w-3 h-3 rounded-full bg-green-500/70" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
                   </div>
-                  <span className="text-xs text-slate-500 ml-2 font-mono">execution.log</span>
+                  <span className="text-[10px] text-slate-600 ml-2 font-mono">execution.log</span>
                 </div>
                 <div ref={logsRef} className="p-5 font-mono text-xs max-h-64 overflow-auto space-y-1">
                   {logs.map((l, i) => (
@@ -657,8 +786,8 @@ export default function PipelinePage() {
       </main>
 
       {/* Watermark */}
-      <div className="fixed bottom-3 right-4 text-[10px] text-slate-800 pointer-events-none select-none">
-        Built by Abhay Thakur
+      <div className="fixed bottom-3 right-4 text-[9px] text-slate-800 pointer-events-none select-none font-mono">
+        BUILT BY ABHAY THAKUR
       </div>
     </div>
   );

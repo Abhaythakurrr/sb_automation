@@ -46,12 +46,13 @@ export class ApiClient {
 
   // ── Connect — sends token ONCE, gets session ID back ──────────────────────
   // After this, token is never sent from the browser again
-  async connect(token: string, baseUrl: string): Promise<{ sessionId: string }> {
-    const res = await axios.post(`${BACKEND}/api/stonebranch/connect`, { token, baseUrl });
+  async connect(token: string, baseUrl: string, username?: string): Promise<{ sessionId: string; username: string }> {
+    const res = await axios.post(`${BACKEND}/api/stonebranch/connect`, { token, baseUrl, username });
     const sessionId = res.data?.data?.sessionId;
+    const resolvedUsername = res.data?.data?.username || username || 'Operator';
     if (!sessionId) throw new Error('No session ID returned');
     this.sessionId = sessionId;
-    return { sessionId };
+    return { sessionId, username: resolvedUsername };
   }
 
   async disconnect(): Promise<void> {
@@ -224,5 +225,33 @@ export class ApiClient {
 
   async forceFinishJob(taskname: string): Promise<any> {
     return this.http.post('/api/deletion/force-finish', { taskname });
+  }
+
+  async backupJobs(tasknames: string[]): Promise<any> {
+    return this.http.post('/api/deletion/backup', { tasknames }, { timeout: 300000 });
+  }
+
+  async recoverJob(task: any, triggers: any[]): Promise<any> {
+    return this.http.post('/api/deletion/recover', { task, triggers });
+  }
+
+  // ── Job Doc — push to Power Automate / shared Excel ────────────────────────
+  async pushJobDoc(rows: any[]): Promise<any> {
+    return this.http.post('/api/jobdoc/push', { rows }, { timeout: 300000 });
+  }
+
+  // ── Preview — get the exact payload that will be sent to UAC ───────────────
+  async previewPayloads(rows: any[], resolvedRefs: Record<string, any>): Promise<any> {
+    return this.http.post('/api/execution/preview', { rows, resolvedRefs });
+  }
+
+  // ── Qualifying Times — fetch run cycle from UAC ────────────────────────────
+  async getQualifyingTimes(triggerName: string, count = 30): Promise<any> {
+    return this.http.get('/api/execution/qualifying-times', { params: { triggername: triggerName, count } });
+  }
+
+  // ── Verify — fetch and validate created task + trigger from UAC ────────────
+  async verifyJob(taskName: string): Promise<any> {
+    return this.http.post('/api/execution/verify', { taskName });
   }
 }

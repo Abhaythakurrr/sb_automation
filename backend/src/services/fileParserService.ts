@@ -69,6 +69,12 @@ const COLUMN_MAP: Record<string, string> = {
   'job recovery2':                'recovery2',
   'recovery2':                    'recovery2',
   'job recovery 2':               'recovery2',
+  // ServiceNow Group (QUEUES in job doc)
+  'servicenow group':             'servicenow_group',
+  'servicenow_group':             'servicenow_group',
+  'snow group':                   'servicenow_group',
+  'queues':                       'servicenow_group',
+  'queue':                        'servicenow_group',
   // Windows-specific
   'elevate user':                 'elevateUser',
   'run as administrator':         'elevateUser',

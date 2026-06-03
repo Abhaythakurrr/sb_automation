@@ -1,7 +1,7 @@
 'use client';
-import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useConnectionStore } from '@/store/useConnectionStore';
+import { useWorkspaceStore } from '@/store/useWorkspaceStore';
 
 interface GlobalHeaderProps {
   title:     string;
@@ -9,42 +9,56 @@ interface GlobalHeaderProps {
 }
 
 export default function GlobalHeader({ title, subtitle }: GlobalHeaderProps) {
-  const { connected, environment, baseUrlHint, disconnect } = useConnectionStore();
+  const { connected, environment, baseUrlHint, username, disconnect } = useConnectionStore();
+  const { setActiveTab } = useWorkspaceStore();
 
   return (
     <header
-      className="fixed top-0 left-0 right-0 z-50 border-b"
+      className="sticky top-0 z-50"
       style={{
-        borderColor: 'rgba(6,182,212,0.1)',
         background: 'rgba(2,8,18,0.92)',
-        backdropFilter: 'blur(16px)',
+        backdropFilter: 'blur(20px)',
+        borderBottom: '1px solid rgba(6,182,212,0.08)',
       }}
     >
+      {/* Top accent pulse */}
+      <div className="absolute top-0 left-0 right-0 h-[1px] overflow-hidden">
+        <motion.div
+          className="h-full w-32"
+          style={{ background: 'linear-gradient(90deg, transparent, rgba(6,182,212,0.4), transparent)' }}
+          animate={{ x: ['-128px', 'calc(100vw + 128px)'] }}
+          transition={{ duration: 5, repeat: Infinity, ease: 'linear', repeatDelay: 3 }}
+        />
+      </div>
+
       <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
 
         {/* Left: back + logo + title */}
         <div className="flex items-center gap-4">
-          <Link
-            href="/"
-            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-cyan-400 transition-colors"
+          <button
+            onClick={() => setActiveTab('home')}
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-cyan-400 transition-colors group"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            Home
-          </Link>
-          <span className="text-slate-800">|</span>
-          <div className="flex items-center gap-2">
+            <span className="hidden sm:inline">Home</span>
+          </button>
+
+          <div className="w-[1px] h-4" style={{ background: 'rgba(51,65,85,0.4)' }} />
+
+          <div className="flex items-center gap-2.5">
             <div
-              className="w-6 h-6 rounded-md overflow-hidden shrink-0"
-              style={{ boxShadow: '0 0 10px rgba(6,182,212,0.4)' }}
+              className="w-7 h-7 rounded-lg overflow-hidden shrink-0 relative"
+              style={{ border: '1px solid rgba(6,182,212,0.2)' }}
             >
-              <img src="/logo.png" alt="SB" className="w-full h-full object-contain" />
+              <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.1), rgba(59,130,246,0.1))' }} />
+              <img src="/logo.png" alt="SB" className="w-full h-full object-contain relative z-10" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-semibold neon-text">{title}</span>
+              <span className="text-sm font-bold neon-text">{title}</span>
               {subtitle && (
-                <span className="text-[10px] text-slate-600 hidden sm:inline">{subtitle}</span>
+                <span className="text-[9px] text-slate-600 font-mono tracking-wide hidden md:inline uppercase">{subtitle}</span>
               )}
             </div>
           </div>
@@ -54,38 +68,36 @@ export default function GlobalHeader({ title, subtitle }: GlobalHeaderProps) {
         <div className="flex items-center gap-3">
           {connected ? (
             <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex items-center gap-1.5 text-xs text-emerald-400"
-              >
+              <div className="flex items-center gap-2 px-2.5 py-1 rounded-md"
+                style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.15)' }}>
                 <motion.span
                   className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"
                   animate={{ opacity: [1, 0.3, 1] }}
                   transition={{ duration: 1.5, repeat: Infinity }}
                 />
-                {environment}
+                <span className="text-[11px] font-medium text-emerald-400">{username || environment}</span>
                 {baseUrlHint && (
-                  <span className="text-slate-600 text-[10px] ml-1 hidden md:inline">
+                  <span className="text-[9px] text-slate-600 font-mono ml-1 hidden lg:inline">
                     {baseUrlHint}
                   </span>
                 )}
-              </motion.div>
+              </div>
               <button
                 onClick={disconnect}
-                className="text-xs text-red-500/60 hover:text-red-400 transition-colors"
+                className="text-[10px] text-red-500/50 hover:text-red-400 transition-colors font-medium"
               >
                 Disconnect
               </button>
             </>
           ) : (
-            <Link
-              href="/"
-              className="flex items-center gap-1.5 text-xs text-amber-500/80 hover:text-amber-400 transition-colors"
+            <button
+              onClick={() => setActiveTab('home')}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-amber-500/80 hover:text-amber-400 transition-colors"
+              style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.15)' }}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
-              Not connected — go to Home
-            </Link>
+              Not connected
+            </button>
           )}
         </div>
 

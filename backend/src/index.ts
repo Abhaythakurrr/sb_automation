@@ -10,6 +10,7 @@ import { executionRouter } from './routes/execution';
 import { agentControlRouter, restoreScheduledJobs } from './routes/agentControl';
 import { monitoringRouter, restoreMonitoring } from './routes/monitoring';
 import { jobDeletionRouter } from './routes/jobDeletion';
+import { jobDocRouter } from './routes/jobDoc';
 import { errorHandler } from './middleware/errorHandler';
 import { sessionMiddleware } from './middleware/session';
 import { requestLogger } from './middleware/requestLogger';
@@ -86,6 +87,7 @@ app.use('/api/execution',   sessionMiddleware, executionRouter);
 app.use('/api/agents',      sessionMiddleware, agentControlRouter);
 app.use('/api/monitoring',  sessionMiddleware, monitoringRouter);
 app.use('/api/deletion',    sessionMiddleware, jobDeletionRouter);
+app.use('/api/jobdoc',      sessionMiddleware, jobDocRouter);
 
 // Health check
 app.get('/health', (_req, res) => {

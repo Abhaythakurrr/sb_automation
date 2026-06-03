@@ -264,4 +264,137 @@ router.post('/stream', async (req: AuthRequest, res: Response): Promise<void> =>
   res.end();
 });
 
+// ── Preview endpoint — returns the exact payload that would be sent to UAC ────
+router.post('/preview', async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = BatchRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, error: 'Invalid request', details: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  const { rows, resolvedRefs } = parsed.data as { rows: ExcelRow[]; resolvedRefs: Record<string, any> };
+
+  const previews = rows.map(row => {
+    const refKey = row.ref_job ? row.ref_job.trim() : '';
+    const ref = refKey ? (resolvedRefs?.[refKey] ?? null) : null;
+    const maxRunTime = ref?.maxRunTime ?? null;
+
+    const taskPayload = buildTaskPayload(row, maxRunTime);
+    const triggerPayload = buildTriggerPayload(row, ref?.rawTrigger);
+
+    // Build human-readable summary
+    let schedSummary = '';
+    if (triggerPayload.dayStyle === 'Complex' && triggerPayload.dateNouns) {
+      const nouns = triggerPayload.dateNouns.map((n: any) => n.value).join(', ');
+      const quals = triggerPayload.dateQualifiers?.map((q: any) => q.value).join(', ') || '';
+      schedSummary = `${triggerPayload.dateAdjective || 'Every'} ${nouns} of ${quals}`;
+    } else if (triggerPayload.timeStyle === 'Interval') {
+      schedSummary = `Every ${triggerPayload.timeInterval} ${triggerPayload.timeIntervalUnits}`;
+      if (triggerPayload.enabledStart) schedSummary += ` from ${triggerPayload.enabledStart}`;
+      if (triggerPayload.enabledEnd) schedSummary += ` to ${triggerPayload.enabledEnd}`;
+    } else {
+      schedSummary = 'Daily';
+    }
+    // Add time
+    if (triggerPayload.time) schedSummary += ` at ${triggerPayload.time}`;
+    // Add days
+    const days = ['mon','tue','wed','thu','fri','sat','sun'].filter(d => triggerPayload[d]);
+    if (days.length > 0 && days.length < 7) {
+      const dayNames: Record<string, string> = { mon:'Mon', tue:'Tue', wed:'Wed', thu:'Thu', fri:'Fri', sat:'Sat', sun:'Sun' };
+      schedSummary += ` on ${days.map(d => dayNames[d]).join(', ')}`;
+    }
+    if (triggerPayload.timeZone) schedSummary += ` (${triggerPayload.timeZone})`;
+
+    return {
+      name: row.task_name,
+      task: taskPayload,
+      trigger: triggerPayload,
+      summary: schedSummary,
+    };
+  });
+
+  res.json({ success: true, data: { previews } });
+});
+
+  // ── Qualifying Times — fetch run cycle from UAC for created triggers ──────────
+router.get('/qualifying-times', async (req: AuthRequest, res: Response): Promise<void> => {
+  const triggerName = req.query.triggername as string;
+  const count = parseInt(req.query.count as string) || 30;
+
+  if (!triggerName) {
+    res.status(400).json({ success: false, error: 'triggername is required' });
+    return;
+  }
+
+  const token = req.token || '';
+  const baseUrl = req.sbBaseUrl || '';
+  if (!baseUrl) { res.status(400).json({ success: false, error: 'No base URL configured' }); return; }
+
+  const service = new StoneBranchService(token, baseUrl);
+
+  try {
+    const qualifyingTimes = await service.getQualifyingTimes(triggerName, count);
+    res.json({ success: true, data: { triggerName, count, qualifyingTimes } });
+  } catch (e: any) {
+    const msg = e.response?.data || e.message;
+    res.status(500).json({ success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) });
+  }
+});
+
+// ── Verify — fetch created task + trigger from UAC and validate fields ────────
+router.post('/verify', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { taskName } = req.body;
+  if (!taskName) { res.status(400).json({ success: false, error: 'taskName required' }); return; }
+
+  const token = req.token || '';
+  const baseUrl = req.sbBaseUrl || '';
+  if (!baseUrl) { res.status(400).json({ success: false, error: 'No base URL' }); return; }
+
+  const service = new StoneBranchService(token, baseUrl);
+  const triggerName = `${taskName}-TR001`;
+  const checks: { field: string; expected?: string; actual?: string; status: 'pass' | 'fail' | 'warn' }[] = [];
+
+  try {
+    // Fetch task
+    const task = await service.getTask(taskName);
+    checks.push({ field: 'Task Exists', actual: task.name, status: task.name ? 'pass' : 'fail' });
+    if (task.command) checks.push({ field: 'Command', actual: task.command.slice(0, 80), status: 'pass' });
+    if (task.agentCluster) checks.push({ field: 'Agent Cluster', actual: task.agentCluster, status: 'pass' });
+    else if (task.agent) checks.push({ field: 'Agent', actual: task.agent, status: 'pass' });
+    if (task.maxRunTime) checks.push({ field: 'Max Runtime', actual: `${task.maxRunTime} min`, status: 'pass' });
+
+    // Fetch trigger
+    let trigger: any = null;
+    try {
+      const trigRes = await service.client.get('/resources/trigger', { params: { triggername: triggerName } });
+      trigger = trigRes.data;
+      checks.push({ field: 'Trigger Exists', actual: trigger.name, status: 'pass' });
+      if (trigger.timeStyle) checks.push({ field: 'Time Style', actual: trigger.timeStyle, status: 'pass' });
+      if (trigger.time) checks.push({ field: 'Time', actual: trigger.time, status: 'pass' });
+      if (trigger.timeZone) checks.push({ field: 'Time Zone', actual: trigger.timeZone, status: 'pass' });
+      if (trigger.dayStyle) checks.push({ field: 'Day Style', actual: trigger.dayStyle, status: 'pass' });
+      if (trigger.dateNouns?.length) checks.push({ field: 'Date Nouns', actual: trigger.dateNouns.map((n: any) => n.value).join(', '), status: 'pass' });
+      checks.push({ field: 'Enabled', actual: String(trigger.enabled), status: trigger.enabled ? 'warn' : 'pass' });
+    } catch {
+      checks.push({ field: 'Trigger Exists', actual: 'Not found', status: 'fail' });
+    }
+
+    // Fetch qualifying times if trigger exists and is enabled
+    let qualifyingTimes: any[] = [];
+    if (trigger?.enabled) {
+      try {
+        qualifyingTimes = await service.getQualifyingTimes(triggerName, 10);
+      } catch { /* silent */ }
+    }
+
+    res.json({
+      success: true,
+      data: { taskName, triggerName, checks, task, trigger, qualifyingTimes },
+    });
+  } catch (e: any) {
+    checks.push({ field: 'Task Exists', actual: 'Fetch failed: ' + (e.message || ''), status: 'fail' });
+    res.json({ success: false, data: { taskName, triggerName, checks } });
+  }
+});
+
 export { router as executionRouter };

@@ -33,19 +33,25 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
       'Job Script':                  r.command,
       'Job Login Account':           r.credential,
       'Job Description':             r.description,
+      'ServiceNow Group':            r.servicenow_group,
       'Firstrun Date':               r.first_run_date,
       'Job Starttime':               r.schedule_string || r.start_time || r.frequency_type,
+      'Job Timezone':                r.timezone,
+      'Scheduled Frequency':         r.frequency_type,
       'Maximum Runtime':             r.max_runtime,
       'Reference Job':               r.ref_job,
       'Member of Business Services': r.business_services,
       'ServiceNow Ticket':           r.servicenow_ticket,
+      'Job Recovery1':               r.recovery1,
+      'Job Recovery2':               r.recovery2,
     }));
     const ws = XLSX.utils.json_to_sheet(uiRows);
     ws['!cols'] = [
       { wch: 40 }, { wch: 14 }, { wch: 35 }, { wch: 100 },
-      { wch: 18 }, { wch: 45 }, { wch: 8  }, { wch: 14  },
-      { wch: 55 }, { wch: 10 }, { wch: 35 }, { wch: 30  },
-      { wch: 18 }, { wch: 80 },
+      { wch: 18 }, { wch: 45 }, { wch: 30 }, { wch: 14 },
+      { wch: 20 }, { wch: 20 }, { wch: 55 }, { wch: 10 },
+      { wch: 35 }, { wch: 30 }, { wch: 18 }, { wch: 30 },
+      { wch: 40 },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Jobs');
@@ -66,18 +72,25 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
       'Job Script':                  '',
       'Job Login Account':           '',
       'Job Description':             '',
+      'ServiceNow Group':            '',
       'Firstrun Date':               '',
       'Job Starttime':               '',
+      'Job Timezone':                '',
+      'Scheduled Frequency':         '',
       'Maximum Runtime':             '',
       'Reference Job':               '',
       'Member of Business Services': '',
       'ServiceNow Ticket':           '',
+      'Job Recovery1':               '',
+      'Job Recovery2':               '',
     }];
     const ws = XLSX.utils.json_to_sheet(template);
     ws['!cols'] = [
       { wch: 40 }, { wch: 14 }, { wch: 35 }, { wch: 100 },
-      { wch: 18 }, { wch: 45 }, { wch: 14 }, { wch: 55 },
-      { wch: 10 }, { wch: 35 }, { wch: 30 }, { wch: 18 },
+      { wch: 18 }, { wch: 45 }, { wch: 30 }, { wch: 14 },
+      { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 10 },
+      { wch: 35 }, { wch: 30 }, { wch: 18 }, { wch: 30 },
+      { wch: 40 },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
@@ -87,7 +100,10 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
   const selectedConfig = TASK_TYPES.find(t => t.apiType === selectedType);
 
   return (
-    <div className="rounded-2xl border border-slate-700/60 bg-slate-900/50 backdrop-blur-md p-6">
+    <div className="relative rounded-xl overflow-hidden p-6"
+      style={{ background: 'linear-gradient(145deg, rgba(6,15,30,0.9), rgba(2,8,18,0.95))', border: '1px solid rgba(51,65,85,0.2)' }}>
+      {/* Top accent */}
+      <div className="absolute top-0 left-0 right-0 h-[1px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(139,92,246,0.4), transparent)' }} />
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">

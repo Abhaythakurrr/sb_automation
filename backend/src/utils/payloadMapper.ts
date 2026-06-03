@@ -3,7 +3,7 @@
  * Builds API-compliant task and trigger payloads from Excel rows.
  * Field names and values match exactly what UAC stores — verified against prod jobs.
  */
-import { parseScheduleString } from './scheduleParser';
+import { buildScheduleFields } from './triggerSchedule';
 
 // ── Allowed fields (OpenAPI schema) ──────────────────────────────────────────
 
@@ -93,6 +93,7 @@ export interface ExcelRow {
   ref_job?:           string;
   business_services?: string;
   servicenow_ticket?: string;
+  servicenow_group?:  string;   // ServiceNow Group / QUEUES
   schedule_string?:   string;
   job_doc?:           string;
   recovery1?:         string;   // Job Recovery1 — goes into customField1
@@ -217,17 +218,13 @@ export function buildTaskPayload(
     payload.runAsSudo = true;
   }
 
-  // ── customField1 = Recovery instructions (matches UAC convention) ─────────
-  // Real jobs store: "Re-run job;Raise Low priority ticket to support"
+  // ── customField1 = Agent Cluster Name (matches UAC convention) ─────────────
   if (isAgentTask && row.agent) {
     const resolvedAgent = agentResolved?.value || row.agent;
     payload[agentResolved?.field ?? 'agentCluster'] = resolvedAgent;
 
-    // Build recovery string from job doc fields if available
-    const rec1 = row.recovery1?.trim() || '';
-    const rec2 = row.recovery2?.trim() || '';
-    const recoveryValue = [rec1, rec2].filter(Boolean).join(';') || resolvedAgent;
-    payload.customField1 = { label: 'Instructions', value: recoveryValue };
+    // customField1 stores the agent cluster name — same as trigger
+    payload.customField1 = { label: 'Agent Cluster Name', value: resolvedAgent };
   }
 
   // ── Business Services ─────────────────────────────────────────────────────
@@ -250,6 +247,7 @@ export function buildTaskPayload(
     `Job Script = ${row.command || ''}`,
     `Job Workstation = ${row.agent || ''}`,
     `Job Login Account = ${row.credential || ''}`,
+    `ServiceNow Group = ${row.servicenow_group || ''}`,
     `Firstrun Date = ${row.first_run_date || ''}`,
     `Job Starttime = ${row.schedule_string || row.start_time || row.frequency_type || ''}`,
     `Maximum Runtime = ${row.max_runtime || ''}`,
@@ -273,8 +271,8 @@ export function buildTaskPayload(
   const STANDARD_COLS = new Set([
     'task_name','task_type','agent','command','credential','description','enabled',
     'first_run_date','start_time','timezone','frequency_type','frequency_value',
-    'max_runtime','ref_job','business_services','servicenow_ticket','schedule_string',
-    'job_doc','recovery1','recovery2',
+    'max_runtime','ref_job','business_services','servicenow_ticket','servicenow_group',
+    'schedule_string','job_doc','recovery1','recovery2',
   ]);
   Object.keys(row).forEach(k => {
     if (!STANDARD_COLS.has(k) && ALLOWED_TASK_FIELDS.has(k) && row[k] !== '' && row[k] !== undefined) {
@@ -326,87 +324,42 @@ export function buildTriggerPayload(
     });
   }
 
-  // Parse schedule — unified approach
-  // Job Starttime handles everything: "Daily at 03:30 Asia/Kolkata", "Monday every 7 minutes", etc.
-  const schedInput = row.schedule_string?.trim() || row.frequency_type?.trim() || '';
+  // ── Schedule: use the triggerSchedule module ────────────────────────────────
+  if (!rawRefTrigger) {
+    const schedFields = buildScheduleFields(
+      row.schedule_string?.trim() || '',
+      row.frequency_type?.trim() || '',
+      row.start_time?.trim() || '',
+      row.timezone?.trim() || '',
+    );
 
-  if (schedInput) {
-    // Old AT/EVERY/UNTIL format — backward compatible
-    if (schedInput.match(/^AT\s+\d{4}/i) || schedInput.startsWith('FREQ=')) {
-      const parsed = parseScheduleString(schedInput, row.start_time, row.timezone);
-      Object.assign(base, parsed);
-      delete base.human_readable;
-    } else {
-      // Natural language — parse inline
-      const lower = schedInput.toLowerCase();
+    // Apply schedule fields to trigger payload
+    if (schedFields.timeStyle)         base.timeStyle = schedFields.timeStyle;
+    if (schedFields.time)              base.time = schedFields.time;
+    if (schedFields.timeInterval)      base.timeInterval = schedFields.timeInterval;
+    if (schedFields.timeIntervalUnits) base.timeIntervalUnits = schedFields.timeIntervalUnits;
+    if (schedFields.timeZone)          base.timeZone = schedFields.timeZone;
+    if (schedFields.dayStyle)          base.dayStyle = schedFields.dayStyle;
+    if (schedFields.simpleDateType)    base.simpleDateType = schedFields.simpleDateType;
+    if (schedFields.dateAdjective)     base.dateAdjective = schedFields.dateAdjective;
+    if (schedFields.dateNouns)         base.dateNouns = schedFields.dateNouns;
+    if (schedFields.dateQualifiers)    base.dateQualifiers = schedFields.dateQualifiers;
+    if (schedFields.nthAmount)         base.nthAmount = schedFields.nthAmount;
+    if (schedFields.dayInterval)       base.dayInterval = schedFields.dayInterval;
+    if (schedFields.restrictedTimes)   base.restrictedTimes = schedFields.restrictedTimes;
+    if (schedFields.enabledStart)      base.enabledStart = schedFields.enabledStart;
+    if (schedFields.enabledEnd)        base.enabledEnd = schedFields.enabledEnd;
+    if (schedFields.businessDays)      base.businessDays = schedFields.businessDays;
+    if (schedFields.mon) base.mon = true;
+    if (schedFields.tue) base.tue = true;
+    if (schedFields.wed) base.wed = true;
+    if (schedFields.thu) base.thu = true;
+    if (schedFields.fri) base.fri = true;
+    if (schedFields.sat) base.sat = true;
+    if (schedFields.sun) base.sun = true;
 
-      // Extract time: "at HH:MM"
-      const timeMatch = schedInput.match(/(?:at\s+)?(\d{1,2}):(\d{2})/i);
-      if (timeMatch) base.time = timeMatch[1].padStart(2, '0') + ':' + timeMatch[2];
-
-      // Extract timezone
-      const tzMatch = schedInput.match(/((?:Asia|Europe|America|Pacific|Africa|Australia)\/[\w\/]+|UTC|GMT)/i);
-      if (tzMatch) base.timeZone = tzMatch[1];
-
-      // Extract interval: "every N minutes/hours"
-      const intMatch = lower.match(/every\s+(\d+)\s*(min|mins|minutes?|hr|hrs|hours?)/);
-      if (intMatch) {
-        base.timeStyle = 'Interval';
-        base.timeInterval = parseInt(intMatch[1]);
-        base.timeIntervalUnits = intMatch[2].startsWith('h') ? 'Hours' : 'Minutes';
-      }
-
-      // Extract window: "from HH:MM to HH:MM"
-      const windowMatch = schedInput.match(/from\s+(\d{1,2}:\d{2})\s+to\s+(\d{1,2}:\d{2})/i);
-      if (windowMatch) {
-        base.enabledStart = windowMatch[1];
-        base.enabledEnd = windowMatch[2];
-        base.restrictedTimes = true;
-      }
-
-      // Determine day pattern
-      const dayMap: Record<string, string> = { monday:'mon',tuesday:'tue',wednesday:'wed',thursday:'thu',friday:'fri',saturday:'sat',sunday:'sun' };
-      const foundDays: string[] = [];
-      Object.entries(dayMap).forEach(([full, short]) => { if (lower.includes(full)) foundDays.push(short); });
-
-      // Monthly patterns
-      const monthRange = lower.match(/monthly\s+day\s+(\d+)[\-to\s]+(\d+)/);
-      const monthOrd = lower.match(/monthly\s+(1st|2nd|3rd|4th|5th|last)\s+(\w+)/);
-
-      if (monthRange) {
-        const start = parseInt(monthRange[1]), end = parseInt(monthRange[2]);
-        base.dayStyle = 'Complex';
-        base.dateAdjective = 'Every';
-        base.dateNouns = [];
-        for (let d = start; d <= end; d++) base.dateNouns.push({ value: `Month Day ${String(d).padStart(2, '0')}` });
-        base.dateQualifiers = [{ value: 'Year' }];
-      } else if (monthOrd) {
-        const ordMap: Record<string, string> = { '1st':'1st','2nd':'2nd','3rd':'3rd','4th':'4th','5th':'5th','last':'Last' };
-        base.dayStyle = 'Complex';
-        base.dateAdjective = ordMap[monthOrd[1].toLowerCase()] || monthOrd[1];
-        base.dateNouns = [{ value: monthOrd[2].charAt(0).toUpperCase() + monthOrd[2].slice(1) }];
-        base.dateQualifiers = [{ value: 'Every Month' }];
-      } else if (lower.includes('weekday') || lower.includes('business day')) {
-        base.dayStyle = 'Simple';
-        base.simpleDateType = 'Weekly';
-        base.mon = true; base.tue = true; base.wed = true; base.thu = true; base.fri = true;
-      } else if (foundDays.length > 0) {
-        base.dayStyle = 'Simple';
-        base.simpleDateType = 'Weekly';
-        foundDays.forEach(d => { (base as any)[d] = true; });
-      } else {
-        base.dayStyle = 'Simple';
-        base.simpleDateType = 'Daily';
-      }
-
-      // Set timeStyle if not already set
-      if (!base.timeStyle && base.time) base.timeStyle = 'Absolute';
-    }
-  } else {
-    // No schedule input — use individual fields
-    if (row.start_time) base.time     = row.start_time;
-    if (row.timezone)   base.timeZone = row.timezone;
-    if (!rawRefTrigger) base.timeStyle = 'Absolute';
+    // Remove conflicting defaults
+    if (base.dayStyle === 'Complex') delete base.simpleDateType;
   }
 
   // ── First run date ────────────────────────────────────────────────────────
@@ -443,6 +396,7 @@ export function buildTriggerPayload(
     `Job Name = ${row.task_name}`,
     `Job Description = ${row.description || ''}`,
     `Job Workstation = ${row.agent || ''}`,
+    `ServiceNow Group = ${row.servicenow_group || ''}`,
     `Firstrun Date = ${row.first_run_date || ''}`,
     `Job Starttime = ${row.schedule_string || row.start_time || row.frequency_type || ''}`,
     `ServiceNow Ticket = ${row.servicenow_ticket || ''}`,
@@ -454,6 +408,25 @@ export function buildTriggerPayload(
   if (bsTrigger) {
     const sep = bsTrigger.includes(';') ? ';' : ',';
     base.opswiseGroups = bsTrigger.split(sep).map((s: string) => s.trim()).filter(Boolean);
+  }
+
+  // ── SAFETY: Ensure timeStyle=Absolute always has a time value ─────────────
+  // UAC rejects "Time is required field for timeStyle: Absolute" if time is missing
+  if (base.timeStyle === 'Absolute' && !base.time) {
+    // Last resort: try to extract from start_time field
+    const fallbackTime = row.start_time?.trim();
+    if (fallbackTime) {
+      if (/^\d{4}$/.test(fallbackTime)) {
+        base.time = fallbackTime.slice(0, 2) + ':' + fallbackTime.slice(2, 4);
+      } else {
+        base.time = fallbackTime;
+      }
+    } else {
+      // No time available at all — switch to Interval-less style to avoid API error
+      // This means the trigger will need manual time configuration in UAC
+      console.warn(`[TRIGGER] ${base.name}: timeStyle=Absolute but no time found — removing timeStyle`);
+      delete base.timeStyle;
+    }
   }
 
   return filterPayload(base, ALLOWED_TRIGGER_FIELDS, 'TRIGGER') as TriggerPayload;

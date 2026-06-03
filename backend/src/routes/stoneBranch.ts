@@ -17,7 +17,7 @@ const svc = (req: AuthRequest) =>
 // Token sent ONCE here — backend validates and returns a session ID only
 router.post('/connect', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { token, baseUrl } = req.body;
+    const { token, baseUrl, username } = req.body;
     if (!token || !baseUrl) {
       res.status(400).json({ success: false, error: 'token and baseUrl are required' });
       return;
@@ -48,7 +48,12 @@ router.post('/connect', async (req: AuthRequest, res: Response, next: NextFuncti
     });
     res.json({
       success: true,
-      data: { sessionId, message: 'Connected. Use X-Session-ID for all subsequent requests.', expiresIn: '8 hours' },
+      data: {
+        sessionId,
+        username: username?.trim() || 'Operator',
+        message: 'Connected. Use X-Session-ID for all subsequent requests.',
+        expiresIn: '8 hours',
+      },
       timestamp: new Date().toISOString(),
     });
   } catch (e) { next(e); }

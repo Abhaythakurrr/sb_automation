@@ -1,3 +1,3 @@
 'use client';
-import LandingPage from '@/components/LandingPage';
-export default function Home() { return <LandingPage />; }
+import WorkspaceLayout from '@/components/WorkspaceLayout';
+export default function Home() { return <WorkspaceLayout />; }

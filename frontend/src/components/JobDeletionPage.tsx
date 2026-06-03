@@ -3,271 +3,105 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
+import * as XLSX from 'xlsx';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
 type StepStatus = 'checking' | 'ok' | 'warn' | 'error';
+interface Step { label: string; status: StepStatus; detail?: string; ts: string; }
+interface InspectData { task: any; triggers: any[]; parents: any[]; activeInstances: any[]; hasActiveInstances: boolean; steps: Step[]; }
+type JobPhase = 'idle' | 'inspecting' | 'inspected' | 'prompt_force_finish' | 'force_finishing' | 'ready_to_delete' | 'deleting' | 'done';
+interface JobState { name: string; phase: JobPhase; inspect: InspectData | null; steps: Step[]; success: boolean | null; }
 
-interface Step {
-  label:  string;
-  status: StepStatus;
-  detail?: string;
-  ts:     string;
+function PhaseIcon({ phase, success }: { phase: JobPhase; success: boolean | null }) {
+  if (phase === 'done' && success) return <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background: 'rgba(34,197,94,0.15)' }}><svg className="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg></div>;
+  if (phase === 'done' && !success) return <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.15)' }}><svg className="w-3 h-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg></div>;
+  if (phase === 'prompt_force_finish') return <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background: 'rgba(251,146,60,0.15)' }}><svg className="w-3 h-3 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>;
+  if (['inspecting','force_finishing','deleting'].includes(phase)) return <motion.div className="w-5 h-5 rounded-full border-2 border-cyan-400/50 border-t-transparent" animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }}/>;
+  return <div className="w-5 h-5 rounded-full bg-slate-800 border border-slate-700"/>;
 }
 
-interface InspectData {
-  task:               any;
-  triggers:           any[];
-  parents:            any[];
-  activeInstances:    any[];
-  hasActiveInstances: boolean;
-  steps:              Step[];
-}
-
-type JobPhase =
-  | 'idle'
-  | 'inspecting'
-  | 'inspected'
-  | 'prompt_force_finish'   // has active instances — ask user
-  | 'force_finishing'
-  | 'ready_to_delete'
-  | 'deleting'
-  | 'done';
-
-interface JobState {
-  name:    string;
-  phase:   JobPhase;
-  inspect: InspectData | null;
-  steps:   Step[];
-  success: boolean | null;
-}
-
-// ── Step indicator ────────────────────────────────────────────────────────────
-function StepRow({ step, live }: { step: Step; live?: boolean }) {
-  const colors: Record<StepStatus, string> = {
-    checking: '#67e8f9',
-    ok:       '#4ade80',
-    warn:     '#fb923c',
-    error:    '#f87171',
-  };
-  const icons: Record<StepStatus, React.ReactNode> = {
-    checking: (
-      <motion.div className="w-3 h-3 rounded-full border-2 border-cyan-400 border-t-transparent"
-        animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }} />
-    ),
-    ok:    <svg className="w-3 h-3" fill="none" stroke="#4ade80" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>,
-    warn:  <svg className="w-3 h-3" fill="none" stroke="#fb923c" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
-    error: <svg className="w-3 h-3" fill="none" stroke="#f87171" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>,
-  };
-
-  return (
-    <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
-      className="flex items-start gap-2.5 py-1">
-      <div className="w-3 h-3 mt-0.5 shrink-0 flex items-center justify-center">
-        {icons[step.status]}
-      </div>
-      <div className="min-w-0">
-        <span className="text-xs font-mono" style={{ color: colors[step.status] }}>{step.label}</span>
-        {step.detail && (
-          <p className="text-[10px] text-slate-600 font-mono mt-0.5 truncate max-w-md">{step.detail}</p>
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
-// ── Job card ──────────────────────────────────────────────────────────────────
-function JobCard({
-  job,
-  onForceFinish,
-  onDelete,
-  onSkip,
-}: {
-  job: JobState;
-  onForceFinish: (name: string) => void;
-  onDelete:      (name: string) => void;
-  onSkip:        (name: string) => void;
-}) {
-  const phaseColor: Record<JobPhase, string> = {
-    idle:                 '#475569',
-    inspecting:           '#67e8f9',
-    inspected:            '#67e8f9',
-    prompt_force_finish:  '#fb923c',
-    force_finishing:      '#fb923c',
-    ready_to_delete:      '#4ade80',
-    deleting:             '#f87171',
-    done:                 job.success ? '#4ade80' : '#f87171',
-  };
-
-  const phaseLabel: Record<JobPhase, string> = {
-    idle:                 'Queued',
-    inspecting:           'Inspecting...',
-    inspected:            'Inspected',
-    prompt_force_finish:  'Action Required',
-    force_finishing:      'Force Finishing...',
-    ready_to_delete:      'Ready',
-    deleting:             'Deleting...',
-    done:                 job.success ? 'Deleted' : 'Failed',
-  };
-
+function JobCard({ job, onForceFinish, onSkip }: { job: JobState; onForceFinish: (n: string) => void; onSkip: (n: string) => void }) {
   const isActive = ['inspecting','force_finishing','deleting'].includes(job.phase);
-
   return (
-    <motion.div layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-      className="rounded-xl border overflow-hidden"
-      style={{
-        background: 'rgba(10,18,36,0.8)',
-        borderColor: job.phase === 'prompt_force_finish'
-          ? 'rgba(251,146,60,0.4)'
-          : job.phase === 'done' && job.success
-          ? 'rgba(34,197,94,0.25)'
-          : job.phase === 'done' && !job.success
-          ? 'rgba(248,113,113,0.25)'
-          : 'rgba(51,65,85,0.4)',
-      }}>
-
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'rgba(51,65,85,0.3)' }}>
-        <div className="flex items-center gap-2.5 min-w-0">
-          {isActive ? (
-            <motion.div className="w-2 h-2 rounded-full shrink-0"
-              style={{ background: phaseColor[job.phase] }}
-              animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }} />
-          ) : (
-            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: phaseColor[job.phase] }} />
-          )}
-          <span className="text-sm font-mono font-semibold text-slate-200 truncate">{job.name}</span>
-        </div>
-        <span className="text-[10px] font-semibold uppercase tracking-wider shrink-0 ml-3"
-          style={{ color: phaseColor[job.phase] }}>
-          {phaseLabel[job.phase]}
+    <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+      className="glass-card p-4">
+      <div className="flex items-center gap-3 mb-2">
+        <PhaseIcon phase={job.phase} success={job.success} />
+        <span className="text-sm font-mono font-bold text-slate-200 truncate flex-1">{job.name}</span>
+        <span className="text-[9px] font-mono font-bold uppercase tracking-wider"
+          style={{ color: job.phase === 'done' ? (job.success ? '#4ade80' : '#f87171') : job.phase === 'prompt_force_finish' ? '#fb923c' : '#67e8f9' }}>
+          {job.phase === 'done' ? (job.success ? 'DELETED' : 'FAILED') : job.phase.replace(/_/g,' ')}
         </span>
       </div>
 
-      {/* Steps feed */}
       {job.steps.length > 0 && (
-        <div className="px-4 py-3 space-y-0.5 max-h-48 overflow-auto">
-          {job.steps.map((s, i) => (
-            <StepRow key={i} step={s} live={i === job.steps.length - 1 && isActive} />
+        <div className="space-y-0.5 mb-3 ml-8">
+          {job.steps.slice(-5).map((s, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-[10px] font-mono">
+              <span style={{ color: s.status === 'ok' ? '#4ade80' : s.status === 'error' ? '#f87171' : s.status === 'warn' ? '#fbbf24' : '#67e8f9' }}>
+                {s.status === 'ok' ? '✓' : s.status === 'error' ? '✗' : s.status === 'warn' ? '!' : '›'}
+              </span>
+              <span className="text-slate-500">{s.label}</span>
+            </div>
           ))}
         </div>
       )}
 
-      {/* Inspect summary badges */}
-      {job.inspect && job.phase !== 'done' && (
-        <div className="px-4 pb-3 flex flex-wrap gap-2">
-          <span className="text-[10px] px-2 py-0.5 rounded font-medium"
-            style={{ background: 'rgba(6,182,212,0.1)', color: '#67e8f9', border: '1px solid rgba(6,182,212,0.2)' }}>
-            {job.inspect.triggers.length} trigger{job.inspect.triggers.length !== 1 ? 's' : ''}
-          </span>
-          {job.inspect.parents.length > 0 && (
-            <span className="text-[10px] px-2 py-0.5 rounded font-medium"
-              style={{ background: 'rgba(251,146,60,0.1)', color: '#fb923c', border: '1px solid rgba(251,146,60,0.2)' }}>
-              {job.inspect.parents.length} workflow parent{job.inspect.parents.length !== 1 ? 's' : ''}
-            </span>
-          )}
-          {job.inspect.activeInstances.length > 0 && (
-            <span className="text-[10px] px-2 py-0.5 rounded font-medium"
-              style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
-              {job.inspect.activeInstances.length} active instance{job.inspect.activeInstances.length !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Prompt — force finish required */}
       {job.phase === 'prompt_force_finish' && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-          className="px-4 pb-4 border-t" style={{ borderColor: 'rgba(251,146,60,0.2)' }}>
-          <div className="mt-3 rounded-lg p-3" style={{ background: 'rgba(251,146,60,0.07)', border: '1px solid rgba(251,146,60,0.2)' }}>
-            <p className="text-xs text-orange-300 font-medium mb-1">
-              {job.inspect?.activeInstances.length} active instance{(job.inspect?.activeInstances.length ?? 0) > 1 ? 's' : ''} detected
-            </p>
-            <p className="text-[10px] text-slate-500 mb-3">
-              Force finish all active instances before deletion can proceed?
-            </p>
-            <div className="flex gap-2">
-              <button onClick={() => onForceFinish(job.name)}
-                className="flex-1 rounded-lg py-2 text-xs font-semibold transition-all"
-                style={{ background: 'rgba(251,146,60,0.15)', border: '1px solid rgba(251,146,60,0.35)', color: '#fb923c' }}>
-                Force Finish &amp; Continue
-              </button>
-              <button onClick={() => onSkip(job.name)}
-                className="px-4 rounded-lg py-2 text-xs font-medium transition-all"
-                style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(51,65,85,0.4)', color: '#64748b' }}>
-                Skip
-              </button>
-            </div>
+          className="ml-8 rounded-lg p-3 mt-2" style={{ background: 'rgba(251,146,60,0.05)', border: '1px solid rgba(251,146,60,0.15)' }}>
+          <p className="text-[10px] text-orange-300 font-medium mb-2">
+            {job.inspect?.activeInstances.length} active instance(s) — force finish before deleting?
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => onForceFinish(job.name)} className="btn-danger px-3 py-1.5 rounded-md text-[10px]">
+              Force Finish
+            </button>
+            <button onClick={() => onSkip(job.name)} className="px-3 py-1.5 rounded-md text-[10px] text-slate-500 hover:text-slate-300"
+              style={{ border: '1px solid rgba(51,65,85,0.2)' }}>
+              Skip
+            </button>
           </div>
         </motion.div>
-      )}
-
-      {/* Ready to delete — auto proceeds, no action needed */}
-      {job.phase === 'ready_to_delete' && (
-        <div className="px-4 pb-3">
-          <div className="flex items-center gap-2 text-[10px] text-emerald-600">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            All checks passed — proceeding with deletion
-          </div>
-        </div>
       )}
     </motion.div>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function JobDeletionPage() {
   const { connected } = useConnectionStore();
-
-  const [input, setInput]     = useState('');
-  const [jobs, setJobs]       = useState<JobState[]>([]);
+  const [input, setInput] = useState('');
+  const [jobs, setJobs] = useState<JobState[]>([]);
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState<{ done: number; failed: number; total: number } | null>(null);
-
-  // Pending force-finish prompts — queue
-  const pendingRef = useRef<string[]>([]);
+  const [backupEnabled, setBackupEnabled] = useState(true);
+  const [backupData, setBackupData] = useState<any[]>([]);
+  const [backingUp, setBackingUp] = useState(false);
+  const [backupDone, setBackupDone] = useState(false);
 
   const updateJob = useCallback((name: string, patch: Partial<JobState>) => {
     setJobs(prev => prev.map(j => j.name === name ? { ...j, ...patch } : j));
   }, []);
-
   const addStep = useCallback((name: string, step: Step) => {
     setJobs(prev => prev.map(j => j.name === name ? { ...j, steps: [...j.steps, step] } : j));
   }, []);
 
   const loadJobs = () => {
     const names = input.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-    const unique = [...new Set(names)];
-    setJobs(unique.map(name => ({ name, phase: 'idle', inspect: null, steps: [], success: null })));
+    setJobs([...new Set(names)].map(name => ({ name, phase: 'idle', inspect: null, steps: [], success: null })));
     setSummary(null);
   };
 
-  // ── Process a single job end-to-end ──────────────────────────────────────
   const processJob = useCallback(async (name: string) => {
-    // 1. Inspect
     updateJob(name, { phase: 'inspecting', steps: [] });
-    let inspect: InspectData | null = null;
     try {
       const res = await globalApi.inspectJob(name);
-      inspect = res.data?.data as InspectData;
+      const inspect = res.data?.data as InspectData;
       updateJob(name, { inspect, steps: inspect.steps });
-
-      if (!inspect.task) {
-        updateJob(name, { phase: 'done', success: false });
-        return;
-      }
-
-      if (inspect.hasActiveInstances) {
-        updateJob(name, { phase: 'prompt_force_finish' });
-        // Wait for user response — handled by onForceFinish / onSkip
-        return;
-      }
-
-      // No active instances — go straight to delete
+      if (!inspect.task) { updateJob(name, { phase: 'done', success: false }); return; }
+      if (inspect.hasActiveInstances) { updateJob(name, { phase: 'prompt_force_finish' }); return; }
       await deleteJob(name);
     } catch (e: any) {
-      addStep(name, { label: `Inspect error: ${e.message}`, status: 'error', ts: new Date().toISOString() });
+      addStep(name, { label: `Error: ${e.message}`, status: 'error', ts: new Date().toISOString() });
       updateJob(name, { phase: 'done', success: false });
     }
   }, [updateJob, addStep]);
@@ -277,16 +111,11 @@ export default function JobDeletionPage() {
     try {
       const res = await globalApi.deleteJob(name);
       const d = res.data;
-      const newSteps: Step[] = d?.data?.steps ?? [];
-      setJobs(prev => prev.map(j => j.name === name
-        ? { ...j, phase: 'done', success: d.success, steps: [...j.steps, ...newSteps] }
-        : j
-      ));
+      setJobs(prev => prev.map(j => j.name === name ? { ...j, phase: 'done', success: d.success, steps: [...j.steps, ...(d?.data?.steps ?? [])] } : j));
     } catch (e: any) {
-      addStep(name, { label: `Deletion error: ${e.message}`, status: 'error', ts: new Date().toISOString() });
+      addStep(name, { label: `Delete error: ${e.message}`, status: 'error', ts: new Date().toISOString() });
       updateJob(name, { phase: 'done', success: false });
     }
-    // Small delay between jobs to avoid hammering UAC node
     await new Promise(r => setTimeout(r, 500));
   }, [updateJob, addStep]);
 
@@ -294,12 +123,7 @@ export default function JobDeletionPage() {
     updateJob(name, { phase: 'force_finishing' });
     try {
       const res = await globalApi.forceFinishJob(name);
-      const steps: Step[] = res.data?.data?.steps ?? [];
-      setJobs(prev => prev.map(j => j.name === name
-        ? { ...j, steps: [...j.steps, ...steps] }
-        : j
-      ));
-      addStep(name, { label: 'Force finish complete — proceeding with deletion', status: 'ok', ts: new Date().toISOString() });
+      setJobs(prev => prev.map(j => j.name === name ? { ...j, steps: [...j.steps, ...(res.data?.data?.steps ?? [])] } : j));
     } catch (e: any) {
       addStep(name, { label: `Force finish error: ${e.message}`, status: 'error', ts: new Date().toISOString() });
     }
@@ -307,138 +131,153 @@ export default function JobDeletionPage() {
   }, [updateJob, addStep, deleteJob]);
 
   const handleSkip = useCallback((name: string) => {
-    addStep(name, { label: 'Skipped by user — active instances remain', status: 'warn', ts: new Date().toISOString() });
+    addStep(name, { label: 'Skipped by user', status: 'warn', ts: new Date().toISOString() });
     updateJob(name, { phase: 'done', success: false });
   }, [updateJob, addStep]);
 
-  // ── Run all jobs sequentially ─────────────────────────────────────────────
   const jobsRef = useRef(jobs);
   useEffect(() => { jobsRef.current = jobs; }, [jobs]);
 
   const handleRun = async () => {
     if (!jobs.length || !connected) return;
-    setRunning(true);
-    setSummary(null);
+    setRunning(true); setSummary(null);
 
+    // Backup step: fetch all job data before deleting
+    if (backupEnabled) {
+      setBackingUp(true);
+      try {
+        const names = jobs.map(j => j.name);
+        const res = await globalApi.backupJobs(names);
+        const backups = res.data?.data?.backups || [];
+        setBackupData(backups);
+        setBackupDone(true);
+
+        // Auto-download backup Excel
+        const rows = backups.map((b: any) => ({
+          'Task Name': b.taskName,
+          'Type': b.task?.type || '',
+          'Command': b.task?.command || '',
+          'Agent': b.task?.agentCluster || b.task?.agent || '',
+          'Credential': b.task?.credentials || '',
+          'Triggers': b.triggers?.map((t: any) => t.name).join(', ') || '',
+          'Time': b.triggers?.[0]?.time || '',
+          'TimeZone': b.triggers?.[0]?.timeZone || '',
+          'DayStyle': b.triggers?.[0]?.dayStyle || '',
+          'Status': b.error ? 'FETCH ERROR' : 'BACKED UP',
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Backup');
+        // Also store raw JSON for recovery
+        const rawSheet = XLSX.utils.json_to_sheet(backups.map((b: any) => ({ json: JSON.stringify(b) })));
+        XLSX.utils.book_append_sheet(wb, rawSheet, 'Recovery_Data');
+        XLSX.writeFile(wb, `backup_${new Date().toISOString().slice(0, 10)}_${names.length}jobs.xlsx`);
+      } catch (e: any) {
+        // Backup failed — still proceed with deletion
+        console.warn('Backup failed:', e.message);
+      }
+      setBackingUp(false);
+    }
+
+    // Proceed with deletion
     for (let i = 0; i < jobs.length; i++) {
       const jobName = jobs[i].name;
-      const currentPhase = jobsRef.current[i]?.phase;
-      if (currentPhase !== 'idle') continue;
-
+      if (jobsRef.current[i]?.phase !== 'idle') continue;
       await processJob(jobName);
-
-      // Wait until this job reaches a terminal state or needs user input
       await new Promise<void>(resolve => {
         const poll = setInterval(() => {
           const j = jobsRef.current.find(x => x.name === jobName);
-          if (!j) { clearInterval(poll); resolve(); return; }
-          if (j.phase === 'done' || j.phase === 'prompt_force_finish') {
-            clearInterval(poll);
-            resolve();
-          }
+          if (!j || j.phase === 'done' || j.phase === 'prompt_force_finish') { clearInterval(poll); resolve(); }
         }, 200);
-        // Safety timeout — don't hang forever
         setTimeout(() => { clearInterval(poll); resolve(); }, 120000);
       });
-
-      // If job needs force finish prompt, wait for user to respond
-      const afterInspect = jobsRef.current.find(x => x.name === jobName);
-      if (afterInspect?.phase === 'prompt_force_finish') {
-        // Wait until user responds (force finish or skip)
+      if (jobsRef.current.find(x => x.name === jobName)?.phase === 'prompt_force_finish') {
         await new Promise<void>(resolve => {
-          const poll = setInterval(() => {
-            const j = jobsRef.current.find(x => x.name === jobName);
-            if (!j || j.phase === 'done') { clearInterval(poll); resolve(); }
-          }, 300);
+          const poll = setInterval(() => { if (jobsRef.current.find(x => x.name === jobName)?.phase === 'done') { clearInterval(poll); resolve(); } }, 300);
           setTimeout(() => { clearInterval(poll); resolve(); }, 300000);
         });
       }
     }
-
     setRunning(false);
     const final = jobsRef.current;
-    const done   = final.filter(j => j.phase === 'done' && j.success).length;
-    const failed = final.filter(j => j.phase === 'done' && !j.success).length;
-    setSummary({ done, failed, total: final.length });
+    setSummary({ done: final.filter(j => j.success).length, failed: final.filter(j => j.phase === 'done' && !j.success).length, total: final.length });
   };
 
-  const allDone    = jobs.length > 0 && jobs.every(j => j.phase === 'done');
-  const anyPrompt  = jobs.some(j => j.phase === 'prompt_force_finish');
-  const canRun     = connected && jobs.length > 0 && !running && jobs.some(j => j.phase === 'idle');
+  const canRun = connected && jobs.length > 0 && !running && jobs.some(j => j.phase === 'idle');
 
   return (
-    <div className="min-h-screen grid-bg scan-line" style={{ background: '#020812' }}>
-      <GlobalHeader title="Job Deletion" subtitle="Safe trigger + task removal" />
+    <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>
+      <GlobalHeader title="Job Deletion" subtitle="SAFE TRIGGER + TASK REMOVAL" />
 
-      <main className="pt-20 max-w-4xl mx-auto px-6 pb-24 space-y-5">
+      <main className="max-w-4xl mx-auto px-6 pb-24 space-y-6">
 
         {/* Input */}
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border p-5 space-y-4"
-          style={{ background: 'rgba(15,23,42,0.5)', borderColor: 'rgba(51,65,85,0.5)' }}>
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold tracking-widest uppercase text-slate-500">Jobs to Delete</h2>
-            <span className="text-[10px] text-slate-700">One per line or comma separated</span>
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.15)' }}>
+                <svg className="w-3.5 h-3.5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </div>
+              <h2 className="text-sm font-bold text-slate-200">Jobs to Delete</h2>
+            </div>
+            <span className="text-[9px] font-mono text-slate-600">ONE PER LINE OR COMMA SEPARATED</span>
           </div>
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            disabled={running}
-            placeholder={'Automation_Test_Job_001\nAutomation_Test_Job_002\nAutomation_Test_Job_003'}
-            className="w-full h-28 px-4 py-3 rounded-xl text-sm text-slate-200 font-mono placeholder:text-slate-700 outline-none resize-none transition-all"
-            style={{ background: 'rgba(2,8,18,0.8)', border: '1px solid rgba(51,65,85,0.5)' }}
-          />
-          <div className="flex items-center gap-3">
-            <button onClick={loadJobs} disabled={!input.trim() || running}
-              className="px-5 py-2.5 rounded-lg text-sm font-semibold transition-all"
-              style={{
-                background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)',
-                color: '#67e8f9', opacity: (!input.trim() || running) ? 0.4 : 1,
-              }}>
-              Load
-            </button>
 
+          <textarea value={input} onChange={e => setInput(e.target.value)} disabled={running}
+            placeholder={'PMFG-BU-AS1-MFG-I10-TESTJOB1\nPMFG-BU-AS1-MFG-I10-TESTJOB2'}
+            className="w-full h-28 px-4 py-3 rounded-lg text-sm text-slate-200 font-mono placeholder:text-slate-700 outline-none resize-none transition-all focus:ring-1 focus:ring-cyan-500/30"
+            style={{ background: 'rgba(2,8,18,0.8)', border: '1px solid rgba(51,65,85,0.2)' }}
+          />
+
+          <div className="flex items-center gap-3 mt-4">
+            <button onClick={loadJobs} disabled={!input.trim() || running}
+              className="btn-primary px-5 py-2.5 rounded-lg text-xs disabled:opacity-40">
+              Load Jobs
+            </button>
             {jobs.length > 0 && (
-              <button onClick={handleRun} disabled={!canRun}
-                className="px-6 py-2.5 rounded-lg text-sm font-bold transition-all"
-                style={{
-                  background: canRun ? 'rgba(239,68,68,0.15)' : 'rgba(15,23,42,0.6)',
-                  border: canRun ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgba(51,65,85,0.4)',
-                  color: canRun ? '#f87171' : '#475569',
-                  boxShadow: canRun ? '0 0 20px rgba(239,68,68,0.1)' : 'none',
-                  cursor: !canRun ? 'not-allowed' : 'pointer',
-                }}>
+              <motion.button onClick={handleRun} disabled={!canRun}
+                whileHover={canRun ? { scale: 1.02 } : {}} whileTap={canRun ? { scale: 0.98 } : {}}
+                className="btn-danger px-6 py-2.5 rounded-lg text-xs flex items-center gap-2 disabled:opacity-40">
                 {running ? (
-                  <span className="flex items-center gap-2">
-                    <motion.span className="w-3.5 h-3.5 rounded-full border-2 border-red-400 border-t-transparent inline-block"
-                      animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }} />
-                    Running...
-                  </span>
+                  <><motion.div className="w-3 h-3 rounded-full border-2 border-red-400 border-t-transparent" animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }}/>Running...</>
                 ) : (
-                  <span className="flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    Delete {jobs.filter(j => j.phase === 'idle').length} Job{jobs.filter(j => j.phase === 'idle').length !== 1 ? 's' : ''}
-                  </span>
+                  <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>Delete {jobs.filter(j => j.phase === 'idle').length} Jobs</>
                 )}
+              </motion.button>
+            )}
+            {jobs.length > 0 && <span className="text-[10px] text-slate-600 font-mono">{jobs.length} loaded</span>}
+
+            {/* Backup Toggle */}
+            {jobs.length > 0 && (
+              <button onClick={() => setBackupEnabled(!backupEnabled)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ml-auto"
+                style={{
+                  background: backupEnabled ? 'rgba(139,92,246,0.1)' : 'transparent',
+                  border: backupEnabled ? '1px solid rgba(139,92,246,0.25)' : '1px solid rgba(51,65,85,0.2)',
+                  color: backupEnabled ? '#c4b5fd' : '#475569',
+                }}>
+                <div className="w-2.5 h-2.5 rounded-sm" style={{ background: backupEnabled ? '#8b5cf6' : 'rgba(51,65,85,0.3)' }} />
+                Backup Before Delete
               </button>
             )}
-
-            {jobs.length > 0 && (
-              <span className="text-xs text-slate-600">
-                {jobs.length} job{jobs.length !== 1 ? 's' : ''} loaded
-              </span>
-            )}
-
-            {anyPrompt && !running && (
-              <span className="text-xs text-orange-400 font-medium flex items-center gap-1.5">
-                <motion.span className="w-1.5 h-1.5 rounded-full bg-orange-400 inline-block"
-                  animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }} />
-                Action required
-              </span>
-            )}
           </div>
+
+          {/* Backup status */}
+          {backingUp && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 mt-3 px-1">
+              <motion.div className="w-3 h-3 rounded-full border-2 border-purple-400 border-t-transparent"
+                animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }} />
+              <span className="text-[10px] text-purple-300 font-mono">Fetching backup data from UAC...</span>
+            </motion.div>
+          )}
+          {backupDone && !backingUp && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 mt-3 px-1">
+              <svg className="w-3 h-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg>
+              <span className="text-[10px] text-purple-300 font-mono">Backup downloaded — {backupData.length} jobs saved</span>
+            </motion.div>
+          )}
         </motion.div>
 
         {/* Summary */}
@@ -447,38 +286,63 @@ export default function JobDeletionPage() {
             <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
               className="grid grid-cols-3 gap-3">
               {[
-                { label: 'Deleted',  val: summary.done,   color: '#4ade80' },
-                { label: 'Failed',   val: summary.failed, color: '#f87171' },
-                { label: 'Total',    val: summary.total,  color: '#94a3b8' },
+                { label: 'Deleted', val: summary.done, color: '#4ade80' },
+                { label: 'Failed', val: summary.failed, color: '#f87171' },
+                { label: 'Total', val: summary.total, color: '#94a3b8' },
               ].map(s => (
-                <div key={s.label} className="rounded-xl p-4 text-center"
-                  style={{ background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(51,65,85,0.4)' }}>
-                  <div className="text-3xl font-bold" style={{ color: s.color }}>{s.val}</div>
-                  <div className="text-[10px] text-slate-600 uppercase tracking-wider mt-1">{s.label}</div>
+                <div key={s.label} className="stat-card">
+                  <div className="text-2xl font-black tabular-nums" style={{ color: s.color }}>{s.val}</div>
+                  <div className="text-[8px] text-slate-600 uppercase tracking-widest mt-1 font-bold">{s.label}</div>
                 </div>
               ))}
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Job cards — real-time execution feed */}
+        {/* Job Cards */}
         <div className="space-y-3">
           <AnimatePresence>
             {jobs.map(job => (
-              <JobCard
-                key={job.name}
-                job={job}
-                onForceFinish={handleForceFinish}
-                onDelete={deleteJob}
-                onSkip={handleSkip}
-              />
+              <JobCard key={job.name} job={job} onForceFinish={handleForceFinish} onSkip={handleSkip} />
             ))}
           </AnimatePresence>
         </div>
 
-        <footer className="border-t py-6 text-center" style={{ borderColor: 'rgba(6,182,212,0.06)' }}>
-          <p className="text-xs text-slate-700">Built by <span className="text-slate-500 font-medium">Abhay Thakur</span></p>
-        </footer>
+        {/* Recovery Section */}
+        {summary && summary.done > 0 && backupData.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.15)' }}>
+                <svg className="w-3 h-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+              </div>
+              <h3 className="text-xs font-bold text-slate-300">Recovery Available</h3>
+              <span className="text-[9px] font-mono text-slate-600 ml-auto">{backupData.filter((b: any) => b.task).length} recoverable</span>
+            </div>
+            <p className="text-[10px] text-slate-500 mb-3">
+              Backup was saved before deletion. Click to recover individual jobs or download the full backup.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {backupData.filter((b: any) => b.task).slice(0, 10).map((b: any) => (
+                <button key={b.taskName}
+                  onClick={async () => {
+                    try {
+                      await globalApi.recoverJob(b.task, b.triggers);
+                      setBackupData(prev => prev.filter(x => x.taskName !== b.taskName));
+                    } catch {}
+                  }}
+                  className="px-2.5 py-1 rounded-md text-[9px] font-mono font-bold transition-all hover:scale-105"
+                  style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)', color: '#c4b5fd' }}>
+                  Recover: {b.taskName}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        <footer className="section-line mt-10" />
+        <p className="text-center text-[9px] font-mono text-slate-800 py-4">DESIGNED AND ENGINEERED BY ABHAY THAKUR</p>
       </main>
     </div>
   );

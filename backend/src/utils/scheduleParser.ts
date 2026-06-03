@@ -323,7 +323,7 @@ export function parseFrequencyString(freq: string): FrequencyFields | null {
     // Parse the days part
     const result: FrequencyFields = {
       dayStyle:          'Simple',
-      simpleDateType:    'Weekly',
+      simpleDateType:    'Daily',
       timeStyle:         'Interval',
       timeInterval:      amount,
       timeIntervalUnits: units,
@@ -370,7 +370,7 @@ export function parseFrequencyString(freq: string): FrequencyFields | null {
   if (lower === 'business days' || lower === 'businessdays' || lower === 'weekdays' || lower === 'mon-fri') {
     return {
       dayStyle:       'Simple',
-      simpleDateType: 'Weekly',
+      simpleDateType: 'Daily',
       mon: true, tue: true, wed: true, thu: true, fri: true,
     };
   }
@@ -378,7 +378,7 @@ export function parseFrequencyString(freq: string): FrequencyFields | null {
   // ── Weekly specific days: "Mon,Wed,Fri" or "Mon, Wed, Fri" ────────────────
   const dayList = f.split(/[,\s]+/).map(d => DAY_MAP[d.toLowerCase()]).filter(Boolean);
   if (dayList.length >= 2 && dayList.length <= 7) {
-    const result: FrequencyFields = { dayStyle: 'Simple', simpleDateType: 'Weekly' };
+    const result: FrequencyFields = { dayStyle: 'Simple', simpleDateType: 'Daily' };
     dayList.forEach(d => { (result as any)[d] = true; });
     applyTime(result);
     return result;
@@ -437,7 +437,7 @@ export function parseFrequencyString(freq: string): FrequencyFields | null {
 
   // ── Weekly ────────────────────────────────────────────────────────────────
   if (lower === 'weekly') {
-    return { dayStyle: 'Simple', simpleDateType: 'Weekly' };
+    return { dayStyle: 'Simple', simpleDateType: 'Daily' };
   }
 
   // ── Daily (default) ───────────────────────────────────────────────────────

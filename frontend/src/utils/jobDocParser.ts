@@ -21,6 +21,7 @@ export interface JobRow {
   ref_job:           string;
   business_services: string;
   servicenow_ticket: string;
+  servicenow_group:  string;   // ServiceNow Group / QUEUES
   schedule_string:   string;
   job_doc:           string;
   recovery1:         string;   // Job Recovery1 → customField1
@@ -33,7 +34,8 @@ export const EMPTY_ROW: JobRow = {
   first_run_date: '', start_time: '', timezone: '',
   frequency_type: '', frequency_value: '', max_runtime: '',
   ref_job: '', business_services: '', servicenow_ticket: '',
-  schedule_string: '', job_doc: '', recovery1: '', recovery2: '',
+  servicenow_group: '', schedule_string: '', job_doc: '',
+  recovery1: '', recovery2: '',
 };
 
 function extract(text: string, ...keys: string[]): string {
@@ -47,6 +49,16 @@ function extract(text: string, ...keys: string[]): string {
 
 function parseMaxRuntime(val: string): string {
   if (!val) return '';
+  const trimmed = val.trim().toLowerCase();
+
+  // "3hrs" / "3 hrs" / "3hours" / "2hr" → hours to minutes
+  const hrsMatch = trimmed.match(/^(\d+)\s*(?:hrs?|hours?)$/);
+  if (hrsMatch) return String(parseInt(hrsMatch[1]) * 60);
+
+  // "30min" / "45 mins" / "90minutes"
+  const minMatch = trimmed.match(/^(\d+)\s*(?:mins?|minutes?)$/);
+  if (minMatch) return String(parseInt(minMatch[1]));
+
   // "0100" → 60 min, "0015" → 15 min, "0030" → 30 min
   const clean = val.trim().replace(/[^\d]/g, '');
   if (clean.length === 4) {
@@ -84,6 +96,16 @@ function parseStartTime(schedStr: string): { start_time: string; timezone: strin
     return {
       start_time:      `${h}:${m}`,
       timezone:        tzMatch?.[1] ?? '',
+      schedule_string: '',
+    };
+  }
+
+  // Bare "HHMM" or "HH:MM" — just a time value without AT prefix
+  const bareTime = schedStr.trim().match(/^(\d{2}):?(\d{2})$/);
+  if (bareTime) {
+    return {
+      start_time:      `${bareTime[1]}:${bareTime[2]}`,
+      timezone:        '',
       schedule_string: '',
     };
   }
@@ -144,7 +166,9 @@ export function parseJobDoc(text: string): JobRow {
   row.schedule_string = schedule_string;
 
   // Timezone (explicit field overrides parsed)
-  const explicitTz = extract(text, 'Job Timezone', 'Timezone', 'Time Zone');
+  // Strip "TIMEZONE " prefix if present (client writes "TIMEZONE America/New_York")
+  let explicitTz = extract(text, 'Job Timezone', 'Timezone', 'Time Zone');
+  explicitTz = explicitTz.replace(/^TIMEZONE\s+/i, '').trim();
   row.timezone = explicitTz || timezone;
 
   // Frequency — extract from job doc and understand natural language
@@ -178,6 +202,9 @@ export function parseJobDoc(text: string): JobRow {
   const explicitTicket = extract(text, 'ServiceNow Ticket', 'ServiceNow Ticket Number', 'RITM', 'Ticket', 'Snow Ticket');
   const autoTicket     = text.match(/\b(RITM\d+|INC\d+|CHG\d+|REQ\d+)\b/i)?.[1] ?? '';
   row.servicenow_ticket = explicitTicket || autoTicket;
+
+  // ServiceNow Group (QUEUES)
+  row.servicenow_group = extract(text, 'ServiceNow Group', 'Snow Group', 'Queues', 'Queue');
 
   // Business Services
   row.business_services = extract(text, 'Business Services', 'Business Service', 'Member of Business Services', 'Business Unit Group');

@@ -1,3 +1,14 @@
 'use client';
-import AgentControlPage from '@/components/AgentControlPage';
-export default function Page() { return <AgentControlPage />; }
+import { useEffect } from 'react';
+import { useWorkspaceStore } from '@/store/useWorkspaceStore';
+import WorkspaceLayout from '@/components/WorkspaceLayout';
+
+export default function Page() {
+  const { openTab } = useWorkspaceStore();
+
+  useEffect(() => {
+    openTab('agent-control', 'Agent Control');
+  }, [openTab]);
+
+  return <WorkspaceLayout />;
+}

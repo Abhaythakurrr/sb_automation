@@ -15,7 +15,11 @@ export interface JobRow {
   ref_job:            string;
   business_services?: string;
   servicenow_ticket?: string;
+  servicenow_group?:  string;
   schedule_string?:   string;
+  job_doc?:           string;
+  recovery1?:         string;
+  recovery2?:         string;
   [key: string]: any;
 }
 

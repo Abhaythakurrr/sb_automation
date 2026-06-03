@@ -627,23 +627,20 @@ export default function AgentControlPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div
-      className="min-h-screen grid-bg scan-line"
-      style={{ background: '#020812' }}
-    >
-      <GlobalHeader title="Agent Control" subtitle="Suspend, resume and schedule agents" />
+    <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>
+      <GlobalHeader title="Agent Control" subtitle="SUSPEND / RESUME / SCHEDULE" />
 
-      <main className="pt-14 max-w-7xl mx-auto px-6 pb-24">
+      <main className="max-w-7xl mx-auto px-6 pb-24">
 
         {/* ── Refresh / Status bar ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="mt-8 flex items-center justify-between rounded-2xl border px-5 py-3"
+          className="mt-8 flex items-center justify-between rounded-xl px-5 py-3"
           style={{
-            background: 'rgba(15,23,42,0.5)',
-            borderColor: connected ? 'rgba(34,197,94,0.25)' : 'rgba(51,65,85,0.5)',
+            background: 'linear-gradient(145deg, rgba(6,15,30,0.9), rgba(2,8,18,0.95))',
+            border: connected ? '1px solid rgba(34,197,94,0.15)' : '1px solid rgba(51,65,85,0.2)',
           }}
         >
           <div className="flex items-center gap-2">
@@ -687,10 +684,10 @@ export default function AgentControlPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.5 }}
-              className="mt-6 rounded-2xl border p-6 flex flex-col items-center"
+              className="mt-6 rounded-xl border p-6 flex flex-col items-center"
               style={{
-                background: 'rgba(15,23,42,0.5)',
-                borderColor: 'rgba(51,65,85,0.5)',
+                background: 'linear-gradient(145deg, rgba(6,15,30,0.9), rgba(2,8,18,0.95))',
+                borderColor: 'rgba(51,65,85,0.2)',
               }}
             >
               <h2 className="text-xs font-semibold tracking-widest uppercase text-slate-500 mb-5 self-start">
@@ -810,10 +807,10 @@ export default function AgentControlPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="mt-6 rounded-2xl border p-6"
+          className="mt-6 rounded-xl border p-6"
           style={{
-            background: 'rgba(15,23,42,0.5)',
-            borderColor: 'rgba(51,65,85,0.5)',
+            background: 'linear-gradient(145deg, rgba(6,15,30,0.9), rgba(2,8,18,0.95))',
+            borderColor: 'rgba(51,65,85,0.2)',
           }}
         >
           <h2 className="text-xs font-semibold tracking-widest uppercase text-slate-500 mb-5">
@@ -1067,10 +1064,10 @@ export default function AgentControlPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="mt-6 rounded-2xl border p-6"
+              className="mt-6 rounded-xl border p-6"
               style={{
-                background: 'rgba(15,23,42,0.5)',
-                borderColor: 'rgba(51,65,85,0.5)',
+                background: 'linear-gradient(145deg, rgba(6,15,30,0.9), rgba(2,8,18,0.95))',
+                borderColor: 'rgba(51,65,85,0.2)',
               }}
             >
               <div className="flex items-center justify-between mb-4">
@@ -1103,10 +1100,11 @@ export default function AgentControlPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
-          className="mt-6 rounded-2xl border overflow-hidden"
+          className="mt-6 rounded-xl overflow-hidden"
           style={{
             background: 'rgba(2,8,18,0.9)',
-            borderColor: 'rgba(6,182,212,0.12)',
+            borderColor: 'rgba(6,182,212,0.08)',
+            border: '1px solid rgba(6,182,212,0.08)',
           }}
         >
           {/* Terminal header */}
@@ -1146,11 +1144,10 @@ export default function AgentControlPage() {
         {/* ── Watermark ── */}
         <footer
           className="mt-10 border-t py-6 text-center"
-          style={{ borderColor: 'rgba(6,182,212,0.06)' }}
+          style={{ borderColor: 'rgba(6,182,212,0.05)' }}
         >
-          <p className="text-xs text-slate-700">
-            Built by{' '}
-            <span className="text-slate-500 font-medium">Abhay Thakur</span>
+          <p className="text-[10px] text-slate-700 font-mono">
+            DESIGNED AND ENGINEERED BY <span className="text-slate-500">ABHAY THAKUR</span>
           </p>
         </footer>
 

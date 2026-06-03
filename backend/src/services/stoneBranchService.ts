@@ -12,7 +12,7 @@ export interface ResolvedRefJob {
 }
 
 export class StoneBranchService {
-  private client: AxiosInstance;
+  public client: AxiosInstance;
 
   constructor(
     token: string,
@@ -159,5 +159,13 @@ export class StoneBranchService {
       if (e.response?.status === 401 || e.response?.status === 403) return false;
       return true;
     }
+  }
+
+  // ── Qualifying Times — fetch next run dates for a trigger ──────────────────
+  async getQualifyingTimes(triggerName: string, count = 30): Promise<any[]> {
+    const res = await this.client.get('/resources/trigger/qualifyingtimes', {
+      params: { triggername: triggerName, count },
+    });
+    return res.data?.qualifyingTimes ?? [];
   }
 }
