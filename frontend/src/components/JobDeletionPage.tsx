@@ -19,6 +19,17 @@ function PhaseIcon({ phase, success }: { phase: JobPhase; success: boolean | nul
   return <div className="w-5 h-5 rounded-full bg-slate-800 border border-slate-700"/>;
 }
 
+const PHASE_DESCRIPTION: Record<JobPhase, string> = {
+  idle:                'Queued',
+  inspecting:          'Checking task & dependencies...',
+  inspected:           'Inspection complete',
+  prompt_force_finish: 'Active instances detected — action required',
+  force_finishing:     'Force finishing active instances...',
+  ready_to_delete:     'Ready for deletion',
+  deleting:            'Removing triggers & task...',
+  done:                '',
+};
+
 function JobCard({ job, onForceFinish, onSkip }: { job: JobState; onForceFinish: (n: string) => void; onSkip: (n: string) => void }) {
   const isActive = ['inspecting','force_finishing','deleting'].includes(job.phase);
   return (

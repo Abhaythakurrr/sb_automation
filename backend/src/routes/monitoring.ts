@@ -93,10 +93,8 @@ router.post('/start', async (req: AuthRequest, res: Response, next: NextFunction
     // Webhook URL: env var is the default; request body can override for flexibility
     const resolvedWebhookUrl = teamsWebhookUrl || process.env.TEAMS_WEBHOOK_URL || '';
 
-    if (!resolvedWebhookUrl) {
-      res.status(400).json({ error: 'Teams webhook URL not configured. Set TEAMS_WEBHOOK_URL env var.' });
-      return;
-    }
+    // Webhook is OPTIONAL — monitoring works without it (alerts logged but not sent to Teams)
+    // If not configured, alerts are stored in alert_history.json only
 
     const config: MonitorConfig = {
       sbBaseUrl:       req.sbBaseUrl || process.env.BASE_URL || '',

@@ -79,6 +79,7 @@ function buildServiceNowLinks(incidentNumbers: string[]): string[] {
 }
 
 async function sendTeamsCard(webhookUrl: string, card: object): Promise<void> {
+  if (!webhookUrl) return; // No webhook configured — skip silently
   await axios.post(webhookUrl, card, {
     headers: { 'Content-Type': 'application/json' },
     timeout: 10000,

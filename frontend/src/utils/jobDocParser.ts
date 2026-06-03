@@ -21,11 +21,17 @@ export interface JobRow {
   ref_job:           string;
   business_services: string;
   servicenow_ticket: string;
-  servicenow_group:  string;   // ServiceNow Group / QUEUES
+  servicenow_group:  string;
   schedule_string:   string;
   job_doc:           string;
-  recovery1:         string;   // Job Recovery1 → customField1
-  recovery2:         string;   // Job Recovery2 → customField1
+  recovery1:         string;
+  recovery2:         string;
+  // Extended metadata from full job doc format
+  business_unit?:    string;
+  job_function?:     string;
+  job_priority?:     string;
+  stream_name?:      string;
+  additional_info?:  string;
 }
 
 export const EMPTY_ROW: JobRow = {
@@ -146,6 +152,13 @@ export function parseJobDoc(text: string): JobRow {
   row.credential  = extract(text, 'Job Login Account', 'Login Account', 'Credential', 'Credentials');
   row.command     = extract(text, 'Job Script', 'Script', 'Command');
 
+  // Extended metadata fields (from full job doc format)
+  row.business_unit  = extract(text, 'Business Unit', 'BU');
+  row.job_function   = extract(text, 'Job Function', 'Function');
+  row.job_priority   = extract(text, 'Job Priority', 'Priority');
+  row.stream_name    = extract(text, 'Job StreamName', 'StreamName', 'Stream Name', 'Stream');
+  row.additional_info = extract(text, 'Additional Information', 'Additional Info', 'Others');
+
   // Task type
   const rawType = extract(text, 'Job Type', 'Task Type', 'Type');
   // "Production" is the job category, not task type — default to taskUnix
@@ -154,6 +167,9 @@ export function parseJobDoc(text: string): JobRow {
   } else {
     row.task_type = 'taskUnix';
   }
+
+  // Store the full raw text as job_doc so notes contain the complete original input
+  row.job_doc = text.trim();
 
   // Dates
   const firstRun = extract(text, 'Firstrun Date', 'First Run Date', 'First Run', 'Start Date');

@@ -239,24 +239,38 @@ export function buildTaskPayload(
     payload.customField2 = { label: 'ServiceNow Ticket', value: row.servicenow_ticket.trim() };
   }
 
-  // ── Notes — auto-generated from all fields, no separate job_doc needed ────
-  const noteTitle = row.servicenow_ticket?.trim() || 'Job Details';
-  const noteText = [
+  // ── Notes — full job doc format matching the original request document ──────
+  const noteTitle = row.servicenow_ticket?.trim() || row.task_name;
+
+  // If job_doc (full pasted text from Job Builder Chat) is available, use it directly
+  // Otherwise reconstruct from individual Excel fields in the standard format
+  const noteText = row.job_doc?.trim() || [
+    `Job Type = Production`,
+    row.business_unit     ? `Business Unit = ${row.business_unit}` : '',
+    row.job_function      ? `Job Function = ${row.job_function}` : '',
+    row.job_priority      ? `Job Priority = ${row.job_priority}` : '',
     `Job Name = ${row.task_name}`,
     `Job Description = ${row.description || ''}`,
+    `Job StreamName = ${row.stream_name || ''}`,
+    `ServiceNow Group = ${row.servicenow_group || ''}`,
+    `Job Recovery1 = ${row.recovery1 || ''}`,
+    `Job Recovery2 = ${row.recovery2 || ''}`,
+    `Others = `,
+    `Firstrun Date = ${row.first_run_date || ''}`,
+    `Scheduled Frequency = ${row.frequency_type || ''}`,
+    `Maximum Runtime = ${row.max_runtime || ''}`,
+    `Job Starttime = ${row.schedule_string || row.start_time || ''}`,
+    `Job Timezone = ${row.timezone || ''}`,
     `Job Script = ${row.command || ''}`,
     `Job Workstation = ${row.agent || ''}`,
     `Job Login Account = ${row.credential || ''}`,
-    `ServiceNow Group = ${row.servicenow_group || ''}`,
-    `Firstrun Date = ${row.first_run_date || ''}`,
-    `Job Starttime = ${row.schedule_string || row.start_time || row.frequency_type || ''}`,
-    `Maximum Runtime = ${row.max_runtime || ''}`,
     `Business Services = ${row.business_services || ''}`,
     `ServiceNow Ticket = ${row.servicenow_ticket || ''}`,
+    `Additional Information = ${row.additional_info || ''}`,
     row.ref_job ? `Reference Job = ${row.ref_job}` : '',
-  ].filter(Boolean).join('\n');
+  ].filter(l => l !== '').join('\n');
 
-  payload.notes = [{ title: noteTitle, text: row.job_doc?.trim() || noteText }];
+  payload.notes = [{ title: noteTitle, text: noteText }];
 
   // ── maxRunTime + Late Finish ──────────────────────────────────────────────
   const mr = row.max_runtime ? parseInt(row.max_runtime) : (maxRunTime ?? null);
@@ -273,6 +287,7 @@ export function buildTaskPayload(
     'first_run_date','start_time','timezone','frequency_type','frequency_value',
     'max_runtime','ref_job','business_services','servicenow_ticket','servicenow_group',
     'schedule_string','job_doc','recovery1','recovery2',
+    'business_unit','job_function','job_priority','stream_name','additional_info',
   ]);
   Object.keys(row).forEach(k => {
     if (!STANDARD_COLS.has(k) && ALLOWED_TASK_FIELDS.has(k) && row[k] !== '' && row[k] !== undefined) {
@@ -311,6 +326,7 @@ export function buildTriggerPayload(
     calendar:       'System Default',
     situation:      'Holiday',
     action:         'Do Not Trigger',
+    skipCondition:  'Active By Trigger',  // Skip if previous instance launched by this trigger is still active
     retentionDuration:      1,
     retentionDurationUnit:  'Days',
   };
@@ -390,18 +406,32 @@ export function buildTriggerPayload(
     base.customField2 = { label: 'ServiceNow Ticket', value: row.servicenow_ticket.trim() };
   }
 
-  // ── Notes — same info as task, auto-generated ─────────────────────────────
-  const trigNoteTitle = row.servicenow_ticket?.trim() || 'Job Details';
-  const trigNoteText = [
+  // ── Notes — full job doc format, same as task ─────────────────────────────
+  const trigNoteTitle = row.servicenow_ticket?.trim() || row.task_name;
+  const trigNoteText = row.job_doc?.trim() || [
+    `Job Type = Production`,
+    row.business_unit ? `Business Unit = ${row.business_unit}` : '',
+    row.job_function  ? `Job Function = ${row.job_function}` : '',
     `Job Name = ${row.task_name}`,
     `Job Description = ${row.description || ''}`,
-    `Job Workstation = ${row.agent || ''}`,
+    `Job StreamName = ${row.stream_name || ''}`,
     `ServiceNow Group = ${row.servicenow_group || ''}`,
+    `Job Recovery1 = ${row.recovery1 || ''}`,
+    `Job Recovery2 = ${row.recovery2 || ''}`,
+    `Others = `,
     `Firstrun Date = ${row.first_run_date || ''}`,
-    `Job Starttime = ${row.schedule_string || row.start_time || row.frequency_type || ''}`,
+    `Scheduled Frequency = ${row.frequency_type || ''}`,
+    `Maximum Runtime = ${row.max_runtime || ''}`,
+    `Job Starttime = ${row.schedule_string || row.start_time || ''}`,
+    `Job Timezone = ${row.timezone || ''}`,
+    `Job Script = ${row.command || ''}`,
+    `Job Workstation = ${row.agent || ''}`,
+    `Job Login Account = ${row.credential || ''}`,
+    `Business Services = ${row.business_services || ''}`,
     `ServiceNow Ticket = ${row.servicenow_ticket || ''}`,
-  ].filter(l => !l.endsWith('= ')).join('\n');
-  base.notes = [{ title: trigNoteTitle, text: row.job_doc?.trim() || trigNoteText }];
+    `Additional Information = ${row.additional_info || ''}`,
+  ].filter(l => l !== '').join('\n');
+  base.notes = [{ title: trigNoteTitle, text: trigNoteText }];
 
   // ── Business Services ─────────────────────────────────────────────────────
   const bsTrigger = String(row.business_services ?? '').trim();
