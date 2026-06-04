@@ -288,20 +288,27 @@ router.post('/preview', async (req: AuthRequest, res: Response): Promise<void> =
       const nouns = triggerPayload.dateNouns.map((n: any) => n.value).join(', ');
       const quals = triggerPayload.dateQualifiers?.map((q: any) => q.value).join(', ') || '';
       schedSummary = `${triggerPayload.dateAdjective || 'Every'} ${nouns} of ${quals}`;
+      if (triggerPayload.time) schedSummary += ` at ${triggerPayload.time}`;
+      if (triggerPayload.timeStyle === 'Interval') {
+        schedSummary += ` — every ${triggerPayload.timeInterval} ${triggerPayload.timeIntervalUnits}`;
+        if (triggerPayload.enabledStart) schedSummary += ` from ${triggerPayload.enabledStart}`;
+        if (triggerPayload.enabledEnd)   schedSummary += ` to ${triggerPayload.enabledEnd}`;
+      }
     } else if (triggerPayload.timeStyle === 'Interval') {
       schedSummary = `Every ${triggerPayload.timeInterval} ${triggerPayload.timeIntervalUnits}`;
       if (triggerPayload.enabledStart) schedSummary += ` from ${triggerPayload.enabledStart}`;
-      if (triggerPayload.enabledEnd) schedSummary += ` to ${triggerPayload.enabledEnd}`;
+      if (triggerPayload.enabledEnd)   schedSummary += ` to ${triggerPayload.enabledEnd}`;
+      // Day pattern
+      const days = ['mon','tue','wed','thu','fri','sat','sun'].filter(d => triggerPayload[d]);
+      const dayNames: Record<string, string> = { mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri',sat:'Sat',sun:'Sun' };
+      if (days.length > 0 && days.length < 7) schedSummary += ` on ${days.map(d => dayNames[d]).join(', ')}`;
     } else {
       schedSummary = 'Daily';
-    }
-    // Add time
-    if (triggerPayload.time) schedSummary += ` at ${triggerPayload.time}`;
-    // Add days
-    const days = ['mon','tue','wed','thu','fri','sat','sun'].filter(d => triggerPayload[d]);
-    if (days.length > 0 && days.length < 7) {
-      const dayNames: Record<string, string> = { mon:'Mon', tue:'Tue', wed:'Wed', thu:'Thu', fri:'Fri', sat:'Sat', sun:'Sun' };
-      schedSummary += ` on ${days.map(d => dayNames[d]).join(', ')}`;
+      if (triggerPayload.time) schedSummary += ` at ${triggerPayload.time}`;
+      // Day pattern
+      const days = ['mon','tue','wed','thu','fri','sat','sun'].filter(d => triggerPayload[d]);
+      const dayNames: Record<string, string> = { mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri',sat:'Sat',sun:'Sun' };
+      if (days.length > 0 && days.length < 7) schedSummary += ` on ${days.map(d => dayNames[d]).join(', ')}`;
     }
     if (triggerPayload.timeZone) schedSummary += ` (${triggerPayload.timeZone})`;
 
