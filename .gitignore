@@ -57,12 +57,10 @@ shared/
 # OpenAPI spec — large reference file, not needed in repo
 openapi.json
 
-# Excel / ODS / CSV — generated or uploaded files
-# Exception: test_jobs_100.xlsx is kept for testing
+# Excel / ODS / CSV — generated or uploaded files — NEVER commit any
 *.xlsx
 *.ods
 *.csv
-!test_jobs_100.xlsx
 
 # State files — contain sensitive data, never commit
 scheduled_jobs.json
@@ -82,3 +80,6 @@ backend/edit_*.py
 backend/verify_*.js
 backend/gen_nafdb07.js
 backend/generate_templates.js
+
+# Internal docs — never push to repo
+docs/
