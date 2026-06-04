@@ -124,15 +124,22 @@ const JOB_TYPES = [
       desc = `${days[idx]} — every ${hrs}hr from ${start} to ${end} ${tz}`;
 
     } else {
-      // Monthly day + interval — runs on specific day of month at interval
+      // Monthly — runs ONCE on this day of month at a specific time (no interval, no end time)
       const monthDays = [1, 15, 23, 24, 28];
-      const mins = minuteOptions[idx];
       const mday = monthDays[idx];
-      // Monthly interval: FREQ=INTERVAL means run every N mins on monthly trigger day
-      // We express this as monthly day + interval within that day
-      dayPattern = `Month Day ${String(mday).padStart(2,'0')}`;
-      freqStr = `FREQ=INTERVAL;interval=${mins};units=minutes;byday=Daily;monthday=${mday}`;
-      desc = `Monthly day ${mday} — every ${mins} min from ${start} to ${end} ${tz}`;
+      dayPattern = `Monthly day ${mday}`;
+      freqStr = `FREQ=MONTHLY;INTERVAL=1;byday=${mday}`;
+      desc = `Monthly on day ${mday} at ${start} ${tz}`;
+
+      // Monthly jobs return early with no endtime
+      return {
+        type: 'INTERVAL',
+        starttime: start,
+        timezone:  tz,
+        frequency: freqStr,
+        endtime:   '',   // no end time — runs once per month
+        desc,
+      };
     }
 
     return {
