@@ -182,6 +182,8 @@ export default function PipelinePage() {
       const parsed: JobRow[] = Array.isArray(payload?.rows) ? payload.rows : [];
       setRows(parsed);
       setCompRows([]); setMergedTriggers([]); setRefResolved(false); setResults([]); setLogs([]); setPushDone(false);
+      setStreamSteps([]); setStreamSummary(null); setTriggersEnabled(false); setEnablingTriggers(false); setProgress(0);
+      if (abortRef.current) { abortRef.current(); abortRef.current = null; }
       log(`[SUCCESS] Parsed ${parsed.length} row(s)`);
       playSuccess();
     } catch (e: any) {
@@ -218,6 +220,8 @@ export default function PipelinePage() {
     }));
     setRows(mapped);
     setCompRows([]); setMergedTriggers([]); setRefResolved(false); setResults([]); setLogs([]); setPushDone(false);
+    setStreamSteps([]); setStreamSummary(null); setTriggersEnabled(false); setEnablingTriggers(false); setProgress(0);
+    if (abortRef.current) { abortRef.current(); abortRef.current = null; }
     log(`[SUCCESS] Loaded ${mapped.length} row(s) from Job Builder`);
   };
 
