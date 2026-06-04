@@ -78,25 +78,70 @@ const JOB_TYPES = [
     };
   }),
 
-  // Type 5: Interval (every N minutes/hours) WITH end time (20 jobs)
+  // Type 5: Interval recurring jobs — 5 per day pattern × 4 day patterns = 20 jobs
+  // Day patterns: Daily (5), Business Days/Weekdays (5), Specific days (5), Monthly day (5)
+  // All have start time + end time
   ...Array.from({ length: 20 }, (_, i) => {
-    const intervals = [5,7,10,15,20,30,45,60,90,120,5,10,15,20,30,5,10,15,30,60];
-    const starts    = ['06:00','07:00','08:00','09:00','05:00','06:00','07:00','08:00','09:00','00:00',
-                       '06:00','07:00','08:00','09:00','05:00','06:00','07:00','08:00','09:00','00:00'];
-    const ends      = ['22:00','21:00','20:00','19:00','23:00','22:00','21:00','20:00','19:00','23:00',
-                       '18:00','17:00','16:00','15:00','20:00','22:00','21:00','20:00','19:00','12:00'];
-    const tz        = ['Asia/Kolkata','UTC','America/New_York','Asia/Jakarta','Europe/Berlin'][i % 5];
-    const mins      = intervals[i];
-    const units     = mins >= 60 ? `${mins / 60} hour(s)` : `${mins} minute(s)`;
+    const minuteOptions = [5, 10, 15, 20, 30];
+    const hourOptions   = [1, 2, 3, 4, 6];
+
+    const timezones5 = ['Asia/Kolkata','UTC','America/New_York','Asia/Jakarta','Europe/Berlin'];
+    const startTimes5 = ['06:00','07:00','08:00','09:00','05:00'];
+    const endTimes5   = ['22:00','21:00','20:00','19:00','23:00'];
+
+    const group = Math.floor(i / 5); // 0=Daily, 1=Weekdays, 2=Specific days, 3=Monthly+interval
+    const idx   = i % 5;
+
+    const tz    = timezones5[idx];
+    const start = startTimes5[idx];
+    const end   = endTimes5[idx];
+
+    let dayPattern;
+    let freqStr;
+    let desc;
+
+    if (group === 0) {
+      // Daily interval — runs every day
+      const mins = minuteOptions[idx];
+      dayPattern = 'Daily';
+      freqStr = `FREQ=INTERVAL;interval=${mins};units=minutes;byday=Daily`;
+      desc = `Daily — every ${mins} min from ${start} to ${end} ${tz}`;
+
+    } else if (group === 1) {
+      // Weekdays/Business Days interval
+      const mins = minuteOptions[idx];
+      dayPattern = 'Mon,Tue,Wed,Thu,Fri';
+      freqStr = `FREQ=INTERVAL;interval=${mins};units=minutes;byday=Mon,Tue,Wed,Thu,Fri`;
+      desc = `Weekdays — every ${mins} min from ${start} to ${end} ${tz}`;
+
+    } else if (group === 2) {
+      // Specific weekdays interval
+      const days = ['Monday','Tuesday,Thursday','Monday,Wednesday,Friday','Wednesday,Friday','Monday,Friday'];
+      const hrs  = hourOptions[idx];
+      const dayByday = days[idx].split(',').map(d => d.trim().substring(0,3)).join(',');
+      dayPattern = dayByday;
+      freqStr = `FREQ=INTERVAL;interval=${hrs};units=hours;byday=${dayByday}`;
+      desc = `${days[idx]} — every ${hrs}hr from ${start} to ${end} ${tz}`;
+
+    } else {
+      // Monthly day + interval — runs on specific day of month at interval
+      const monthDays = [1, 15, 23, 24, 28];
+      const mins = minuteOptions[idx];
+      const mday = monthDays[idx];
+      // Monthly interval: FREQ=INTERVAL means run every N mins on monthly trigger day
+      // We express this as monthly day + interval within that day
+      dayPattern = `Month Day ${String(mday).padStart(2,'0')}`;
+      freqStr = `FREQ=INTERVAL;interval=${mins};units=minutes;byday=Daily;monthday=${mday}`;
+      desc = `Monthly day ${mday} — every ${mins} min from ${start} to ${end} ${tz}`;
+    }
+
     return {
       type: 'INTERVAL',
-      starttime: starts[i],
+      starttime: start,
       timezone:  tz,
-      frequency: mins >= 60
-        ? `FREQ=INTERVAL;interval=${mins / 60};units=hours`
-        : `FREQ=INTERVAL;interval=${mins};units=minutes`,
-      endtime:   ends[i],   // ← END TIME present for all interval jobs
-      desc:      `Interval every ${units} — ${starts[i]} to ${ends[i]} ${tz}`,
+      frequency: freqStr,
+      endtime:   end,
+      desc,
     };
   }),
 ];

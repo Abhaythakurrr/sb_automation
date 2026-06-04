@@ -212,17 +212,35 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
       return result;
     }
 
-    // FREQ=INTERVAL;interval=15 — interval jobs with optional start/end
-    // e.g. FREQ=INTERVAL;interval=15;starttime=08:00;endtime=22:00
+    // FREQ=INTERVAL;interval=15 — interval jobs with optional start/end and day pattern
     if (freqType === 'INTERVAL' || freqType === 'MINUTELY' || freqType === 'HOURLY') {
       const intervalMatch = frequency.match(/interval=(\d+)/i);
       const unitsMatch = frequency.match(/units?=(minutes?|hours?|seconds?)/i);
       const startMatch = frequency.match(/starttime=(\d{1,2}:\d{2})/i);
       const endMatch   = frequency.match(/endtime=(\d{1,2}:\d{2})/i);
+      const byDayMatch = frequency.match(/byday=([^;]+)/i);
+      const monthDayMatch = frequency.match(/monthday=(\d+)/i);
 
       const amount = intervalMatch ? parseInt(intervalMatch[1]) : 15;
       const unitsRaw = unitsMatch?.[1]?.toLowerCase() || 'minutes';
       const units = unitsRaw.startsWith('h') ? 'Hours' : unitsRaw.startsWith('s') ? 'Seconds' : 'Minutes';
+
+      // If monthday is specified, this is a monthly recurring interval job
+      if (monthDayMatch) {
+        const dayNum = String(parseInt(monthDayMatch[1])).padStart(2, '0');
+        const result: Partial<TriggerScheduleFields> = {
+          dayStyle: 'Complex',
+          dateAdjective: 'Every',
+          dateNouns: [{ value: `Month Day ${dayNum}` }],
+          dateQualifiers: [{ value: 'Year' }],
+          timeStyle: 'Interval',
+          timeInterval: amount,
+          timeIntervalUnits: units,
+        };
+        if (startMatch) { result.enabledStart = startMatch[1]; result.restrictedTimes = true; }
+        if (endMatch)   { result.enabledEnd   = endMatch[1];   result.restrictedTimes = true; }
+        return result;
+      }
 
       const result: Partial<TriggerScheduleFields> = {
         dayStyle: 'Simple', simpleDateType: 'Daily',
@@ -232,6 +250,20 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
       };
       if (startMatch) { result.enabledStart = startMatch[1]; result.restrictedTimes = true; }
       if (endMatch)   { result.enabledEnd   = endMatch[1];   result.restrictedTimes = true; }
+
+      // Apply day pattern from byday
+      if (byDayMatch) {
+        const byDay = byDayMatch[1].trim().toLowerCase();
+        if (byDay === 'daily' || byDay === 'everyday') {
+          // All days — default
+        } else if (byDay === 'weekdays' || byDay === 'mon,tue,wed,thu,fri') {
+          result.mon = true; result.tue = true; result.wed = true;
+          result.thu = true; result.fri = true;
+        } else {
+          const days = byDay.split(',').map(d => DAY_MAP[d.trim()]).filter(Boolean);
+          days.forEach(d => { (result as any)[d] = true; });
+        }
+      }
       return result;
     }
 
