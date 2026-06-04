@@ -193,10 +193,30 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
       // Extract day of month: byday=24th, byday=24, byday=5
       const byDay = frequency.match(/byday=(\d+)/i);
       const dayNum = byDay ? String(parseInt(byDay[1])).padStart(2, '0') : '01';
+      // Check for recurring interval within the day: recurInterval=15;recurUnits=minutes
+      const recurIntervalMatch = frequency.match(/recurInterval=(\d+)/i);
+      const recurUnitsMatch    = frequency.match(/recurUnits=(minutes?|hours?)/i);
+
+      if (recurIntervalMatch) {
+        // Monthly day + interval within the day
+        const amount   = parseInt(recurIntervalMatch[1]);
+        const unitsRaw = recurUnitsMatch?.[1]?.toLowerCase() || 'minutes';
+        const units    = unitsRaw.startsWith('h') ? 'Hours' : 'Minutes';
+        return {
+          dayStyle:          'Complex',
+          dateAdjective:     'Every',
+          dateNouns:         [{ value: `Month Day ${dayNum}` }],
+          dateQualifiers:    [{ value: 'Year' }],
+          timeStyle:         'Interval',
+          timeInterval:      amount,
+          timeIntervalUnits: units,
+        };
+      }
+
       return {
-        dayStyle: 'Complex',
-        dateAdjective: 'Every',
-        dateNouns: [{ value: `Month Day ${dayNum}` }],
+        dayStyle:       'Complex',
+        dateAdjective:  'Every',
+        dateNouns:      [{ value: `Month Day ${dayNum}` }],
         dateQualifiers: [{ value: 'Year' }],
       };
     }

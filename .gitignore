@@ -78,8 +78,8 @@ backend/update_*.js
 backend/check_*.js
 backend/edit_*.py
 backend/verify_*.js
-backend/gen_nafdb07.js
-backend/generate_templates.js
+backend/gen_*.js
+backend/generate_*.js
 
 # Internal docs — never push to repo
 docs/
