@@ -241,24 +241,42 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
   // ── Monitor job failures ────────────────────────────────────────────────────
   if (config.monitorJobs) {
     try {
-      // listadv requires at least a name/taskName filter alongside status.
-      // Use /list with updatedTimeType to get recent failures — this is the
-      // correct endpoint for status-only queries per the UAC API.
-      // We query each failure status separately using the /list endpoint.
+      // UAC POST /resources/taskinstance/list requires `name` or `sysId` — cannot query by status alone.
+      // Use GET /resources/taskinstance/listadv which supports status + time range without requiring a name.
       const failureStatuses = ['Failed', 'Start Failure'];
       const allInstances: any[] = [];
 
+      // Build today's date range for the query
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString().slice(0, 10);
+
       for (const status of failureStatuses) {
         try {
-          const res = await client.post('/resources/taskinstance/list', {
-            status,
-            updatedTimeType: 'Today',
+          const res = await client.get('/resources/taskinstance/listadv', {
+            params: {
+              status,
+              updatedTime: todayStart,
+            },
+            timeout: 20000,
           });
           const list = Array.isArray(res.data) ? res.data : (res.data?.taskInstance ?? []);
           allInstances.push(...list);
         } catch (e: any) {
-          const msg = e.response?.data ?? e.message;
-          console.warn(`[MONITOR] taskinstance/list status="${status}" error:`, msg);
+          // Fallback: try with startedge param (some UAC versions use different param names)
+          try {
+            const res = await client.get('/resources/taskinstance/listadv', {
+              params: {
+                status,
+                startedge: todayStart,
+              },
+              timeout: 20000,
+            });
+            const list = Array.isArray(res.data) ? res.data : (res.data?.taskInstance ?? []);
+            allInstances.push(...list);
+          } catch (e2: any) {
+            const msg = typeof e2.response?.data === 'string' ? e2.response.data : e2.message;
+            console.warn(`[MONITOR] taskinstance/listadv status="${status}" error:`, msg);
+          }
         }
       }
 

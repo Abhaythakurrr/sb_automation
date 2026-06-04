@@ -30,11 +30,15 @@ router.post('/failed-jobs', async (req: AuthRequest, res: Response, next: NextFu
     const jobs: any[] = [];
 
     // Fetch failed task instances using UAC API
+    // UAC POST /resources/taskinstance/list requires `name` — use GET listadv instead
     try {
-      const r = await client.post('/resources/taskinstance/list', {
-        status: 'Failed',
-        startedLaterThan: `${startDate} 00:00`,
-        startedEarlierThan: `${endDate} 23:59`,
+      const r = await client.get('/resources/taskinstance/listadv', {
+        params: {
+          status: 'Failed',
+          startedge: startDate,
+          startle: endDate,
+        },
+        timeout: 60000,
       });
       const list = Array.isArray(r.data) ? r.data : (r.data?.taskInstance ?? []);
       list.forEach((inst: any) => {
@@ -48,17 +52,45 @@ router.post('/failed-jobs', async (req: AuthRequest, res: Response, next: NextFu
           type: inst.type || '',
         });
       });
+
+      // Also fetch "Start Failure" status
+      try {
+        const r2 = await client.get('/resources/taskinstance/listadv', {
+          params: {
+            status: 'Start Failure',
+            startedge: startDate,
+            startle: endDate,
+          },
+          timeout: 60000,
+        });
+        const list2 = Array.isArray(r2.data) ? r2.data : (r2.data?.taskInstance ?? []);
+        list2.forEach((inst: any) => {
+          jobs.push({
+            name: inst.name || inst.taskName || '',
+            status: inst.status || 'Start Failure',
+            startTime: inst.startTime || inst.triggerTime || '',
+            endTime: inst.endTime || '',
+            agent: inst.agent || inst.agentCluster || '',
+            exitCode: inst.exitCode != null ? String(inst.exitCode) : '',
+            type: inst.type || '',
+          });
+        });
+      } catch { /* Start Failure may not have results */ }
     } catch (e: any) {
-      // Try alternative query
+      // Fallback: try with updatedTime param
       try {
         const r = await client.get('/resources/taskinstance/listadv', {
-          params: { status: 'Failed', startedge: startDate, endle: endDate },
+          params: {
+            status: 'Failed',
+            updatedTime: startDate,
+          },
+          timeout: 60000,
         });
         const list = Array.isArray(r.data) ? r.data : (r.data?.taskInstance ?? []);
         list.forEach((inst: any) => {
           jobs.push({
-            name: inst.name || '',
-            status: 'Failed',
+            name: inst.name || inst.taskName || '',
+            status: inst.status || 'Failed',
             startTime: inst.startTime || '',
             endTime: inst.endTime || '',
             agent: inst.agent || '',
