@@ -71,6 +71,8 @@ alert_history.json
 **/alert_history.json
 monitor_config.json
 **/monitor_config.json
+creation_log.json
+**/creation_log.json
 
 # Scratch scripts — one-off scripts with hardcoded values
 backend/create_*.js

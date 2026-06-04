@@ -383,6 +383,7 @@ export default function PipelinePage() {
 
     let completedJobs = 0;
     const totalJobs = rows.length;
+    const createdNames: Array<{name: string; type: 'task' | 'trigger'}> = [];
 
     const abort = globalApi.executeStream(
       rows,
@@ -398,6 +399,11 @@ export default function PipelinePage() {
           if (data.status === 'success') {
             log(`[SUCCESS] ${data.name}: ${data.step}`);
             playTick();
+            if (data.step === 'Task created') {
+              createdNames.push({ name: data.name, type: 'task' });
+            } else if (data.step === 'Trigger created') {
+              createdNames.push({ name: data.name + '-TR001', type: 'trigger' });
+            }
           } else if (data.status === 'error') {
             log(`[ERROR] ${data.name}: ${data.step}${data.message ? ' — ' + data.message : ''}`);
             playError();
@@ -410,6 +416,13 @@ export default function PipelinePage() {
           setProgress(100);
           log(`[INFO] Done — ${data.successful} success, ${data.failed} failed out of ${data.total}`);
           playComplete();
+          // Log creations to analytics
+          if (createdNames.length > 0) {
+            const { username } = useConnectionStore.getState();
+            const now = new Date().toISOString();
+            const items = createdNames.map(c => ({ name: c.name, type: c.type, createdTime: now, createdBy: username || 'operator' }));
+            globalApi.logCreation(items).catch(() => { /* non-critical */ });
+          }
         }
       },
       // onDone

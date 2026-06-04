@@ -245,6 +245,11 @@ export class ApiClient {
     return this.http.post('/api/execution/preview', { rows, resolvedRefs });
   }
 
+  // ── Creation logging — persist created items to analytics ──────────────────
+  async logCreation(items: Array<{name: string; type: string; createdTime: string; createdBy: string}>): Promise<any> {
+    return this.http.post('/api/analytics/log-creation', { items });
+  }
+
   // ── Qualifying Times — fetch run cycle from UAC ────────────────────────────
   async getQualifyingTimes(triggerName: string, count = 30): Promise<any> {
     return this.http.get('/api/execution/qualifying-times', { params: { triggername: triggerName, count } });
