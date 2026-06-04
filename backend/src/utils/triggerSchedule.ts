@@ -212,6 +212,29 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
       return result;
     }
 
+    // FREQ=INTERVAL;interval=15 — interval jobs with optional start/end
+    // e.g. FREQ=INTERVAL;interval=15;starttime=08:00;endtime=22:00
+    if (freqType === 'INTERVAL' || freqType === 'MINUTELY' || freqType === 'HOURLY') {
+      const intervalMatch = frequency.match(/interval=(\d+)/i);
+      const unitsMatch = frequency.match(/units?=(minutes?|hours?|seconds?)/i);
+      const startMatch = frequency.match(/starttime=(\d{1,2}:\d{2})/i);
+      const endMatch   = frequency.match(/endtime=(\d{1,2}:\d{2})/i);
+
+      const amount = intervalMatch ? parseInt(intervalMatch[1]) : 15;
+      const unitsRaw = unitsMatch?.[1]?.toLowerCase() || 'minutes';
+      const units = unitsRaw.startsWith('h') ? 'Hours' : unitsRaw.startsWith('s') ? 'Seconds' : 'Minutes';
+
+      const result: Partial<TriggerScheduleFields> = {
+        dayStyle: 'Simple', simpleDateType: 'Daily',
+        timeStyle: 'Interval',
+        timeInterval: amount,
+        timeIntervalUnits: units,
+      };
+      if (startMatch) { result.enabledStart = startMatch[1]; result.restrictedTimes = true; }
+      if (endMatch)   { result.enabledEnd   = endMatch[1];   result.restrictedTimes = true; }
+      return result;
+    }
+
     // FREQ=DAILY or unknown → daily
     return { dayStyle: 'Simple', simpleDateType: 'Daily' };
   }
@@ -258,10 +281,11 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
 // ── Main: Build Schedule Fields ──────────────────────────────────────────────
 
 export function buildScheduleFields(
-  starttime: string,   // Job Starttime field (time + optionally days)
+  starttime: string,   // Job Starttime field (HH:MM or AT format)
   frequency: string,   // Scheduled Frequency field
-  rawTime?: string,    // start_time (separate HH:MM field)
-  rawTz?: string,      // timezone (separate field)
+  rawTime?: string,    // start_time separate field
+  rawTz?: string,      // timezone separate field
+  rawEndTime?: string, // end_time separate field (for interval jobs)
 ): TriggerScheduleFields {
   // 1. Parse time from Job Starttime
   const timeFields = parseTimeInput(starttime);
@@ -297,6 +321,30 @@ export function buildScheduleFields(
   if (!result.time && !result.timeInterval && rawTime) {
     result.timeStyle = 'Absolute';
     result.time = toHHMM(rawTime);
+  }
+
+  // 6. End time for interval jobs — from separate 'Job End Time' column
+  // If this is an interval job and we have an explicit end time, apply it
+  if (rawEndTime && rawEndTime.trim()) {
+    const endHHMM = toHHMM(rawEndTime.trim());
+    if (endHHMM) {
+      if (result.timeStyle === 'Interval') {
+        // Already an interval — add end time restriction
+        result.enabledEnd = endHHMM;
+        result.restrictedTimes = true;
+      } else if (!result.timeStyle) {
+        // No time style yet — treat as interval start/end
+        // enabledStart was set from rawTime or starttime
+        if (rawTime) result.enabledStart = toHHMM(rawTime);
+        result.enabledEnd = endHHMM;
+        result.restrictedTimes = true;
+      }
+    }
+  }
+
+  // 7. For interval jobs, if enabledStart is missing, use rawTime
+  if (result.timeStyle === 'Interval' && !result.enabledStart && rawTime) {
+    result.enabledStart = toHHMM(rawTime);
   }
 
   return result;

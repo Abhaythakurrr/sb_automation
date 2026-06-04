@@ -20,6 +20,7 @@ export interface JobRow {
   job_doc?:           string;
   recovery1?:         string;
   recovery2?:         string;
+  end_time?:          string;
   [key: string]: any;
 }
 

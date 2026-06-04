@@ -75,6 +75,12 @@ const COLUMN_MAP: Record<string, string> = {
   'snow group':                   'servicenow_group',
   'queues':                       'servicenow_group',
   'queue':                        'servicenow_group',
+  // End time for interval jobs
+  'job end time':                 'end_time',
+  'end time':                     'end_time',
+  'end_time':                     'end_time',
+  'endtime':                      'end_time',
+  'job endtime':                  'end_time',
   // Business unit / function / priority / stream
   'business unit':                'business_unit',
   'business_unit':                'business_unit',

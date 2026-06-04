@@ -101,6 +101,7 @@ export default function PipelinePage() {
       job_doc:           r.job_doc ?? '',
       recovery1:         r.recovery1 ?? '',
       recovery2:         r.recovery2 ?? '',
+      end_time:          r.end_time ?? '',
     }));
     setRows(mapped);
     setCompRows([]); setMergedTriggers([]); setRefResolved(false); setResults([]); setLogs([]); setPushDone(false);

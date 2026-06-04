@@ -98,6 +98,7 @@ export interface ExcelRow {
   job_doc?:           string;
   recovery1?:         string;   // Job Recovery1 — goes into customField1
   recovery2?:         string;   // Job Recovery2 — goes into customField1
+  end_time?:          string;   // End time for interval jobs (HH:MM)
   [key: string]: any;
 }
 
@@ -287,7 +288,7 @@ export function buildTaskPayload(
     'first_run_date','start_time','timezone','frequency_type','frequency_value',
     'max_runtime','ref_job','business_services','servicenow_ticket','servicenow_group',
     'schedule_string','job_doc','recovery1','recovery2',
-    'business_unit','job_function','job_priority','stream_name','additional_info',
+    'business_unit','job_function','job_priority','stream_name','additional_info','end_time',
   ]);
   Object.keys(row).forEach(k => {
     if (!STANDARD_COLS.has(k) && ALLOWED_TASK_FIELDS.has(k) && row[k] !== '' && row[k] !== undefined) {
@@ -347,6 +348,7 @@ export function buildTriggerPayload(
       row.frequency_type?.trim() || '',
       row.start_time?.trim() || '',
       row.timezone?.trim() || '',
+      row.end_time?.trim() || '',
     );
 
     // Apply schedule fields to trigger payload

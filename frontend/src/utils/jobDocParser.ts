@@ -32,6 +32,7 @@ export interface JobRow {
   job_priority?:     string;
   stream_name?:      string;
   additional_info?:  string;
+  end_time?:         string;   // End time for interval jobs (HH:MM)
 }
 
 export const EMPTY_ROW: JobRow = {
@@ -221,6 +222,9 @@ export function parseJobDoc(text: string): JobRow {
 
   // ServiceNow Group (QUEUES)
   row.servicenow_group = extract(text, 'ServiceNow Group', 'Snow Group', 'Queues', 'Queue');
+
+  // End time for interval jobs
+  row.end_time = extract(text, 'Job End Time', 'End Time', 'Endtime', 'Job Endtime');
 
   // Business Services
   row.business_services = extract(text, 'Business Services', 'Business Service', 'Member of Business Services', 'Business Unit Group');

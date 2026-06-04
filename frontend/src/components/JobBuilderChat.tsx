@@ -44,6 +44,7 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
       'ServiceNow Ticket':           r.servicenow_ticket,
       'Job Recovery1':               r.recovery1,
       'Job Recovery2':               r.recovery2,
+      'Job End Time':                r.end_time || '',
     }));
     const ws = XLSX.utils.json_to_sheet(uiRows);
     ws['!cols'] = [
@@ -83,6 +84,7 @@ export default function JobBuilderChat({ onGenerate }: { onGenerate: (rows: JobR
       'ServiceNow Ticket':           '',
       'Job Recovery1':               '',
       'Job Recovery2':               '',
+      'Job End Time':                '',
     }];
     const ws = XLSX.utils.json_to_sheet(template);
     ws['!cols'] = [
