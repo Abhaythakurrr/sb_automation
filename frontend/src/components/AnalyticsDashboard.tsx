@@ -60,6 +60,7 @@ function formatTime(iso: string): string {
 // ── Bar Chart Component ───────────────────────────────────────────────────────
 function BarChart({ data, color, label, maxVal }: { data: { day: string; value: number }[]; color: string; label: string; maxVal: number }) {
   const max = maxVal || Math.max(...data.map(d => d.value), 1);
+  const hasData = data.some(d => d.value > 0);
 
   return (
     <div className="rounded-2xl overflow-hidden relative"
@@ -69,36 +70,44 @@ function BarChart({ data, color, label, maxVal }: { data: { day: string; value: 
         <span className="text-[9px] font-mono text-slate-600">MAX: {max}</span>
       </div>
       <div className="p-4">
-        <div className="flex items-end gap-[2px] h-32">
-          {data.map((d, i) => {
-            const height = max > 0 ? (d.value / max) * 100 : 0;
-            return (
-              <motion.div
-                key={d.day}
-                className="flex-1 rounded-t-sm relative group cursor-pointer"
-                style={{ background: d.value > 0 ? color : 'rgba(51,65,85,0.15)', minWidth: '3px' }}
-                initial={{ height: 0 }}
-                animate={{ height: `${Math.max(height, 2)}%` }}
-                transition={{ duration: 0.4, delay: i * 0.015 }}
-                title={`${d.day}: ${d.value}`}
-              >
-                {/* Tooltip on hover */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-20 pointer-events-none">
-                  <div className="chart-tooltip whitespace-nowrap">
-                    <span className="font-bold">{d.value}</span>
-                    <span className="text-slate-500 ml-1">{new Date(d.day).getDate()}</span>
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-        {/* X-axis labels */}
-        <div className="flex justify-between mt-2">
-          <span className="text-[8px] text-slate-700 font-mono">1</span>
-          <span className="text-[8px] text-slate-700 font-mono">{Math.ceil(data.length / 2)}</span>
-          <span className="text-[8px] text-slate-700 font-mono">{data.length}</span>
-        </div>
+        {!hasData ? (
+          <div className="flex items-center justify-center h-32">
+            <p className="text-[10px] text-slate-700 text-center">No data available</p>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-end gap-[2px] h-32">
+              {data.map((d, i) => {
+                const height = max > 0 ? (d.value / max) * 100 : 0;
+                return (
+                  <motion.div
+                    key={d.day}
+                    className="flex-1 rounded-t-sm relative group cursor-pointer"
+                    style={{ background: d.value > 0 ? color : 'rgba(51,65,85,0.15)', minWidth: '3px' }}
+                    initial={{ height: 0 }}
+                    animate={{ height: `${Math.max(height, 2)}%` }}
+                    transition={{ duration: 0.4, delay: i * 0.015 }}
+                    title={`${d.day}: ${d.value}`}
+                  >
+                    {/* Tooltip on hover */}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-20 pointer-events-none">
+                      <div className="chart-tooltip whitespace-nowrap">
+                        <span className="font-bold">{d.value}</span>
+                        <span className="text-slate-500 ml-1">{new Date(d.day).getDate()}</span>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+            {/* X-axis labels */}
+            <div className="flex justify-between mt-2">
+              <span className="text-[8px] text-slate-700 font-mono">1</span>
+              <span className="text-[8px] text-slate-700 font-mono">{Math.ceil(data.length / 2)}</span>
+              <span className="text-[8px] text-slate-700 font-mono">{data.length}</span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -113,6 +122,7 @@ function Heatmap({ data, colorScale, label }: {
   const max = Math.max(...data.map(d => d.value), 1);
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const days = [...new Set(data.map(d => d.day))].sort().slice(-7); // Last 7 days
+  const hasData = data.some(d => d.value > 0);
 
   return (
     <div className="rounded-2xl overflow-hidden"
@@ -129,38 +139,44 @@ function Heatmap({ data, colorScale, label }: {
         </div>
       </div>
       <div className="p-4 overflow-x-auto">
-        <div className="min-w-[500px]">
-          {/* Hour labels */}
-          <div className="flex ml-16 mb-1">
-            {hours.filter((_, i) => i % 3 === 0).map(h => (
-              <div key={h} className="text-[7px] text-slate-700 font-mono" style={{ width: `${100/8}%` }}>
-                {String(h).padStart(2, '0')}
+        {!hasData || days.length === 0 ? (
+          <div className="flex items-center justify-center py-8">
+            <p className="text-[10px] text-slate-700 text-center">No data available</p>
+          </div>
+        ) : (
+          <div className="min-w-[500px]">
+            {/* Hour labels */}
+            <div className="flex ml-16 mb-1">
+              {hours.filter((_, i) => i % 3 === 0).map(h => (
+                <div key={h} className="text-[7px] text-slate-700 font-mono" style={{ width: `${100/8}%` }}>
+                  {String(h).padStart(2, '0')}
+                </div>
+              ))}
+            </div>
+            {/* Grid */}
+            {days.map(day => (
+              <div key={day} className="flex items-center mb-[2px]">
+                <span className="w-16 text-[8px] text-slate-600 font-mono shrink-0">
+                  {new Date(day).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })}
+                </span>
+                <div className="flex gap-[1px] flex-1">
+                  {hours.map(h => {
+                    const cell = data.find(d => d.day === day && d.hour === h);
+                    const value = cell?.value || 0;
+                    return (
+                      <div
+                        key={h}
+                        className="heatmap-cell flex-1 h-4"
+                        style={{ background: colorScale(value, max) }}
+                        title={`${day} ${String(h).padStart(2, '0')}:00 — ${value} events`}
+                      />
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </div>
-          {/* Grid */}
-          {days.map(day => (
-            <div key={day} className="flex items-center mb-[2px]">
-              <span className="w-16 text-[8px] text-slate-600 font-mono shrink-0">
-                {new Date(day).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })}
-              </span>
-              <div className="flex gap-[1px] flex-1">
-                {hours.map(h => {
-                  const cell = data.find(d => d.day === day && d.hour === h);
-                  const value = cell?.value || 0;
-                  return (
-                    <div
-                      key={h}
-                      className="heatmap-cell flex-1 h-4"
-                      style={{ background: colorScale(value, max) }}
-                      title={`${day} ${String(h).padStart(2, '0')}:00 — ${value} events`}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
+        )}
       </div>
     </div>
   );
@@ -199,6 +215,7 @@ export default function AnalyticsDashboard() {
   const [monthOffset, setMonthOffset] = useState(0); // 0 = current, -1 = last month
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Data
   const [failedJobs, setFailedJobs] = useState<FailedJob[]>([]);
@@ -222,6 +239,7 @@ export default function AnalyticsDashboard() {
   const fetchAnalytics = useCallback(async () => {
     if (!connected) return;
     setLoading(true);
+    setError(null);
 
     try {
       // Fetch failed task instances for the month
@@ -299,88 +317,22 @@ export default function AnalyticsDashboard() {
       setJobTypeBreakdown(Object.entries(typeCounts).map(([type, count]) => ({ type, count })));
 
     } catch (e: any) {
-      // If analytics endpoints don't exist yet, generate mock data for visualization
-      console.warn('Analytics API not available — using mock data:', e.message);
-      generateMockData();
-      setLastRefresh(new Date().toLocaleTimeString() + ' (demo)');
+      console.warn('Analytics API not available:', e.message);
+      setError(e.message || 'Failed to fetch analytics data');
+      setFailedJobs([]);
+      setCreatedTasks([]);
+      setCreatedTriggers([]);
+      setDailyFailures([]);
+      setDailyCreated([]);
+      setHeatmapData([]);
+      setOpsSummary({ agents: 0, tasks: 0, triggers: 0, activeInstances: 0 });
+      setTopFailingJobs([]);
+      setJobTypeBreakdown([]);
+      setLastRefresh(new Date().toLocaleTimeString());
     } finally {
       setLoading(false);
     }
   }, [connected, start, end, allDays]);
-
-  // Mock data generator for demo/preview
-  const generateMockData = useCallback(() => {
-    const mockFails: FailedJob[] = [];
-    const mockTasks: CreatedItem[] = [];
-    const mockTriggers: CreatedItem[] = [];
-
-    allDays.forEach(day => {
-      // Random 0-8 failures per day
-      const failCount = Math.floor(Math.random() * 8);
-      for (let i = 0; i < failCount; i++) {
-        const hour = Math.floor(Math.random() * 24);
-        mockFails.push({
-          name: `JOB-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-          status: 'Failed',
-          startTime: `${day}T${String(hour).padStart(2, '0')}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}:00Z`,
-          endTime: `${day}T${String(hour).padStart(2, '0')}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}:30Z`,
-          agent: `Agent-${Math.floor(Math.random() * 10)}`,
-          exitCode: String(Math.floor(Math.random() * 127) + 1),
-          type: Math.random() > 0.3 ? 'taskUnix' : 'taskWindows',
-        });
-      }
-
-      // Random 0-5 created per day
-      const createCount = Math.floor(Math.random() * 5);
-      for (let i = 0; i < createCount; i++) {
-        const isTask = Math.random() > 0.4;
-        const item: CreatedItem = {
-          name: `${isTask ? 'TASK' : 'TRIG'}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-          type: isTask ? 'taskUnix' : 'triggerTime',
-          createdTime: `${day}T${String(Math.floor(Math.random() * 24)).padStart(2, '0')}:00:00Z`,
-          createdBy: 'operator',
-        };
-        if (isTask) mockTasks.push(item);
-        else mockTriggers.push(item);
-      }
-    });
-
-    setFailedJobs(mockFails);
-    setCreatedTasks(mockTasks);
-    setCreatedTriggers(mockTriggers);
-
-    // Daily stats
-    const dailyF: Record<string, number> = {};
-    const dailyC: Record<string, number> = {};
-    allDays.forEach(d => { dailyF[d] = 0; dailyC[d] = 0; });
-    mockFails.forEach(f => { const d = f.endTime?.slice(0, 10); if (d && dailyF[d] !== undefined) dailyF[d]++; });
-    [...mockTasks, ...mockTriggers].forEach(item => { const d = item.createdTime?.slice(0, 10); if (d && dailyC[d] !== undefined) dailyC[d]++; });
-    setDailyFailures(Object.entries(dailyF).map(([date, failures]) => ({ date, failures, created: 0 })));
-    setDailyCreated(Object.entries(dailyC).map(([date, created]) => ({ date, failures: 0, created })));
-
-    // Heatmap
-    const hm: { day: string; hour: number; value: number }[] = [];
-    allDays.slice(-7).forEach(day => {
-      for (let h = 0; h < 24; h++) {
-        const count = mockFails.filter(f => f.endTime?.slice(0, 10) === day && new Date(f.endTime).getHours() === h).length;
-        hm.push({ day, hour: h, value: count });
-      }
-    });
-    setHeatmapData(hm);
-
-    // Mock ops data
-    setOpsSummary({ agents: 42 + Math.floor(Math.random() * 20), tasks: 350 + Math.floor(Math.random() * 150), triggers: 280 + Math.floor(Math.random() * 100), activeInstances: Math.floor(Math.random() * 15) });
-
-    // Top failing jobs
-    const failCounts: Record<string, number> = {};
-    mockFails.forEach(f => { failCounts[f.name] = (failCounts[f.name] || 0) + 1; });
-    setTopFailingJobs(Object.entries(failCounts).sort(([, a], [, b]) => b - a).slice(0, 10).map(([name, count]) => ({ name, count })));
-
-    // Type breakdown
-    const typeCounts: Record<string, number> = {};
-    mockFails.forEach(f => { const t = f.type || 'unknown'; typeCounts[t] = (typeCounts[t] || 0) + 1; });
-    setJobTypeBreakdown(Object.entries(typeCounts).map(([type, count]) => ({ type, count })));
-  }, [allDays]);
 
   // Initial load + auto-refresh every hour
   useEffect(() => {
@@ -491,6 +443,32 @@ export default function AnalyticsDashboard() {
           <h2 className="text-sm font-bold neon-text-gold">{monthLabel}</h2>
           <span className="text-[9px] font-mono text-slate-600">AUTO-REFRESH: 1HR</span>
         </motion.div>
+
+        {/* ── Error State ── */}
+        {error && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl px-4 py-3 flex items-center gap-3"
+            style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+            <svg className="w-4 h-4 shrink-0" style={{ color: '#ef4444' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span className="text-[11px] text-red-400 font-medium">Failed to load analytics: {error}</span>
+          </motion.div>
+        )}
+
+        {/* ── Loading State ── */}
+        {loading && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            className="flex items-center justify-center py-8">
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 animate-spin text-cyan-400" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              <span className="text-xs text-slate-500 font-medium">Loading analytics data...</span>
+            </div>
+          </motion.div>
+        )}
 
         {/* ── Stats Cards ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
