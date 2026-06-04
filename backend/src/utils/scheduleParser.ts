@@ -111,17 +111,81 @@ export function parseScheduleString(schedStr: string, startTime?: string, timezo
   const s = schedStr.trim();
   // Pass timezone as-is — Stonebranch accepts IANA, Etc/GMT+X, IST, etc.
 
-  // FREQ=DAILY;INTERVAL=1 style
+  // FREQ= style — handle all frequency types
   if (s.startsWith('FREQ=')) {
-    const freq     = s.match(/FREQ=([^;]+)/)?.[1] ?? 'DAILY';
+    const freq     = (s.match(/FREQ=([^;]+)/)?.[1] ?? 'DAILY').toUpperCase();
     const interval = parseInt(s.match(/INTERVAL=(\d+)/)?.[1] ?? '1');
+    const unitsMatch = s.match(/units?=(minutes?|hours?|seconds?)/i);
+    const byDayMatch = s.match(/byday=([^;]+)/i);
+    const startMatch = s.match(/starttime=(\d{1,2}:\d{2})/i);
+    const endMatch   = s.match(/endtime=(\d{1,2}:\d{2})/i);
+
+    // FREQ=INTERVAL or FREQ=MINUTELY or FREQ=HOURLY — recurring interval job
+    if (freq === 'INTERVAL' || freq === 'MINUTELY' || freq === 'HOURLY') {
+      const unitsRaw = unitsMatch?.[1]?.toLowerCase() || (freq === 'HOURLY' ? 'hours' : 'minutes');
+      const units = unitsRaw.startsWith('h') ? 'Hours' : unitsRaw.startsWith('s') ? 'Seconds' : 'Minutes';
+
+      const result: ParsedScheduleString = {
+        timeStyle:         'Interval',
+        timeInterval:      interval,
+        timeIntervalUnits: units,
+        timeZone:          timezone ?? 'UTC',
+        dayStyle:          'Simple',
+        simpleDateType:    'Daily',
+        human_readable:    `Every ${interval} ${units}`,
+      };
+
+      // Apply start/end from embedded fields or from function params
+      if (startMatch) {
+        result.enabledStart = startMatch[1];
+        result.restrictedTimes = true;
+      } else if (startTime) {
+        result.enabledStart = startTime;
+        result.restrictedTimes = true;
+      }
+      if (endMatch) {
+        result.enabledEnd = endMatch[1];
+        result.restrictedTimes = true;
+      }
+
+      if (result.enabledStart) result.human_readable += ` from ${result.enabledStart}`;
+      if (result.enabledEnd)   result.human_readable += ` until ${result.enabledEnd}`;
+
+      return result;
+    }
+
+    // FREQ=WEEKLY — specific days
+    if (freq === 'WEEKLY') {
+      return {
+        timeStyle:      'Absolute',
+        time:           startTime ?? '00:00',
+        timeZone:       timezone  ?? 'UTC',
+        dayStyle:       'Simple',
+        simpleDateType: 'Daily',
+        human_readable: `Weekly${byDayMatch ? ` on ${byDayMatch[1]}` : ''}`,
+      };
+    }
+
+    // FREQ=MONTHLY — complex day style
+    if (freq === 'MONTHLY') {
+      return {
+        timeStyle:      'Absolute',
+        time:           startTime ?? '00:00',
+        timeZone:       timezone  ?? 'UTC',
+        dayStyle:       'Simple',
+        simpleDateType: 'Daily',
+        human_readable: `Monthly${byDayMatch ? ` on day ${byDayMatch[1]}` : ''}`,
+      };
+    }
+
+    // FREQ=DAILY or unknown — daily absolute
     return {
       timeStyle:      'Absolute',
       time:           startTime ?? '00:00',
       timeZone:       timezone  ?? 'UTC',
       dayStyle:       'Simple',
-      simpleDateType: freq === 'DAILY' ? 'Daily' : freq,
-      human_readable: `Every ${interval} day(s)`,
+      simpleDateType: 'Daily',
+      human_readable: interval > 1 ? `Every ${interval} day(s)` : 'Daily',
     };
   }
 

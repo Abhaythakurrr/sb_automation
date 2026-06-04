@@ -376,6 +376,14 @@ export function buildTriggerPayload(
     if (schedFields.sat) base.sat = true;
     if (schedFields.sun) base.sun = true;
 
+    // ── CRITICAL: Interval triggers must NOT have `time` field set ────────────
+    // UAC treats `time` as the absolute trigger time. For interval triggers,
+    // the timing is controlled by timeInterval + enabledStart/enabledEnd.
+    // Setting `time` on an interval trigger causes UAC to ignore the interval.
+    if (base.timeStyle === 'Interval') {
+      delete base.time;
+    }
+
     // Remove conflicting defaults
     if (base.dayStyle === 'Complex') delete base.simpleDateType;
   }
@@ -459,6 +467,19 @@ export function buildTriggerPayload(
       console.warn(`[TRIGGER] ${base.name}: timeStyle=Absolute but no time found — removing timeStyle`);
       delete base.timeStyle;
     }
+  }
+
+  // ── SAFETY: Interval triggers must have timeInterval ────────────────────────
+  // If somehow we have timeStyle=Interval but no timeInterval, set a sensible default
+  if (base.timeStyle === 'Interval' && !base.timeInterval) {
+    console.warn(`[TRIGGER] ${base.name}: timeStyle=Interval but no timeInterval — defaulting to 60 Minutes`);
+    base.timeInterval = 60;
+    base.timeIntervalUnits = 'Minutes';
+  }
+
+  // ── SAFETY: Interval triggers should not have `time` field ──────────────────
+  if (base.timeStyle === 'Interval' && base.time) {
+    delete base.time;
   }
 
   return filterPayload(base, ALLOWED_TRIGGER_FIELDS, 'TRIGGER') as TriggerPayload;

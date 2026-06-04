@@ -275,13 +275,19 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
       if (byDayMatch) {
         const byDay = byDayMatch[1].trim().toLowerCase();
         if (byDay === 'daily' || byDay === 'everyday') {
-          // All days — default
-        } else if (byDay === 'weekdays' || byDay === 'mon,tue,wed,thu,fri') {
+          // All days — default (dayStyle=Simple, simpleDateType=Daily, no day flags)
+        } else if (byDay === 'weekdays' || byDay === 'mon-fri' || byDay === 'mon,tue,wed,thu,fri') {
+          result.mon = true; result.tue = true; result.wed = true;
+          result.thu = true; result.fri = true;
+        } else if (byDay === 'business days' || byDay === 'businessdays') {
           result.mon = true; result.tue = true; result.wed = true;
           result.thu = true; result.fri = true;
         } else {
+          // Individual days: "Mon,Wed,Fri" or single day "Monday"
           const days = byDay.split(',').map(d => DAY_MAP[d.trim()]).filter(Boolean);
-          days.forEach(d => { (result as any)[d] = true; });
+          if (days.length > 0) {
+            days.forEach(d => { (result as any)[d] = true; });
+          }
         }
       }
       return result;
@@ -345,11 +351,45 @@ export function buildScheduleFields(
   // 2. Parse frequency/day pattern
   const dayFields = parseFrequencyInput(frequency);
 
-  // 3. Merge — time fields take priority, day fields fill in the day pattern
-  const result: TriggerScheduleFields = { ...dayFields, ...timeFields };
+  // 3. SMART MERGE — frequency timeStyle=Interval takes PRIORITY over time input
+  //    If frequency says "this is an interval job", the time input becomes enabledStart,
+  //    NOT an absolute time override.
+  let result: TriggerScheduleFields;
+
+  if (dayFields.timeStyle === 'Interval') {
+    // Frequency declared this as an interval job — it wins.
+    // Time from starttime/rawTime becomes enabledStart (the window start).
+    result = { ...dayFields };
+
+    // Carry over timezone from time parsing
+    if (timeFields.timeZone) result.timeZone = timeFields.timeZone;
+
+    // If time input parsed a specific time, use it as enabledStart
+    if (timeFields.time && !result.enabledStart) {
+      result.enabledStart = timeFields.time;
+      result.restrictedTimes = true;
+    }
+    // If time input itself detected an interval (AT X EVERY Y), merge its window
+    if (timeFields.enabledStart && !result.enabledStart) {
+      result.enabledStart = timeFields.enabledStart;
+      result.restrictedTimes = true;
+    }
+    if (timeFields.enabledEnd && !result.enabledEnd) {
+      result.enabledEnd = timeFields.enabledEnd;
+      result.restrictedTimes = true;
+    }
+  } else if (timeFields.timeStyle === 'Interval') {
+    // Time input detected interval (e.g. "AT 0600 EVERY 0030 UNTIL 2200")
+    // Time wins, day pattern from frequency fills in day details
+    result = { ...dayFields, ...timeFields };
+  } else {
+    // Neither is interval — normal merge, time fields take priority
+    result = { ...dayFields, ...timeFields };
+  }
 
   // 4. If Job Starttime also contained day names (e.g. "Monday at 08:00"), override day pattern
-  if (starttime && !starttime.toUpperCase().startsWith('AT ') && !starttime.startsWith('FREQ=')) {
+  //    BUT only if this is NOT an interval job (interval jobs use frequency for day pattern)
+  if (result.timeStyle !== 'Interval' && starttime && !starttime.toUpperCase().startsWith('AT ') && !starttime.startsWith('FREQ=')) {
     const lower = starttime.toLowerCase();
     const foundDays: string[] = [];
     for (const [name, short] of Object.entries(DAY_MAP)) {
@@ -371,22 +411,23 @@ export function buildScheduleFields(
     result.timeZone = rawTz.replace(/^TIMEZONE\s+/i, '').trim();
   }
   if (!result.time && !result.timeInterval && rawTime) {
-    result.timeStyle = 'Absolute';
-    result.time = toHHMM(rawTime);
+    // Only set Absolute if frequency didn't declare Interval
+    if (result.timeStyle !== 'Interval') {
+      result.timeStyle = 'Absolute';
+      result.time = toHHMM(rawTime);
+    }
   }
 
   // 6. End time for interval jobs — from separate 'Job End Time' column
-  // If this is an interval job and we have an explicit end time, apply it
   if (rawEndTime && rawEndTime.trim()) {
     const endHHMM = toHHMM(rawEndTime.trim());
     if (endHHMM) {
       if (result.timeStyle === 'Interval') {
         // Already an interval — add end time restriction
-        result.enabledEnd = endHHMM;
+        if (!result.enabledEnd) result.enabledEnd = endHHMM;
         result.restrictedTimes = true;
       } else if (!result.timeStyle) {
         // No time style yet — treat as interval start/end
-        // enabledStart was set from rawTime or starttime
         if (rawTime) result.enabledStart = toHHMM(rawTime);
         result.enabledEnd = endHHMM;
         result.restrictedTimes = true;
@@ -394,9 +435,22 @@ export function buildScheduleFields(
     }
   }
 
-  // 7. For interval jobs, if enabledStart is missing, use rawTime
-  if (result.timeStyle === 'Interval' && !result.enabledStart && rawTime) {
-    result.enabledStart = toHHMM(rawTime);
+  // 7. For interval jobs, if enabledStart is missing, use rawTime or starttime time
+  if (result.timeStyle === 'Interval' && !result.enabledStart) {
+    if (rawTime) {
+      result.enabledStart = toHHMM(rawTime);
+      result.restrictedTimes = true;
+    } else if (timeFields.time) {
+      result.enabledStart = timeFields.time;
+      result.restrictedTimes = true;
+    }
+  }
+
+  // 8. For interval jobs with enabledStart but no enabledEnd, don't set restrictedTimes
+  //    UAC allows interval without end time (runs until midnight)
+  //    But if enabledEnd IS set, restrictedTimes must be true
+  if (result.timeStyle === 'Interval' && result.enabledEnd) {
+    result.restrictedTimes = true;
   }
 
   return result;
