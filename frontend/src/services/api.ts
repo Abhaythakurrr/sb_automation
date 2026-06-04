@@ -6,7 +6,7 @@ import axios, { AxiosInstance } from 'axios';
 const BACKEND = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
 
 export class ApiClient {
-  private http: AxiosInstance;
+  public http: AxiosInstance;
   private sessionId: string;
 
   constructor(sessionId = '') {

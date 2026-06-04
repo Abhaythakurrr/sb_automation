@@ -83,6 +83,23 @@ export const AUTOMATIONS: Automation[] = [
     route:       '/job-deletion',
   },
   {
+    id:          'analytics',
+    title:       'Analytics & Insights',
+    description: 'Monitor failed jobs, track new task/trigger creation, and view comprehensive operations analytics with heatmaps and data visualization.',
+    icon:        'analytics',
+    status:      'live',
+    category:    'Intelligence',
+    features:    [
+      'Failed job analysis',
+      'Creation tracking',
+      'Operations heatmaps',
+      'Top failing jobs',
+      'Type breakdown charts',
+      'Auto-refresh (1hr)',
+    ],
+    route: '/analytics',
+  },
+  {
     id:          'bulk-update',
     title:       'Bulk Job Update',
     description: 'Update multiple existing tasks and triggers in one operation — reschedule, migrate agents, rotate credentials.',

@@ -3,6 +3,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
+import { playClick, playDelete, playWarning, playSuccess, playError, playWhoosh } from '@/utils/soundEffects';
 import * as XLSX from 'xlsx';
 
 type StepStatus = 'checking' | 'ok' | 'warn' | 'error';
@@ -88,6 +89,8 @@ export default function JobDeletionPage() {
   const [backupData, setBackupData] = useState<any[]>([]);
   const [backingUp, setBackingUp] = useState(false);
   const [backupDone, setBackupDone] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
 
   const updateJob = useCallback((name: string, patch: Partial<JobState>) => {
     setJobs(prev => prev.map(j => j.name === name ? { ...j, ...patch } : j));
@@ -104,12 +107,13 @@ export default function JobDeletionPage() {
 
   const processJob = useCallback(async (name: string) => {
     updateJob(name, { phase: 'inspecting', steps: [] });
+    playClick();
     try {
       const res = await globalApi.inspectJob(name);
       const inspect = res.data?.data as InspectData;
       updateJob(name, { inspect, steps: inspect.steps });
       if (!inspect.task) { updateJob(name, { phase: 'done', success: false }); return; }
-      if (inspect.hasActiveInstances) { updateJob(name, { phase: 'prompt_force_finish' }); return; }
+      if (inspect.hasActiveInstances) { updateJob(name, { phase: 'prompt_force_finish' }); playWarning(); return; }
       await deleteJob(name);
     } catch (e: any) {
       addStep(name, { label: `Error: ${e.message}`, status: 'error', ts: new Date().toISOString() });
@@ -119,10 +123,12 @@ export default function JobDeletionPage() {
 
   const deleteJob = useCallback(async (name: string) => {
     updateJob(name, { phase: 'deleting' });
+    playDelete();
     try {
       const res = await globalApi.deleteJob(name);
       const d = res.data;
       setJobs(prev => prev.map(j => j.name === name ? { ...j, phase: 'done', success: d.success, steps: [...j.steps, ...(d?.data?.steps ?? [])] } : j));
+      if (d.success) playSuccess(); else playError();
     } catch (e: any) {
       addStep(name, { label: `Delete error: ${e.message}`, status: 'error', ts: new Date().toISOString() });
       updateJob(name, { phase: 'done', success: false });
@@ -132,6 +138,7 @@ export default function JobDeletionPage() {
 
   const handleForceFinish = useCallback(async (name: string) => {
     updateJob(name, { phase: 'force_finishing' });
+    playWarning();
     try {
       const res = await globalApi.forceFinishJob(name);
       setJobs(prev => prev.map(j => j.name === name ? { ...j, steps: [...j.steps, ...(res.data?.data?.steps ?? [])] } : j));
@@ -254,9 +261,10 @@ export default function JobDeletionPage() {
               Load Jobs
             </button>
             {jobs.length > 0 && (
-              <motion.button onClick={handleRun} disabled={!canRun}
-                whileHover={canRun ? { scale: 1.02 } : {}} whileTap={canRun ? { scale: 0.98 } : {}}
-                className="btn-danger px-6 py-2.5 rounded-lg text-xs flex items-center gap-2 disabled:opacity-40">
+              <motion.button onClick={() => { playClick(); setShowConfirm(true); setConfirmText(''); }} disabled={!canRun}
+                whileHover={canRun ? { scale: 1.02, y: -1 } : {}} whileTap={canRun ? { scale: 0.98 } : {}}
+                className="btn-danger px-6 py-2.5 rounded-xl text-xs flex items-center gap-2 disabled:opacity-40"
+                style={{ boxShadow: canRun ? '0 0 20px rgba(239,68,68,0.1)' : 'none' }}>
                 {running ? (
                   <><motion.div className="w-3 h-3 rounded-full border-2 border-red-400 border-t-transparent" animate={{ rotate: 360 }} transition={{ duration: 0.7, repeat: Infinity, ease: 'linear' }}/>Running...</>
                 ) : (
@@ -416,8 +424,164 @@ export default function JobDeletionPage() {
         )}
 
         <footer className="section-line mt-10" />
-        <p className="text-center text-[9px] font-mono text-slate-800 py-4">DESIGNED AND ENGINEERED BY ABHAY THAKUR</p>
+        <p className="text-center text-[9px] font-mono py-4"><span className="neon-text-gold">DESIGNED AND ENGINEERED BY ABHAY THAKUR</span></p>
       </main>
+
+      {/* ══ DELETION CONFIRMATION MODAL ══ */}
+      <AnimatePresence>
+        {showConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center"
+            style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}
+            onClick={() => setShowConfirm(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, rotateX: -10, y: 30 }}
+              animate={{ opacity: 1, scale: 1, rotateX: 0, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              onClick={e => e.stopPropagation()}
+              className="relative w-full max-w-md mx-4 rounded-2xl overflow-hidden delete-confirm-card"
+              style={{
+                background: 'linear-gradient(145deg, rgba(20,8,8,0.98), rgba(10,4,4,0.99))',
+                border: '1px solid rgba(239,68,68,0.25)',
+                boxShadow: '0 0 60px rgba(239,68,68,0.1), 0 25px 50px rgba(0,0,0,0.5)',
+                perspective: '800px',
+              }}
+            >
+              {/* Warning accent */}
+              <div className="absolute top-0 left-0 right-0 h-[2px]"
+                style={{ background: 'linear-gradient(90deg, transparent, #ef4444, #f97316, transparent)' }} />
+
+              <div className="p-6">
+                {/* Animated warning icon */}
+                <div className="flex justify-center mb-5">
+                  <motion.div
+                    className="w-16 h-16 rounded-2xl flex items-center justify-center relative"
+                    style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}
+                    animate={{ rotate: [0, -3, 3, -2, 0] }}
+                    transition={{ duration: 0.5, delay: 0.3 }}
+                  >
+                    <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                    {/* Pulse rings */}
+                    <motion.div className="absolute inset-0 rounded-2xl"
+                      style={{ border: '1px solid rgba(239,68,68,0.3)' }}
+                      animate={{ scale: [1, 1.2], opacity: [0.5, 0] }}
+                      transition={{ duration: 2, repeat: Infinity }} />
+                  </motion.div>
+                </div>
+
+                {/* Title */}
+                <h3 className="text-lg font-bold text-center text-slate-100 mb-2">
+                  Confirm Deletion
+                </h3>
+                <p className="text-xs text-center text-slate-500 mb-4">
+                  You are about to delete <span className="text-red-400 font-bold">{jobs.filter(j => j.phase === 'idle').length} job(s)</span>.
+                  This action cannot be undone without a backup.
+                </p>
+
+                {/* Job list preview */}
+                <div className="rounded-xl p-3 mb-4 max-h-32 overflow-auto custom-scroll"
+                  style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(239,68,68,0.1)' }}>
+                  {jobs.filter(j => j.phase === 'idle').slice(0, 8).map(j => (
+                    <div key={j.name} className="flex items-center gap-2 py-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-red-500/60" />
+                      <span className="text-[10px] font-mono text-slate-400">{j.name}</span>
+                    </div>
+                  ))}
+                  {jobs.filter(j => j.phase === 'idle').length > 8 && (
+                    <p className="text-[9px] text-slate-600 mt-1">+{jobs.filter(j => j.phase === 'idle').length - 8} more...</p>
+                  )}
+                </div>
+
+                {/* Safety check: backup reminder */}
+                <div className="rounded-xl p-3 mb-4 flex items-center gap-3"
+                  style={{
+                    background: backupEnabled ? 'rgba(139,92,246,0.05)' : 'rgba(245,158,11,0.05)',
+                    border: backupEnabled ? '1px solid rgba(139,92,246,0.15)' : '1px solid rgba(245,158,11,0.2)',
+                  }}>
+                  {backupEnabled ? (
+                    <>
+                      <svg className="w-4 h-4 text-purple-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                      </svg>
+                      <p className="text-[10px] text-purple-300">Backup enabled — jobs will be exported before deletion</p>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-[10px] text-amber-300">No backup — deletion is permanent!</p>
+                    </>
+                  )}
+                </div>
+
+                {/* Type to confirm */}
+                <div className="mb-4">
+                  <p className="text-[10px] text-slate-500 mb-2">
+                    Type <span className="text-red-400 font-bold font-mono">DELETE</span> to confirm:
+                  </p>
+                  <input
+                    value={confirmText}
+                    onChange={e => setConfirmText(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && confirmText === 'DELETE') { setShowConfirm(false); playWhoosh(); handleRun(); } }}
+                    className="w-full rounded-xl px-4 py-2.5 text-sm font-mono text-center text-red-300 outline-none transition-all"
+                    style={{
+                      background: 'rgba(0,0,0,0.4)',
+                      border: confirmText === 'DELETE' ? '1px solid rgba(239,68,68,0.5)' : '1px solid rgba(51,65,85,0.3)',
+                      boxShadow: confirmText === 'DELETE' ? '0 0 15px rgba(239,68,68,0.1)' : 'none',
+                    }}
+                    placeholder="DELETE"
+                    autoFocus
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowConfirm(false)}
+                    className="flex-1 px-4 py-2.5 rounded-xl text-xs font-medium text-slate-400 transition-all hover:text-slate-200"
+                    style={{ background: 'rgba(51,65,85,0.2)', border: '1px solid rgba(51,65,85,0.3)' }}
+                  >
+                    Cancel
+                  </button>
+                  <motion.button
+                    onClick={() => { setShowConfirm(false); playWhoosh(); handleRun(); }}
+                    disabled={confirmText !== 'DELETE'}
+                    whileHover={confirmText === 'DELETE' ? { scale: 1.02 } : {}}
+                    whileTap={confirmText === 'DELETE' ? { scale: 0.98 } : {}}
+                    className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                    style={{
+                      background: confirmText === 'DELETE'
+                        ? 'linear-gradient(135deg, rgba(239,68,68,0.3), rgba(220,38,38,0.2))'
+                        : 'rgba(51,65,85,0.1)',
+                      border: confirmText === 'DELETE'
+                        ? '1px solid rgba(239,68,68,0.5)'
+                        : '1px solid rgba(51,65,85,0.2)',
+                      color: confirmText === 'DELETE' ? '#fca5a5' : '#475569',
+                      boxShadow: confirmText === 'DELETE' ? '0 0 20px rgba(239,68,68,0.15)' : 'none',
+                    }}
+                  >
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Confirm Delete
+                    </span>
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

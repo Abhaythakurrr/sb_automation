@@ -1,33 +1,73 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence, useMotionValue, useTransform, useSpring } from 'framer-motion';
 import { AUTOMATIONS, Automation } from '@/automations/registry';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
 import { useWorkspaceStore, AutomationId } from '@/store/useWorkspaceStore';
+import { playClick, playHover, playConnect, playDisconnect, playWhoosh } from '@/utils/soundEffects';
 
-// ── Animated Background Particles ─────────────────────────────────────────────
-function ParticleField() {
+// ── 3D Tilt Hook ──────────────────────────────────────────────────────────────
+function use3DTilt(intensity = 8) {
+  const ref = useRef<HTMLDivElement>(null);
+  const rotateX = useMotionValue(0);
+  const rotateY = useMotionValue(0);
+  const springX = useSpring(rotateX, { stiffness: 300, damping: 30 });
+  const springY = useSpring(rotateY, { stiffness: 300, damping: 30 });
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    rotateX.set(-y * intensity);
+    rotateY.set(x * intensity);
+  }, [intensity, rotateX, rotateY]);
+
+  const handleMouseLeave = useCallback(() => {
+    rotateX.set(0);
+    rotateY.set(0);
+  }, [rotateX, rotateY]);
+
+  return { ref, springX, springY, handleMouseMove, handleMouseLeave };
+}
+
+// ── Premium Particle System ───────────────────────────────────────────────────
+function PremiumParticles() {
+  const particles = useRef(
+    Array.from({ length: 40 }, (_, i) => ({
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      size: 1 + Math.random() * 2,
+      color: i % 4 === 0 ? '#f59e0b' : i % 4 === 1 ? '#8b5cf6' : i % 4 === 2 ? '#06b6d4' : '#94a3b8',
+      duration: 5 + Math.random() * 8,
+      delay: Math.random() * 5,
+    }))
+  ).current;
+
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      {Array.from({ length: 30 }).map((_, i) => (
+      {particles.map((p, i) => (
         <motion.div
           key={i}
-          className="absolute w-1 h-1 rounded-full"
+          className="absolute rounded-full"
           style={{
-            background: i % 3 === 0 ? '#06b6d4' : i % 3 === 1 ? '#3b82f6' : '#8b5cf6',
-            left: `${Math.random() * 100}%`,
-            top: `${Math.random() * 100}%`,
-            opacity: 0.15 + Math.random() * 0.2,
+            width: p.size,
+            height: p.size,
+            background: p.color,
+            left: `${p.x}%`,
+            top: `${p.y}%`,
+            opacity: 0.12,
           }}
           animate={{
-            y: [0, -30 - Math.random() * 50, 0],
-            x: [0, (Math.random() - 0.5) * 40, 0],
-            opacity: [0.1, 0.4, 0.1],
+            y: [0, -40 - Math.random() * 60, 0],
+            x: [0, (Math.random() - 0.5) * 50, 0],
+            opacity: [0.05, 0.25, 0.05],
+            scale: [1, 1.5, 1],
           }}
           transition={{
-            duration: 4 + Math.random() * 6,
+            duration: p.duration,
             repeat: Infinity,
-            delay: Math.random() * 5,
+            delay: p.delay,
             ease: 'easeInOut',
           }}
         />
@@ -36,38 +76,94 @@ function ParticleField() {
   );
 }
 
-// ── Hex Grid Background ───────────────────────────────────────────────────────
-function HexGrid() {
+// ── 3D Floating Orbs ──────────────────────────────────────────────────────────
+function FloatingOrbs() {
   return (
-    <div className="absolute inset-0 pointer-events-none opacity-[0.03]">
-      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <pattern id="hexagons" width="56" height="100" patternUnits="userSpaceOnUse" patternTransform="scale(1.5)">
-            <path d="M28 66L0 50L0 16L28 0L56 16L56 50L28 66L28 100" fill="none" stroke="#06b6d4" strokeWidth="0.5"/>
-            <path d="M28 0L28 34L0 50L0 84L28 100L56 84L56 50L28 34" fill="none" stroke="#06b6d4" strokeWidth="0.5"/>
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#hexagons)" />
-      </svg>
-    </div>
-  );
-}
-
-// ── Live Data Pulse ───────────────────────────────────────────────────────────
-function DataPulse() {
-  return (
-    <div className="absolute top-0 left-0 right-0 h-[1px] overflow-hidden pointer-events-none">
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {/* Gold orb */}
       <motion.div
-        className="h-full w-32"
-        style={{ background: 'linear-gradient(90deg, transparent, #06b6d4, transparent)' }}
-        animate={{ x: ['-128px', 'calc(100vw + 128px)'] }}
-        transition={{ duration: 4, repeat: Infinity, ease: 'linear', repeatDelay: 2 }}
+        className="absolute w-[500px] h-[500px] rounded-full"
+        style={{
+          background: 'radial-gradient(circle, rgba(245,158,11,0.06) 0%, transparent 70%)',
+          right: '-10%',
+          top: '5%',
+        }}
+        animate={{
+          y: [0, -30, 0],
+          x: [0, 15, 0],
+          scale: [1, 1.1, 1],
+        }}
+        transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+      />
+      {/* Purple orb */}
+      <motion.div
+        className="absolute w-[400px] h-[400px] rounded-full"
+        style={{
+          background: 'radial-gradient(circle, rgba(139,92,246,0.05) 0%, transparent 70%)',
+          left: '-5%',
+          bottom: '10%',
+        }}
+        animate={{
+          y: [0, 20, 0],
+          x: [0, -10, 0],
+          scale: [1, 1.05, 1],
+        }}
+        transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut', delay: 3 }}
+      />
+      {/* Cyan orb */}
+      <motion.div
+        className="absolute w-[300px] h-[300px] rounded-full"
+        style={{
+          background: 'radial-gradient(circle, rgba(6,182,212,0.04) 0%, transparent 70%)',
+          left: '30%',
+          top: '20%',
+        }}
+        animate={{
+          y: [0, -20, 0],
+          scale: [1, 1.15, 1],
+        }}
+        transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 5 }}
       />
     </div>
   );
 }
 
-// ── Icons ─────────────────────────────────────────────────────────────────────
+// ── Animated Grid Mesh ────────────────────────────────────────────────────────
+function GridMesh() {
+  return (
+    <div className="absolute inset-0 pointer-events-none opacity-[0.025]">
+      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="premium-grid" width="80" height="80" patternUnits="userSpaceOnUse">
+            <path d="M 80 0 L 0 0 0 80" fill="none" stroke="url(#gridGradient)" strokeWidth="0.5"/>
+          </pattern>
+          <linearGradient id="gridGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#f59e0b" />
+            <stop offset="50%" stopColor="#8b5cf6" />
+            <stop offset="100%" stopColor="#06b6d4" />
+          </linearGradient>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#premium-grid)" />
+      </svg>
+    </div>
+  );
+}
+
+// ── Data Pulse — Gold ─────────────────────────────────────────────────────────
+function DataPulse() {
+  return (
+    <div className="absolute top-0 left-0 right-0 h-[1px] overflow-hidden pointer-events-none">
+      <motion.div
+        className="h-full w-40"
+        style={{ background: 'linear-gradient(90deg, transparent, #f59e0b, #8b5cf6, transparent)' }}
+        animate={{ x: ['-160px', 'calc(100vw + 160px)'] }}
+        transition={{ duration: 4, repeat: Infinity, ease: 'linear', repeatDelay: 3 }}
+      />
+    </div>
+  );
+}
+
+// ── Icons (unchanged logic, just updated colors) ──────────────────────────────
 function IconJob() {
   return (
     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -108,30 +204,39 @@ function IconUpdate() {
     </svg>
   );
 }
+function IconAnalytics() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+        d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+  );
+}
 
 function AutomationIcon({ icon }: { icon: string }) {
-  if (icon === 'job')     return <IconJob />;
-  if (icon === 'agent')   return <IconAgent />;
-  if (icon === 'monitor') return <IconMonitor />;
-  if (icon === 'delete')  return <IconDelete />;
-  if (icon === 'update')  return <IconUpdate />;
+  if (icon === 'job')       return <IconJob />;
+  if (icon === 'agent')     return <IconAgent />;
+  if (icon === 'monitor')   return <IconMonitor />;
+  if (icon === 'delete')    return <IconDelete />;
+  if (icon === 'update')    return <IconUpdate />;
+  if (icon === 'analytics') return <IconAnalytics />;
   return <IconJob />;
 }
 
-// ── Status badge ──────────────────────────────────────────────────────────────
+// ── Premium Status Badge ──────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: Automation['status'] }) {
   const cfg = {
-    'live':        { label: 'Operational', cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30', dot: 'bg-emerald-400' },
-    'beta':        { label: 'Beta',        cls: 'bg-amber-500/10 text-amber-400 border-amber-500/30', dot: 'bg-amber-400' },
-    'coming-soon': { label: 'Offline',     cls: 'bg-slate-700/30 text-slate-500 border-slate-600/30', dot: 'bg-slate-600' },
-    'maintenance': { label: 'In Dev',      cls: 'bg-blue-500/10 text-blue-400 border-blue-500/30', dot: 'bg-blue-400' },
-    'wip':         { label: 'Building',    cls: 'bg-orange-500/10 text-orange-400 border-orange-500/30', dot: 'bg-orange-400' },
+    'live':        { label: 'Operational', cls: 'badge-gold', dot: 'bg-amber-400' },
+    'beta':        { label: 'Beta',        cls: 'badge-purple', dot: 'bg-purple-400' },
+    'coming-soon': { label: 'Offline',     cls: 'badge-silver', dot: 'bg-slate-600' },
+    'maintenance': { label: 'In Dev',      cls: 'badge-silver', dot: 'bg-blue-400' },
+    'wip':         { label: 'Building',    cls: 'badge-silver', dot: 'bg-orange-400' },
   }[status];
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold tracking-wider uppercase border ${cfg.cls}`}>
+    <span className={`inline-flex items-center gap-1.5 ${cfg.cls}`}>
       <motion.span
         className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`}
-        animate={status === 'live' ? { opacity: [1, 0.3, 1] } : {}}
+        animate={status === 'live' ? { opacity: [1, 0.3, 1], scale: [1, 0.8, 1] } : {}}
         transition={{ duration: 2, repeat: Infinity }}
       />
       {cfg.label}
@@ -139,21 +244,25 @@ function StatusBadge({ status }: { status: Automation['status'] }) {
   );
 }
 
-
-// ── Automation Card — Command Center Style ────────────────────────────────────
+// ── 3D Automation Card ────────────────────────────────────────────────────────
 function AutomationCard({ auto, index }: { auto: Automation; index: number }) {
   const isLive = auto.status === 'live' || auto.status === 'beta';
   const isWip  = auto.status === 'wip' || auto.status === 'maintenance';
   const { openTab } = useWorkspaceStore();
+  const tilt = use3DTilt(6);
+
+  // Determine tier color
+  const tierColor = auto.status === 'live' ? 'gold' : auto.status === 'beta' ? 'purple' : 'silver';
 
   const handleClick = () => {
     if (!isLive) return;
-    // Map route to automation ID
+    playClick();
     const routeMap: Record<string, AutomationId> = {
       '/job-creation':  'job-creation',
       '/agent-control': 'agent-control',
       '/monitoring':    'monitoring',
       '/job-deletion':  'job-deletion',
+      '/analytics':     'analytics',
     };
     const id = routeMap[auto.route];
     if (id) openTab(id, auto.title);
@@ -161,53 +270,75 @@ function AutomationCard({ auto, index }: { auto: Automation; index: number }) {
 
   const cardContent = (
     <motion.div
-      initial={{ opacity: 0, y: 40 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, delay: 0.4 + index * 0.08, ease: [0.16, 1, 0.3, 1] }}
-      whileHover={isLive ? { y: -6, scale: 1.02 } : {}}
-      className={`relative group rounded-xl overflow-hidden transition-all duration-500 ${
+      ref={tilt.ref}
+      onMouseMove={tilt.handleMouseMove}
+      onMouseLeave={tilt.handleMouseLeave}
+      onMouseEnter={() => isLive && playHover()}
+      initial={{ opacity: 0, y: 50, rotateX: -10 }}
+      animate={{ opacity: 1, y: 0, rotateX: 0 }}
+      transition={{ duration: 0.7, delay: 0.3 + index * 0.1, ease: [0.16, 1, 0.3, 1] }}
+      style={{
+        rotateX: tilt.springX,
+        rotateY: tilt.springY,
+        transformStyle: 'preserve-3d',
+        perspective: '1200px',
+      }}
+      className={`relative group rounded-2xl overflow-hidden transition-all duration-500 ${
         isLive
           ? 'cursor-pointer'
           : isWip
           ? 'cursor-default'
           : 'cursor-not-allowed opacity-40'
-      }`}
-      style={{
-        background: isLive
-          ? 'linear-gradient(145deg, rgba(6,15,30,0.9), rgba(2,8,18,0.95))'
-          : 'rgba(6,15,30,0.5)',
-        border: isLive
-          ? '1px solid rgba(6,182,212,0.15)'
-          : isWip
-          ? '1px solid rgba(100,116,139,0.15)'
-          : '1px solid rgba(51,65,85,0.1)',
-      }}
+      } ${isLive ? `card-3d-${tierColor}` : ''}`}
+      whileHover={isLive ? { scale: 1.02 } : {}}
     >
-      {/* Top accent line */}
+      {/* Background */}
+      <div className="absolute inset-0" style={{
+        background: isLive
+          ? tierColor === 'gold'
+            ? 'linear-gradient(145deg, rgba(13,17,23,0.95), rgba(6,15,30,0.98))'
+            : 'linear-gradient(145deg, rgba(6,15,30,0.9), rgba(2,8,18,0.95))'
+          : 'rgba(6,15,30,0.5)',
+      }} />
+
+      {/* Top accent line — premium gradient */}
       {isLive && (
         <div className="absolute top-0 left-0 right-0 h-[1px]"
-          style={{ background: 'linear-gradient(90deg, transparent, rgba(6,182,212,0.5), rgba(59,130,246,0.5), transparent)' }} />
+          style={{
+            background: tierColor === 'gold'
+              ? 'linear-gradient(90deg, transparent, rgba(245,158,11,0.5), rgba(251,191,36,0.4), transparent)'
+              : 'linear-gradient(90deg, transparent, rgba(139,92,246,0.4), rgba(167,139,250,0.3), transparent)',
+          }} />
       )}
 
-      {/* Hover glow */}
+      {/* Hover glow — 3D depth effect */}
       {isLive && (
         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-          style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(6,182,212,0.08), transparent 70%)' }} />
+          style={{
+            background: tierColor === 'gold'
+              ? 'radial-gradient(ellipse at 50% 0%, rgba(245,158,11,0.08), transparent 70%)'
+              : 'radial-gradient(ellipse at 50% 0%, rgba(139,92,246,0.08), transparent 70%)',
+          }} />
       )}
 
-      <div className="p-5">
+      <div className="p-5 relative z-10" style={{ transform: 'translateZ(0)' }}>
         {/* Header row */}
         <div className="flex items-start justify-between mb-4">
-          <div className="w-10 h-10 rounded-lg flex items-center justify-center"
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center"
             style={{
               background: isLive
-                ? 'linear-gradient(135deg, rgba(6,182,212,0.12), rgba(59,130,246,0.12))'
+                ? tierColor === 'gold'
+                  ? 'linear-gradient(135deg, rgba(245,158,11,0.12), rgba(251,191,36,0.08))'
+                  : 'linear-gradient(135deg, rgba(139,92,246,0.12), rgba(167,139,250,0.08))'
                 : 'rgba(30,41,59,0.3)',
               border: isLive
-                ? '1px solid rgba(6,182,212,0.2)'
+                ? tierColor === 'gold'
+                  ? '1px solid rgba(245,158,11,0.25)'
+                  : '1px solid rgba(139,92,246,0.25)'
                 : '1px solid rgba(51,65,85,0.2)',
+              transform: 'translateZ(20px)',
             }}>
-            <span style={{ color: isLive ? '#67e8f9' : '#475569' }}>
+            <span style={{ color: isLive ? (tierColor === 'gold' ? '#fbbf24' : '#c4b5fd') : '#475569' }}>
               <AutomationIcon icon={auto.icon} />
             </span>
           </div>
@@ -216,13 +347,13 @@ function AutomationCard({ auto, index }: { auto: Automation; index: number }) {
 
         {/* Category */}
         <p className="text-[9px] font-bold tracking-[0.2em] uppercase mb-1.5"
-          style={{ color: isLive ? 'rgba(6,182,212,0.6)' : 'rgba(100,116,139,0.5)' }}>
+          style={{ color: isLive ? (tierColor === 'gold' ? 'rgba(245,158,11,0.6)' : 'rgba(139,92,246,0.6)') : 'rgba(100,116,139,0.5)' }}>
           {auto.category}
         </p>
 
         {/* Title */}
         <h3 className={`text-base font-bold mb-2 ${
-          isLive ? 'text-slate-100 group-hover:text-cyan-50' : 'text-slate-500'
+          isLive ? 'text-slate-100 group-hover:text-white' : 'text-slate-500'
         } transition-colors`}>
           {auto.title}
         </h3>
@@ -237,8 +368,8 @@ function AutomationCard({ auto, index }: { auto: Automation; index: number }) {
           {auto.features.slice(0, 3).map(f => (
             <span key={f} className="px-2 py-0.5 rounded text-[9px] font-medium"
               style={{
-                background: isLive ? 'rgba(6,182,212,0.06)' : 'rgba(30,41,59,0.3)',
-                border: isLive ? '1px solid rgba(6,182,212,0.1)' : '1px solid rgba(51,65,85,0.2)',
+                background: isLive ? (tierColor === 'gold' ? 'rgba(245,158,11,0.06)' : 'rgba(139,92,246,0.06)') : 'rgba(30,41,59,0.3)',
+                border: isLive ? (tierColor === 'gold' ? '1px solid rgba(245,158,11,0.1)' : '1px solid rgba(139,92,246,0.1)') : '1px solid rgba(51,65,85,0.2)',
                 color: isLive ? '#94a3b8' : '#475569',
               }}>
               {f}
@@ -253,7 +384,8 @@ function AutomationCard({ auto, index }: { auto: Automation; index: number }) {
 
         {/* CTA */}
         {isLive ? (
-          <div className="flex items-center gap-2 text-xs font-semibold text-cyan-400 group-hover:text-cyan-300 transition-colors">
+          <div className="flex items-center gap-2 text-xs font-semibold transition-colors"
+            style={{ color: tierColor === 'gold' ? '#fbbf24' : '#c4b5fd' }}>
             <span>Launch</span>
             <motion.svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"
               animate={{}} whileHover={{ x: 4 }}>
@@ -281,7 +413,7 @@ function AutomationCard({ auto, index }: { auto: Automation; index: number }) {
 }
 
 
-// ── Connection Panel — Command Center Style ───────────────────────────────────
+// ── Connection Panel — Premium Gold Theme ─────────────────────────────────────
 function ConnectionPanel() {
   const {
     connected, connecting, connError, environment,
@@ -311,6 +443,7 @@ function ConnectionPanel() {
       } catch { setBaseUrlHint(baseUrl.trim()); }
       setConnected(true);
       setToken('');
+      playConnect();
     } catch (e: any) {
       setConnError(e.response?.data?.error || e.message || 'Connection failed');
     } finally {
@@ -318,40 +451,41 @@ function ConnectionPanel() {
     }
   };
 
+  const handleDisconnect = () => {
+    playDisconnect();
+    disconnect();
+  };
+
   return (
     <motion.section
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, delay: 0.2 }}
+      initial={{ opacity: 0, y: 30, rotateX: -5 }}
+      animate={{ opacity: 1, y: 0, rotateX: 0 }}
+      transition={{ duration: 0.7, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
       className="max-w-6xl mx-auto px-6 mb-16"
+      style={{ perspective: '1200px' }}
     >
-      <div className="relative rounded-xl overflow-hidden"
+      <div className={`relative rounded-2xl overflow-hidden ${connected ? 'glass-card-gold' : 'glass-card'}`}
         style={{
-          background: 'linear-gradient(145deg, rgba(6,15,30,0.9), rgba(2,8,18,0.95))',
-          border: connected ? '1px solid rgba(34,197,94,0.2)' : '1px solid rgba(6,182,212,0.12)',
+          border: connected ? '1px solid rgba(245,158,11,0.2)' : '1px solid rgba(51,65,85,0.15)',
         }}>
-        {/* Top accent */}
-        <div className="absolute top-0 left-0 right-0 h-[1px]"
-          style={{
-            background: connected
-              ? 'linear-gradient(90deg, transparent, rgba(34,197,94,0.5), transparent)'
-              : 'linear-gradient(90deg, transparent, rgba(6,182,212,0.4), transparent)',
-          }} />
 
         <div className="p-6">
           {/* Panel header */}
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+              <motion.div className="w-9 h-9 rounded-xl flex items-center justify-center"
                 style={{
-                  background: connected ? 'rgba(34,197,94,0.1)' : 'rgba(6,182,212,0.1)',
-                  border: connected ? '1px solid rgba(34,197,94,0.2)' : '1px solid rgba(6,182,212,0.15)',
-                }}>
-                <svg className="w-4 h-4" fill="none" stroke={connected ? '#4ade80' : '#67e8f9'} viewBox="0 0 24 24">
+                  background: connected ? 'rgba(245,158,11,0.1)' : 'rgba(6,182,212,0.1)',
+                  border: connected ? '1px solid rgba(245,158,11,0.25)' : '1px solid rgba(6,182,212,0.15)',
+                }}
+                animate={connected ? { boxShadow: ['0 0 0 0 rgba(245,158,11,0)', '0 0 0 8px rgba(245,158,11,0)', '0 0 0 0 rgba(245,158,11,0)'] } : {}}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                <svg className="w-4.5 h-4.5" fill="none" stroke={connected ? '#fbbf24' : '#67e8f9'} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                     d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0" />
                 </svg>
-              </div>
+              </motion.div>
               <div>
                 <h2 className="text-sm font-semibold text-slate-200">UAC Connection</h2>
                 <p className="text-[10px] text-slate-600 mt-0.5">Secure session — token stored server-side only</p>
@@ -360,11 +494,11 @@ function ConnectionPanel() {
             {connected && (
               <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
-                style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}>
-                <motion.span className="w-2 h-2 rounded-full bg-emerald-400"
+                style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                <motion.span className="w-2 h-2 rounded-full bg-amber-400"
                   animate={{ opacity: [1, 0.3, 1], scale: [1, 0.8, 1] }}
                   transition={{ duration: 2, repeat: Infinity }} />
-                <span className="text-xs font-medium text-emerald-400">{environment}</span>
+                <span className="text-xs font-medium text-amber-400">{environment}</span>
               </motion.div>
             )}
           </div>
@@ -377,14 +511,14 @@ function ConnectionPanel() {
                   { label: 'Session', value: 'Active — encrypted', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
                   { label: 'Environment', value: environment, icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10', editable: true },
                 ].map(item => (
-                  <div key={item.label} className="rounded-lg px-3 py-2.5 flex items-center gap-2.5"
-                    style={{ background: 'rgba(2,8,18,0.6)', border: '1px solid rgba(51,65,85,0.2)' }}>
-                    <svg className="w-3.5 h-3.5 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div key={item.label} className="rounded-xl px-3 py-2.5 flex items-center gap-2.5"
+                    style={{ background: 'rgba(2,8,18,0.6)', border: '1px solid rgba(245,158,11,0.08)' }}>
+                    <svg className="w-3.5 h-3.5 text-amber-600/50 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={item.icon} />
                     </svg>
                     <div className="min-w-0 flex-1">
                       <p className="text-[9px] text-slate-600 uppercase tracking-wider font-semibold">{item.label}</p>
-                      {item.editable ? (
+                      {(item as any).editable ? (
                         <input
                           className="bg-transparent text-slate-300 outline-none w-full text-xs mt-0.5"
                           value={environment}
@@ -398,9 +532,8 @@ function ConnectionPanel() {
                   </div>
                 ))}
               </div>
-              <button onClick={disconnect}
-                className="w-full rounded-lg py-2.5 text-xs font-semibold transition-all hover:bg-red-500/10"
-                style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
+              <button onClick={handleDisconnect}
+                className="w-full btn-danger rounded-xl py-2.5 text-xs">
                 Disconnect Session
               </button>
             </div>
@@ -408,7 +541,7 @@ function ConnectionPanel() {
             <div className="space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <input
-                  className="w-full rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:ring-1 focus:ring-cyan-500/30 transition-all"
+                  className="w-full rounded-xl px-3 py-2.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:ring-1 focus:ring-amber-500/30 transition-all"
                   style={{ background: 'rgba(2,8,18,0.8)', border: '1px solid rgba(51,65,85,0.4)' }}
                   placeholder="https://instance.stonebranch.cloud"
                   value={baseUrl} onChange={e => setBaseUrl(e.target.value)}
@@ -417,7 +550,7 @@ function ConnectionPanel() {
                   disabled={!!process.env.NEXT_PUBLIC_SB_BASE_URL}
                   title={process.env.NEXT_PUBLIC_SB_BASE_URL ? 'Pre-configured by server admin' : ''} />
                 <input
-                  className="w-full rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:ring-1 focus:ring-cyan-500/30 transition-all"
+                  className="w-full rounded-xl px-3 py-2.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:ring-1 focus:ring-amber-500/30 transition-all"
                   style={{ background: 'rgba(2,8,18,0.8)', border: '1px solid rgba(51,65,85,0.4)' }}
                   placeholder="Bearer token" type="password"
                   value={token} onChange={e => setToken(e.target.value)}
@@ -426,35 +559,31 @@ function ConnectionPanel() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <input
-                  className="w-full rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:ring-1 focus:ring-cyan-500/30 transition-all"
+                  className="w-full rounded-xl px-3 py-2.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:ring-1 focus:ring-amber-500/30 transition-all"
                   style={{ background: 'rgba(2,8,18,0.8)', border: '1px solid rgba(51,65,85,0.4)' }}
                   placeholder="Display Name (e.g. Abhay Thakur)"
                   value={nameInput} onChange={e => setNameInput(e.target.value)} />
                 <input
-                  className="w-full rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:ring-1 focus:ring-cyan-500/30 transition-all"
+                  className="w-full rounded-xl px-3 py-2.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:ring-1 focus:ring-amber-500/30 transition-all"
                   style={{ background: 'rgba(2,8,18,0.8)', border: '1px solid rgba(51,65,85,0.4)' }}
                   placeholder="Environment (e.g. Production)"
                   value={environment} onChange={e => setEnvironment(e.target.value)} />
-                <button onClick={handleConnect} disabled={connecting}
-                  className="relative rounded-lg px-4 py-2.5 text-sm font-bold transition-all overflow-hidden group"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(6,182,212,0.2), rgba(59,130,246,0.2))',
-                    border: '1px solid rgba(6,182,212,0.3)',
-                    color: '#67e8f9',
-                    opacity: connecting ? 0.6 : 1,
-                  }}>
-                  <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.3), rgba(59,130,246,0.3))' }} />
-                  <span className="relative">{connecting ? 'Connecting...' : 'Authenticate'}</span>
-                </button>
+                <motion.button onClick={handleConnect} disabled={connecting}
+                  whileHover={{ scale: 1.02, y: -1 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="relative rounded-xl px-4 py-2.5 text-sm font-bold transition-all overflow-hidden group btn-gold"
+                  style={{ opacity: connecting ? 0.6 : 1 }}>
+                  <span className="relative z-10">{connecting ? 'Connecting...' : 'Authenticate'}</span>
+                </motion.button>
               </div>
               {connError && (
-                <p className="text-xs text-red-400 px-1 flex items-center gap-1.5">
+                <motion.p initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                  className="text-xs text-red-400 px-1 flex items-center gap-1.5">
                   <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   {connError}
-                </p>
+                </motion.p>
               )}
               <p className="text-[10px] text-slate-700 px-1">
                 Token is transmitted once to establish a secure session. Never stored in the browser.
@@ -468,7 +597,7 @@ function ConnectionPanel() {
 }
 
 
-// ── System Stats Bar ──────────────────────────────────────────────────────────
+// ── System Stats — Premium ────────────────────────────────────────────────────
 function SystemStats() {
   const { connected } = useConnectionStore();
   const liveCount = AUTOMATIONS.filter(a => a.status === 'live').length;
@@ -498,7 +627,7 @@ function SystemStats() {
     >
       <div className="flex items-center gap-6 text-[10px] font-mono text-slate-600 overflow-x-auto">
         <span className="flex items-center gap-1.5 shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/60" />
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500/60" />
           SYS: NOMINAL
         </span>
         <span className="shrink-0">MODULES: {liveCount}/{totalCount} ACTIVE</span>
@@ -506,7 +635,7 @@ function SystemStats() {
         <span className="shrink-0">API: REST v6.x</span>
         <span className="shrink-0">PROTO: HTTPS/TLS1.3</span>
         <span className="flex-1" />
-        <span className="shrink-0 text-slate-700">BUILD: 2.4.0-stable</span>
+        <span className="shrink-0 text-slate-700">BUILD: 3.0.0-premium</span>
       </div>
     </motion.div>
   );
@@ -520,33 +649,36 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>
       {/* Background layers */}
-      <HexGrid />
-      <ParticleField />
+      <GridMesh />
+      <FloatingOrbs />
+      <PremiumParticles />
 
       {/* Top bar */}
       <header className="fixed top-0 left-0 right-0 z-50"
-        style={{ background: 'rgba(2,8,18,0.9)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(6,182,212,0.08)' }}>
+        style={{ background: 'rgba(2,8,18,0.92)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(245,158,11,0.06)' }}>
         <DataPulse />
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden relative"
-              style={{ border: '1px solid rgba(6,182,212,0.2)' }}>
-              <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.1), rgba(59,130,246,0.1))' }} />
+            <motion.div className="w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden relative"
+              style={{ border: '1px solid rgba(245,158,11,0.25)' }}
+              whileHover={{ scale: 1.1, rotate: 5 }}
+              transition={{ type: 'spring', stiffness: 400 }}>
+              <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(139,92,246,0.1))' }} />
               <img src="/logo.png" alt="SB" className="w-6 h-6 object-contain relative z-10" />
-            </div>
+            </motion.div>
             <div>
-              <span className="text-sm font-bold neon-text">SB Automation</span>
+              <span className="text-sm font-bold neon-text-gold">SB Automation</span>
               <span className="text-[9px] text-slate-600 ml-2 font-mono hidden sm:inline">COMMAND CENTER</span>
             </div>
           </div>
           <div className="flex items-center gap-4 text-xs">
             {connected ? (
               <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md"
-                  style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.15)' }}>
-                  <motion.span className="w-1.5 h-1.5 rounded-full bg-emerald-400"
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
+                  style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)' }}>
+                  <motion.span className="w-1.5 h-1.5 rounded-full bg-amber-400"
                     animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} />
-                  <span className="text-emerald-400 font-medium text-[11px]">{environment}</span>
+                  <span className="text-amber-400 font-medium text-[11px]">{environment}</span>
                 </div>
               </div>
             ) : (
@@ -558,21 +690,14 @@ export default function LandingPage() {
 
       <main className="pt-14 relative z-10">
 
-        {/* Hero — Command Center */}
+        {/* Hero — Premium Command Center */}
         <section className="relative px-6 pt-16 pb-10 overflow-hidden">
-          {/* Radial glows */}
-          <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute top-10 right-[20%] w-[600px] h-[400px] rounded-full opacity-[0.04]"
-              style={{ background: 'radial-gradient(ellipse, #06b6d4, transparent 60%)' }} />
-            <div className="absolute bottom-0 left-[10%] w-[500px] h-[300px] rounded-full opacity-[0.03]"
-              style={{ background: 'radial-gradient(ellipse, #8b5cf6, transparent 60%)' }} />
-          </div>
-
           <div className="max-w-6xl mx-auto">
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+              style={{ perspective: '1200px' }}
             >
               {/* Tagline */}
               <motion.div
@@ -581,8 +706,8 @@ export default function LandingPage() {
                 transition={{ delay: 0.1 }}
                 className="flex items-center gap-2 mb-4"
               >
-                <div className="h-[1px] w-8" style={{ background: 'linear-gradient(90deg, #06b6d4, transparent)' }} />
-                <span className="text-[10px] font-bold tracking-[0.3em] uppercase text-cyan-500/70">
+                <div className="h-[1px] w-10" style={{ background: 'linear-gradient(90deg, #f59e0b, transparent)' }} />
+                <span className="text-[10px] font-bold tracking-[0.3em] uppercase text-amber-500/70">
                   Enterprise Workload Automation
                 </span>
               </motion.div>
@@ -592,12 +717,12 @@ export default function LandingPage() {
                 <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-3">
                   <span className="text-sm text-slate-500">Welcome back,</span>
                   <h1 className="text-3xl md:text-4xl font-black tracking-tight leading-[1.1]">
-                    <span className="neon-text">{username}</span>
+                    <span className="neon-text-gold">{username}</span>
                   </h1>
                 </motion.div>
               ) : (
-                <h1 className="text-4xl md:text-5xl font-black text-slate-100 tracking-tight leading-[1.1] mb-4">
-                  <span className="neon-text">Stonebranch</span>
+                <h1 className="text-4xl md:text-5xl font-black tracking-tight leading-[1.1] mb-4">
+                  <span className="neon-text-gold">Stonebranch</span>
                   <br />
                   <span className="text-slate-300">Automation Platform</span>
                 </h1>
@@ -605,33 +730,43 @@ export default function LandingPage() {
 
               {/* Subtitle */}
               <p className="text-sm text-slate-500 max-w-lg leading-relaxed mb-8">
-                Orchestrate job creation, agent lifecycle, monitoring, and deletion
+                Orchestrate job creation, agent lifecycle, monitoring, analytics, and deletion
                 through a unified command interface. Powered by the UAC REST API.
               </p>
 
-              {/* Capability indicators */}
+              {/* Capability indicators — premium badges */}
               <div className="flex flex-wrap gap-2">
                 {[
-                  { label: 'Bulk Job Creation', active: true },
-                  { label: 'Schedule Parsing', active: true },
-                  { label: 'Agent Lifecycle', active: true },
-                  { label: 'Real-time Alerts', active: true },
-                  { label: 'Safe Deletion', active: true },
-                  { label: 'Bulk Updates', active: false },
+                  { label: 'Bulk Job Creation', active: true, tier: 'gold' },
+                  { label: 'Schedule Parsing', active: true, tier: 'gold' },
+                  { label: 'Agent Lifecycle', active: true, tier: 'purple' },
+                  { label: 'Real-time Alerts', active: true, tier: 'purple' },
+                  { label: 'Safe Deletion', active: true, tier: 'gold' },
+                  { label: 'Analytics', active: true, tier: 'cyan' },
+                  { label: 'Bulk Updates', active: false, tier: 'silver' },
                 ].map(cap => (
                   <motion.span
                     key={cap.label}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
+                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
                     transition={{ delay: 0.3 + Math.random() * 0.3 }}
-                    className="px-2.5 py-1 rounded-md text-[10px] font-medium"
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-medium"
                     style={{
-                      background: cap.active ? 'rgba(6,182,212,0.05)' : 'rgba(30,41,59,0.3)',
-                      border: cap.active ? '1px solid rgba(6,182,212,0.12)' : '1px solid rgba(51,65,85,0.15)',
-                      color: cap.active ? '#94a3b8' : '#475569',
+                      background: cap.active
+                        ? cap.tier === 'gold' ? 'rgba(245,158,11,0.05)' : cap.tier === 'purple' ? 'rgba(139,92,246,0.05)' : 'rgba(6,182,212,0.05)'
+                        : 'rgba(30,41,59,0.3)',
+                      border: cap.active
+                        ? cap.tier === 'gold' ? '1px solid rgba(245,158,11,0.12)' : cap.tier === 'purple' ? '1px solid rgba(139,92,246,0.12)' : '1px solid rgba(6,182,212,0.12)'
+                        : '1px solid rgba(51,65,85,0.15)',
+                      color: cap.active
+                        ? cap.tier === 'gold' ? '#fbbf24' : cap.tier === 'purple' ? '#c4b5fd' : '#67e8f9'
+                        : '#475569',
                     }}>
                     {cap.active && (
-                      <span className="inline-block w-1 h-1 rounded-full bg-cyan-500/60 mr-1.5 relative top-[-1px]" />
+                      <span className="inline-block w-1 h-1 rounded-full mr-1.5 relative top-[-1px]"
+                        style={{
+                          background: cap.tier === 'gold' ? '#f59e0b' : cap.tier === 'purple' ? '#8b5cf6' : '#06b6d4',
+                        }} />
                     )}
                     {cap.label}
                   </motion.span>
@@ -653,11 +788,12 @@ export default function LandingPage() {
           {!connected && (
             <div className="absolute inset-0 z-20 flex items-start justify-center pt-20"
               style={{ backdropFilter: 'blur(8px)', background: 'rgba(2,8,18,0.4)' }}>
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                className="glass-card p-8 text-center max-w-sm">
-                <div className="w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center"
-                  style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)' }}>
-                  <svg className="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <motion.div initial={{ opacity: 0, y: 20, rotateX: -10 }} animate={{ opacity: 1, y: 0, rotateX: 0 }}
+                className="glass-card-gold p-8 text-center max-w-sm"
+                style={{ perspective: '800px' }}>
+                <div className="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center"
+                  style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                  <svg className="w-7 h-7 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                   </svg>
                 </div>
@@ -674,7 +810,7 @@ export default function LandingPage() {
             className="flex items-center justify-between mb-6"
           >
             <div className="flex items-center gap-3">
-              <div className="h-[1px] w-5" style={{ background: 'linear-gradient(90deg, #06b6d4, transparent)' }} />
+              <div className="h-[1px] w-5" style={{ background: 'linear-gradient(90deg, #f59e0b, transparent)' }} />
               <h2 className="text-xs font-bold tracking-[0.2em] uppercase text-slate-500">
                 Automation Modules
               </h2>
@@ -684,7 +820,7 @@ export default function LandingPage() {
             </span>
           </motion.div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {AUTOMATIONS.map((auto, i) => (
               <AutomationCard key={auto.id} auto={auto} index={i} />
             ))}
@@ -692,12 +828,12 @@ export default function LandingPage() {
         </section>
 
         {/* Footer */}
-        <footer className="border-t py-8" style={{ borderColor: 'rgba(6,182,212,0.05)', background: 'rgba(2,8,18,0.5)' }}>
+        <footer className="border-t py-8" style={{ borderColor: 'rgba(245,158,11,0.05)', background: 'rgba(2,8,18,0.5)' }}>
           <div className="max-w-6xl mx-auto px-6 flex items-center justify-between">
             <p className="text-[10px] text-slate-700 font-mono">
-              DESIGNED AND ENGINEERED BY <span className="text-slate-500">ABHAY THAKUR</span>
+              DESIGNED AND ENGINEERED BY <span className="neon-text-gold">ABHAY THAKUR</span>
             </p>
-            <p className="text-[10px] text-slate-800 font-mono">v2.4.0</p>
+            <p className="text-[10px] text-slate-800 font-mono">v3.0.0</p>
           </div>
         </footer>
 

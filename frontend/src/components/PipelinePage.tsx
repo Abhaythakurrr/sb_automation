@@ -8,6 +8,7 @@ import { DropZone, ParsedTable, JsonPanel, MergeTable } from './PipelineComponen
 import JobBuilderChat from './JobBuilderChat';
 import ExecutionDashboard from './ExecutionDashboard';
 import { JobRow as ChatJobRow } from '@/utils/jobDocParser';
+import { playClick, playSuccess, playError, playTick, playComplete, playWhoosh } from '@/utils/soundEffects';
 import * as XLSX from 'xlsx';
 
 // ─── tiny helpers ────────────────────────────────────────────────────────────
@@ -17,16 +18,125 @@ const G = ({ children, className = '' }: { children: React.ReactNode; className?
   </div>
 );
 
-const Tag = ({ label, color }: { label: string; color: 'cyan'|'green'|'red'|'yellow'|'purple' }) => {
+const Tag = ({ label, color }: { label: string; color: 'cyan'|'green'|'red'|'yellow'|'purple'|'gold' }) => {
   const c = {
     cyan:   'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
     green:  'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
     red:    'bg-red-500/10 text-red-400 border-red-500/20',
     yellow: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
     purple: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+    gold:   'bg-amber-500/10 text-amber-400 border-amber-500/25',
   }[color];
   return <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold tracking-wide border ${c}`}>{label}</span>;
 };
+
+// ─── Pipeline Step Visualization ─────────────────────────────────────────────
+const PIPELINE_STEPS = [
+  { id: 'upload', label: 'Upload', icon: '📄', description: 'Parse file or paste job doc' },
+  { id: 'preview', label: 'Preview', icon: '🔍', description: 'Review parsed data & JSON' },
+  { id: 'resolve', label: 'Resolve', icon: '🔗', description: 'Agent & ref job resolution' },
+  { id: 'execute', label: 'Execute', icon: '⚡', description: 'Create tasks & triggers' },
+  { id: 'verify', label: 'Verify', icon: '✓', description: 'Validate in UAC' },
+];
+
+function PipelineStepper({ currentStep, completedSteps }: { currentStep: number; completedSteps: number[] }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mb-8"
+    >
+      <div className="relative rounded-2xl overflow-hidden p-4"
+        style={{ background: 'linear-gradient(135deg, rgba(6,15,30,0.95), rgba(2,8,18,0.98))', border: '1px solid rgba(245,158,11,0.08)' }}>
+        {/* Top accent */}
+        <div className="absolute top-0 left-0 right-0 h-[1px]"
+          style={{ background: 'linear-gradient(90deg, transparent, rgba(245,158,11,0.3), rgba(139,92,246,0.2), transparent)' }} />
+
+        <div className="flex items-center justify-between relative">
+          {PIPELINE_STEPS.map((step, i) => {
+            const isActive = i === currentStep;
+            const isComplete = completedSteps.includes(i);
+            const isPast = i < currentStep;
+
+            return (
+              <div key={step.id} className="flex items-center flex-1">
+                {/* Step node */}
+                <div className="flex flex-col items-center relative z-10">
+                  <motion.div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-sm relative"
+                    style={{
+                      background: isComplete
+                        ? 'linear-gradient(135deg, rgba(245,158,11,0.2), rgba(251,191,36,0.1))'
+                        : isActive
+                        ? 'linear-gradient(135deg, rgba(139,92,246,0.2), rgba(167,139,250,0.1))'
+                        : 'rgba(15,23,42,0.6)',
+                      border: isComplete
+                        ? '1px solid rgba(245,158,11,0.4)'
+                        : isActive
+                        ? '1px solid rgba(139,92,246,0.4)'
+                        : '1px solid rgba(51,65,85,0.3)',
+                      boxShadow: isActive ? '0 0 20px rgba(139,92,246,0.15)' : isComplete ? '0 0 15px rgba(245,158,11,0.1)' : 'none',
+                    }}
+                    animate={isActive ? { scale: [1, 1.05, 1] } : {}}
+                    transition={{ duration: 2, repeat: Infinity }}
+                  >
+                    {isComplete ? (
+                      <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <span className={isActive ? 'grayscale-0' : 'grayscale opacity-50'}>{step.icon}</span>
+                    )}
+                    {/* Active pulse ring */}
+                    {isActive && (
+                      <motion.div
+                        className="absolute inset-0 rounded-xl"
+                        style={{ border: '1px solid rgba(139,92,246,0.3)' }}
+                        animate={{ scale: [1, 1.3], opacity: [0.5, 0] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                      />
+                    )}
+                  </motion.div>
+                  <span className={`mt-1.5 text-[9px] font-bold tracking-wider uppercase ${
+                    isComplete ? 'text-amber-400' : isActive ? 'text-purple-400' : 'text-slate-600'
+                  }`}>
+                    {step.label}
+                  </span>
+                </div>
+
+                {/* Connector line */}
+                {i < PIPELINE_STEPS.length - 1 && (
+                  <div className="flex-1 h-[2px] mx-2 rounded-full relative overflow-hidden"
+                    style={{ background: 'rgba(51,65,85,0.3)' }}>
+                    <motion.div
+                      className="absolute inset-y-0 left-0 rounded-full"
+                      style={{
+                        background: isPast || isComplete
+                          ? 'linear-gradient(90deg, #f59e0b, #8b5cf6)'
+                          : 'transparent',
+                      }}
+                      initial={{ width: '0%' }}
+                      animate={{ width: isPast || isComplete ? '100%' : '0%' }}
+                      transition={{ duration: 0.5, delay: i * 0.1 }}
+                    />
+                    {isActive && (
+                      <motion.div
+                        className="absolute inset-y-0 w-8 rounded-full"
+                        style={{ background: 'linear-gradient(90deg, transparent, rgba(139,92,246,0.5), transparent)' }}
+                        animate={{ x: ['-32px', '200%'] }}
+                        transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 // ─── types ───────────────────────────────────────────────────────────────────
 type ExecResult = { id:string; type:'task'|'trigger'; name:string; status:'success'|'failed'; message?:string; sbId?:string };
@@ -65,6 +175,7 @@ export default function PipelinePage() {
   // ── File upload ─────────────────────────────────────────────────────────────
   const handleFile = async (file: File) => {
     log(`[INFO] Uploading ${file.name}...`);
+    playClick();
     try {
       const res     = await globalApi.uploadFile(file);
       const payload = res.data?.data;
@@ -72,8 +183,10 @@ export default function PipelinePage() {
       setRows(parsed);
       setCompRows([]); setMergedTriggers([]); setRefResolved(false); setResults([]); setLogs([]); setPushDone(false);
       log(`[SUCCESS] Parsed ${parsed.length} row(s)`);
+      playSuccess();
     } catch (e: any) {
       log(`[ERROR] Upload failed: ${e.message}`);
+      playError();
     }
   };
 
@@ -262,6 +375,7 @@ export default function PipelinePage() {
     if (!rows.length) return;
     setExecuting(true); setResults([]); setProgress(0); setStreamSteps([]); setStreamSummary(null); setPushDone(false);
     log(`[INFO] Starting execution — ${rows.length} task(s) via stream...`);
+    playWhoosh();
 
     let completedJobs = 0;
     const totalJobs = rows.length;
@@ -279,8 +393,10 @@ export default function PipelinePage() {
           setStreamSteps(prev => [...prev, data]);
           if (data.status === 'success') {
             log(`[SUCCESS] ${data.name}: ${data.step}`);
+            playTick();
           } else if (data.status === 'error') {
             log(`[ERROR] ${data.name}: ${data.step}${data.message ? ' — ' + data.message : ''}`);
+            playError();
           }
         } else if (event === 'job_done') {
           completedJobs++;
@@ -289,12 +405,13 @@ export default function PipelinePage() {
           setStreamSummary(data);
           setProgress(100);
           log(`[INFO] Done — ${data.successful} success, ${data.failed} failed out of ${data.total}`);
+          playComplete();
         }
       },
       // onDone
       () => { setExecuting(false); },
       // onError
-      (err) => { log(`[ERROR] Stream error: ${err}`); setExecuting(false); }
+      (err) => { log(`[ERROR] Stream error: ${err}`); setExecuting(false); playError(); }
     );
 
     abortRef.current = abort;
@@ -459,11 +576,24 @@ export default function PipelinePage() {
   const hasData     = rows.length > 0;
   const canExecute  = hasData && refResolved && !executing && connected;
 
+  // Compute pipeline step
+  const currentStep = executing ? 3 : streamSummary ? 4 : hasData && refResolved ? 2 : hasData ? 1 : 0;
+  const completedSteps = [
+    ...(hasData ? [0] : []),
+    ...(hasData && refResolved ? [1] : []),
+    ...(hasData && refResolved && !executing ? [2] : []),
+    ...(streamSummary ? [3] : []),
+    ...(streamSummary && !executing ? [4] : []),
+  ];
+
   return (
     <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>
       <GlobalHeader title="Job Creation" subtitle="BULK TASK + TRIGGER PIPELINE" />
 
       <main className="pb-16 px-4 max-w-7xl mx-auto space-y-6 min-h-screen">
+
+        {/* ── PIPELINE STEPPER — Visual Progress ── */}
+        <PipelineStepper currentStep={currentStep} completedSteps={completedSteps} />
 
         {/* ── JOB BUILDER CHAT ── */}
         <motion.div initial={{ opacity:0, y:24 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.4 }}>
@@ -474,9 +604,10 @@ export default function PipelinePage() {
         <motion.div initial={{ opacity:0, y:24 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.5 }}>
           <G>
             <div className="flex items-center gap-3 mb-5">
-              <span className="w-7 h-7 rounded-lg bg-cyan-500/20 text-cyan-400 text-xs font-bold flex items-center justify-center">1</span>
+              <span className="w-8 h-8 rounded-xl text-xs font-bold flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(251,191,36,0.08))', border: '1px solid rgba(245,158,11,0.3)', color: '#fbbf24' }}>1</span>
               <h2 className="text-base font-semibold text-slate-200">Upload Job File</h2>
-              {hasData && <Tag label={`${rows.length} rows parsed`} color="green" />}
+              {hasData && <Tag label={`${rows.length} rows parsed`} color="gold" />}
             </div>
             <DropZone onFile={handleFile} hasData={hasData} />
           </G>
@@ -489,7 +620,8 @@ export default function PipelinePage() {
               <G>
                 <div className="flex items-center justify-between mb-5">
                   <div className="flex items-center gap-3">
-                    <span className="w-7 h-7 rounded-lg bg-purple-500/20 text-purple-400 text-xs font-bold flex items-center justify-center">2</span>
+                    <span className="w-8 h-8 rounded-xl text-xs font-bold flex items-center justify-center"
+                      style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(167,139,250,0.08))', border: '1px solid rgba(139,92,246,0.3)', color: '#c4b5fd' }}>2</span>
                     <h2 className="text-base font-semibold text-slate-200">Parsed Data & JSON Preview</h2>
                   </div>
                   <div className="flex gap-2">
@@ -565,7 +697,8 @@ export default function PipelinePage() {
             <motion.div key="s5" initial={{ opacity:0, y:24 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}>
               <G>
                 <div className="flex items-center gap-3 mb-5">
-                  <span className="w-7 h-7 rounded-lg bg-green-500/20 text-green-400 text-xs font-bold flex items-center justify-center">3</span>
+                  <span className="w-8 h-8 rounded-xl text-xs font-bold flex items-center justify-center"
+                    style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.15), rgba(16,185,129,0.08))', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80' }}>3</span>
                   <h2 className="text-base font-semibold text-slate-200">Schedule Merge — Ref Job Resolution</h2>
                 </div>
                 <MergeTable rows={compRows} />
@@ -580,9 +713,10 @@ export default function PipelinePage() {
             <motion.div key="s6" initial={{ opacity:0, y:24 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}>
               <G>
                 <div className="flex items-center gap-3 mb-5">
-                  <span className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 text-xs font-bold flex items-center justify-center">4</span>
+                  <span className="w-8 h-8 rounded-xl text-xs font-bold flex items-center justify-center"
+                    style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.15), rgba(59,130,246,0.08))', border: '1px solid rgba(6,182,212,0.3)', color: '#67e8f9' }}>4</span>
                   <h2 className="text-base font-semibold text-slate-200">Final JSON Payload</h2>
-                  <Tag label="Ready to send" color="cyan" />
+                  <Tag label="Ready to send" color="gold" />
                 </div>
                 <JsonPanel data={{ tasks: taskJSON, triggers: mergedTriggers.length ? mergedTriggers : triggerJSON }} maxH="h-80" />
               </G>
@@ -599,16 +733,25 @@ export default function PipelinePage() {
                   <p className="text-slate-400 text-sm">Pipeline ready — {rows.length} task(s) + {rows.length} trigger(s)</p>
                   <motion.button
                     onClick={handleExecute}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="px-10 py-3.5 rounded-xl text-base font-bold text-white relative overflow-hidden"
-                    style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.3), rgba(59,130,246,0.3))', border: '1px solid rgba(6,182,212,0.4)', boxShadow: '0 0 30px rgba(6,182,212,0.2)' }}
+                    whileHover={{ scale: 1.03, y: -2 }}
+                    whileTap={{ scale: 0.97 }}
+                    className="px-12 py-4 rounded-2xl text-base font-bold text-white relative overflow-hidden group"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(245,158,11,0.25), rgba(139,92,246,0.2))',
+                      border: '1px solid rgba(245,158,11,0.4)',
+                      boxShadow: '0 0 40px rgba(245,158,11,0.15), 0 8px 32px rgba(0,0,0,0.3)',
+                    }}
                   >
+                    {/* Animated shine */}
+                    <motion.div
+                      className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(251,191,36,0.05), transparent)' }}
+                    />
                     <span className="relative z-10 flex items-center gap-3">
                       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
-                      Create Tasks
+                      <span className="neon-text-gold">Create Tasks</span>
                     </span>
                   </motion.button>
                 </div>
@@ -788,7 +931,7 @@ export default function PipelinePage() {
 
       {/* Watermark */}
       <div className="fixed bottom-3 right-4 text-[9px] text-slate-800 pointer-events-none select-none font-mono">
-        BUILT BY ABHAY THAKUR
+        <span className="neon-text-gold">BUILT BY ABHAY THAKUR</span>
       </div>
     </div>
   );
