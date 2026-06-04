@@ -177,15 +177,23 @@ router.post('/created-items', async (req: AuthRequest, res: Response, next: Next
       });
     } catch { /* not all UAC versions support this */ }
 
-    // Merge local creation log entries
+    // Merge local creation log entries, deduplicating by name (UAC entries take priority)
     const localEntries = loadCreationLog();
     const filteredLocal = localEntries.filter(e => e.createdTime >= startDate && e.createdTime <= endDate + 'T23:59:59Z');
+    const uacTaskNames = new Set(tasks.map(t => t.name));
+    const uacTriggerNames = new Set(triggers.map(t => t.name));
     filteredLocal.forEach(entry => {
       const item = { name: entry.name, type: entry.type, createdTime: entry.createdTime, createdBy: entry.createdBy };
       if (entry.type === 'task' || entry.type.includes('task')) {
-        tasks.push(item);
+        if (!uacTaskNames.has(entry.name)) {
+          tasks.push(item);
+          uacTaskNames.add(entry.name);
+        }
       } else {
-        triggers.push(item);
+        if (!uacTriggerNames.has(entry.name)) {
+          triggers.push(item);
+          uacTriggerNames.add(entry.name);
+        }
       }
     });
 
@@ -204,13 +212,22 @@ router.post('/log-creation', async (req: AuthRequest, res: Response, next: NextF
       res.status(400).json({ success: false, error: 'items array required' });
       return;
     }
-    const entries: CreationLogEntry[] = items.map((item: any) => ({
-      name: item.name || '',
-      type: item.type || 'task',
-      createdTime: item.createdTime || new Date().toISOString(),
-      createdBy: item.createdBy || '',
-    }));
-    appendCreationLog(entries);
+    const validTypes = ['task', 'trigger'];
+    const entries: CreationLogEntry[] = [];
+    for (const item of items) {
+      const name = typeof item.name === 'string' ? item.name.trim() : '';
+      const type = typeof item.type === 'string' ? item.type : '';
+      const createdTime = typeof item.createdTime === 'string' ? item.createdTime.trim() : '';
+      const createdBy = typeof item.createdBy === 'string' ? item.createdBy.trim() : '';
+      if (!name || name.length > 200) continue;
+      if (!validTypes.includes(type)) continue;
+      if (!createdTime) continue;
+      if (createdBy.length > 100) continue;
+      entries.push({ name, type, createdTime: createdTime || new Date().toISOString(), createdBy });
+    }
+    if (entries.length > 0) {
+      appendCreationLog(entries);
+    }
     res.json({ success: true, data: { logged: entries.length } });
   } catch (e) { next(e); }
 });
