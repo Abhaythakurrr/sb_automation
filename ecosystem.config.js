@@ -14,6 +14,7 @@ module.exports = {
       cwd:          './backend',
       script:       'dist/index.js',
       interpreter:  'node',
+      exec_mode:    'fork',
       instances:    1,
       autorestart:  true,
       watch:        false,
@@ -29,8 +30,9 @@ module.exports = {
     {
       name:         'sb-frontend',
       cwd:          './frontend',
-      script:       'node_modules/.bin/next',
+      script:       'node_modules/next/dist/bin/next',
       args:         'start -p 3000',
+      exec_mode:    'fork',
       instances:    1,
       autorestart:  true,
       watch:        false,
