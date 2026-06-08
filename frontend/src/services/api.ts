@@ -259,4 +259,21 @@ export class ApiClient {
   async verifyJob(taskName: string): Promise<any> {
     return this.http.post('/api/execution/verify', { taskName });
   }
+
+  // ── Search & Edit — quick lookup and update ────────────────────────────────
+  async searchTask(name: string): Promise<any> {
+    return this.http.get('/api/search/task', { params: { name } });
+  }
+
+  async searchTrigger(name: string): Promise<any> {
+    return this.http.get('/api/search/trigger', { params: { name } });
+  }
+
+  async updateTask(payload: any): Promise<any> {
+    return this.http.put('/api/search/task', payload);
+  }
+
+  async updateTrigger(payload: any): Promise<any> {
+    return this.http.put('/api/search/trigger', payload);
+  }
 }

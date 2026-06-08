@@ -251,6 +251,24 @@ router.post('/stream', async (req: AuthRequest, res: Response): Promise<void> =>
     timestamp: new Date().toISOString(),
   });
 
+  // Log created items to analytics
+  const now = new Date().toISOString();
+  const creationLogItems = rows.map(row => ({
+    name: row.task_name,
+    type: 'task',
+    createdTime: now,
+    createdBy: 'automation',
+  }));
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    const logFile = path.default.join(process.cwd(), 'creation_log.json');
+    let existing: any[] = [];
+    try { if (fs.default.existsSync(logFile)) existing = JSON.parse(fs.default.readFileSync(logFile, 'utf-8')); } catch {}
+    existing.push(...creationLogItems);
+    fs.default.writeFileSync(logFile, JSON.stringify(existing.slice(-500), null, 2));
+  } catch {}
+
   auditLog({
     timestamp: new Date().toISOString(),
     requestId: (req as any).requestId || '',

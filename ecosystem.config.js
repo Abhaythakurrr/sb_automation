@@ -12,16 +12,16 @@ module.exports = {
     {
       name:         'sb-backend',
       cwd:          './backend',
-      script:       'dist/index.js',
-      interpreter:  'node',
+      script:       './node_modules/.bin/tsx',
+      args:         'src/index.ts',
       exec_mode:    'fork',
       instances:    1,
       autorestart:  true,
       watch:        false,
       max_memory_restart: '512M',
-      env_production: {
-        NODE_ENV:  'production',
-        PORT:      3001,
+      env: {
+        NODE_ENV:     'production',
+        BACKEND_PORT: 3001,
       },
       error_file:  './logs/backend-error.log',
       out_file:    './logs/backend-out.log',
@@ -30,14 +30,14 @@ module.exports = {
     {
       name:         'sb-frontend',
       cwd:          './frontend',
-      script:       'node_modules/next/dist/bin/next',
+      script:       'node_modules/.bin/next',
       args:         'start -p 3000',
       exec_mode:    'fork',
       instances:    1,
       autorestart:  true,
       watch:        false,
       max_memory_restart: '512M',
-      env_production: {
+      env: {
         NODE_ENV: 'production',
         PORT:     3000,
       },

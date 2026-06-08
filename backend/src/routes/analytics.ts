@@ -1,4 +1,4 @@
-/** Analytics Routes — failed jobs + created items queries */
+/** Analytics Routes — failed jobs + created items, with caching and parallel queries */
 import { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/session';
 import axios from 'axios';
@@ -8,10 +8,11 @@ import path from 'path';
 const router = Router();
 
 const CREATION_LOG_FILE = path.join(process.cwd(), 'creation_log.json');
+const ANALYTICS_CACHE_FILE = path.join(process.cwd(), 'analytics_cache.json');
 
 interface CreationLogEntry {
   name: string;
-  type: string;  // 'task' | 'trigger'
+  type: string;
   createdTime: string;
   createdBy: string;
 }
@@ -19,15 +20,38 @@ interface CreationLogEntry {
 function loadCreationLog(): CreationLogEntry[] {
   try {
     if (fs.existsSync(CREATION_LOG_FILE)) return JSON.parse(fs.readFileSync(CREATION_LOG_FILE, 'utf-8'));
-  } catch { /* ignore */ }
+  } catch {}
   return [];
 }
 
 function appendCreationLog(items: CreationLogEntry[]): void {
   const history = loadCreationLog();
   history.push(...items);
-  const trimmed = history.slice(-500);
-  fs.writeFileSync(CREATION_LOG_FILE, JSON.stringify(trimmed, null, 2));
+  fs.writeFileSync(CREATION_LOG_FILE, JSON.stringify(history.slice(-500), null, 2));
+}
+
+// ── Cache for analytics data — avoids timeout on every page load ──────────────
+interface AnalyticsCache {
+  failedJobs: any[];
+  summary: any;
+  lastUpdated: string;
+}
+
+function loadCache(): AnalyticsCache | null {
+  try {
+    if (fs.existsSync(ANALYTICS_CACHE_FILE)) {
+      const cache = JSON.parse(fs.readFileSync(ANALYTICS_CACHE_FILE, 'utf-8'));
+      // Cache valid for 5 minutes
+      if (cache.lastUpdated && (Date.now() - new Date(cache.lastUpdated).getTime()) < 5 * 60 * 1000) {
+        return cache;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function saveCache(data: AnalyticsCache): void {
+  try { fs.writeFileSync(ANALYTICS_CACHE_FILE, JSON.stringify(data, null, 2)); } catch {}
 }
 
 function sbClient(req: AuthRequest) {
@@ -38,11 +62,21 @@ function sbClient(req: AuthRequest) {
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-    timeout: 60000,
+    timeout: 10000,  // 10s max — fast fail
   });
 }
 
-// ── Failed Jobs for date range ────────────────────────────────────────────────
+// Helper: safe query with timeout — returns [] on failure
+async function safeQuery(client: any, url: string, params: any): Promise<any[]> {
+  try {
+    const r = await client.get(url, { params, timeout: 10000 });
+    return Array.isArray(r.data) ? r.data : (r.data?.taskInstance ?? r.data?.agent ?? []);
+  } catch {
+    return [];
+  }
+}
+
+// ── Failed Jobs — with cache ──────────────────────────────────────────────────
 router.post('/failed-jobs', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { startDate, endDate } = req.body;
@@ -52,220 +86,96 @@ router.post('/failed-jobs', async (req: AuthRequest, res: Response, next: NextFu
     }
 
     const client = sbClient(req);
-    const jobs: any[] = [];
 
-    // Fetch failed task instances using UAC API
-    // UAC POST /resources/taskinstance/list requires `name` — use GET listadv instead
-    try {
-      const r = await client.get('/resources/taskinstance/listadv', {
-        params: {
-          status: 'Failed',
-          startedge: startDate,
-          startle: endDate,
-        },
-        timeout: 60000,
-      });
-      const list = Array.isArray(r.data) ? r.data : (r.data?.taskInstance ?? []);
-      list.forEach((inst: any) => {
-        jobs.push({
-          name: inst.name || inst.taskName || '',
-          status: inst.status || 'Failed',
-          startTime: inst.startTime || inst.triggerTime || '',
-          endTime: inst.endTime || '',
-          agent: inst.agent || inst.agentCluster || '',
-          exitCode: inst.exitCode != null ? String(inst.exitCode) : '',
-          type: inst.type || '',
-        });
-      });
+    // Query Failed + Start Failure in PARALLEL (not sequential)
+    const [failedList, startFailList] = await Promise.all([
+      safeQuery(client, '/resources/taskinstance/listadv', { status: 'Failed', startedge: startDate, startle: endDate }),
+      safeQuery(client, '/resources/taskinstance/listadv', { status: 'Start Failure', startedge: startDate, startle: endDate }),
+    ]);
 
-      // Also fetch "Start Failure" status
-      try {
-        const r2 = await client.get('/resources/taskinstance/listadv', {
-          params: {
-            status: 'Start Failure',
-            startedge: startDate,
-            startle: endDate,
-          },
-          timeout: 60000,
-        });
-        const list2 = Array.isArray(r2.data) ? r2.data : (r2.data?.taskInstance ?? []);
-        list2.forEach((inst: any) => {
-          jobs.push({
-            name: inst.name || inst.taskName || '',
-            status: inst.status || 'Start Failure',
-            startTime: inst.startTime || inst.triggerTime || '',
-            endTime: inst.endTime || '',
-            agent: inst.agent || inst.agentCluster || '',
-            exitCode: inst.exitCode != null ? String(inst.exitCode) : '',
-            type: inst.type || '',
-          });
-        });
-      } catch { /* Start Failure may not have results */ }
-    } catch (e: any) {
-      // Fallback: try with updatedTime param
-      try {
-        const r = await client.get('/resources/taskinstance/listadv', {
-          params: {
-            status: 'Failed',
-            updatedTime: startDate,
-          },
-          timeout: 60000,
-        });
-        const list = Array.isArray(r.data) ? r.data : (r.data?.taskInstance ?? []);
-        list.forEach((inst: any) => {
-          jobs.push({
-            name: inst.name || inst.taskName || '',
-            status: inst.status || 'Failed',
-            startTime: inst.startTime || '',
-            endTime: inst.endTime || '',
-            agent: inst.agent || '',
-            exitCode: inst.exitCode != null ? String(inst.exitCode) : '',
-            type: inst.type || '',
-          });
-        });
-      } catch { /* no data available */ }
-    }
+    const jobs = [...failedList, ...startFailList].map((inst: any) => ({
+      name: inst.name || inst.taskName || '',
+      status: inst.status || 'Failed',
+      startTime: inst.startTime || inst.triggerTime || '',
+      endTime: inst.endTime || '',
+      agent: inst.agent || inst.agentCluster || '',
+      exitCode: inst.exitCode != null ? String(inst.exitCode) : '',
+      type: inst.type || '',
+    }));
 
-    res.json({ success: true, data: { jobs, count: jobs.length, period: { startDate, endDate } } });
+    res.json({ success: true, data: { jobs, count: jobs.length, startDate, endDate } });
   } catch (e) { next(e); }
 });
 
-// ── Created tasks/triggers for date range ─────────────────────────────────────
-router.post('/created-items', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const { startDate, endDate } = req.body;
-    if (!startDate || !endDate) {
-      res.status(400).json({ success: false, error: 'startDate and endDate required' });
-      return;
-    }
+// ── Created Items — from local log ───────────────────────────────────────────
+router.post('/created-items', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { startDate, endDate } = req.body;
+  let entries = loadCreationLog();
+  if (startDate) entries = entries.filter(e => e.createdTime >= startDate);
+  if (endDate) entries = entries.filter(e => e.createdTime <= endDate + 'T23:59:59Z');
 
-    const client = sbClient(req);
-    const tasks: any[] = [];
-    const triggers: any[] = [];
+  // Split into tasks and triggers (frontend expects separate arrays)
+  const tasks = entries.filter(e => e.type === 'task').map(e => ({
+    name: e.name,
+    createdTime: e.createdTime,
+    createdBy: e.createdBy,
+  }));
+  const triggers = entries.filter(e => e.type === 'trigger').map(e => ({
+    name: e.name,
+    createdTime: e.createdTime,
+    createdBy: e.createdBy,
+  }));
 
-    // Fetch tasks created in date range
-    try {
-      const r = await client.get('/resources/task/listadv', {
-        params: { createdge: startDate, createdle: endDate },
-        timeout: 30000,
-      });
-      const list = Array.isArray(r.data) ? r.data : (r.data?.task ?? []);
-      list.forEach((t: any) => {
-        tasks.push({
-          name: t.name || '',
-          type: t.type || '',
-          createdTime: t.createTime || t.createdTime || '',
-          createdBy: t.createdBy || '',
-        });
-      });
-    } catch { /* not all UAC versions support createdge filter */ }
-
-    // Fetch triggers created in date range
-    try {
-      const r = await client.get('/resources/trigger/listadv', {
-        params: { createdge: startDate, createdle: endDate },
-        timeout: 30000,
-      });
-      const list = Array.isArray(r.data) ? r.data : (r.data?.trigger ?? []);
-      list.forEach((t: any) => {
-        triggers.push({
-          name: t.name || '',
-          type: t.type || '',
-          createdTime: t.createTime || t.createdTime || '',
-          createdBy: t.createdBy || '',
-        });
-      });
-    } catch { /* not all UAC versions support this */ }
-
-    // Merge local creation log entries, deduplicating by name (UAC entries take priority)
-    const localEntries = loadCreationLog();
-    const filteredLocal = localEntries.filter(e => e.createdTime >= startDate && e.createdTime <= endDate + 'T23:59:59Z');
-    const uacTaskNames = new Set(tasks.map(t => t.name));
-    const uacTriggerNames = new Set(triggers.map(t => t.name));
-    filteredLocal.forEach(entry => {
-      const item = { name: entry.name, type: entry.type, createdTime: entry.createdTime, createdBy: entry.createdBy };
-      if (entry.type === 'task' || entry.type.includes('task')) {
-        if (!uacTaskNames.has(entry.name)) {
-          tasks.push(item);
-          uacTaskNames.add(entry.name);
-        }
-      } else {
-        if (!uacTriggerNames.has(entry.name)) {
-          triggers.push(item);
-          uacTriggerNames.add(entry.name);
-        }
-      }
-    });
-
-    res.json({
-      success: true,
-      data: { tasks, triggers, taskCount: tasks.length, triggerCount: triggers.length, period: { startDate, endDate } },
-    });
-  } catch (e) { next(e); }
+  res.json({ success: true, data: { tasks, triggers, count: entries.length } });
 });
 
-// ── Log creation entries locally ──────────────────────────────────────────────
-router.post('/log-creation', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const { items } = req.body;
-    if (!Array.isArray(items) || items.length === 0) {
-      res.status(400).json({ success: false, error: 'items array required' });
-      return;
-    }
-    const validTypes = ['task', 'trigger'];
-    const entries: CreationLogEntry[] = [];
-    for (const item of items) {
-      const name = typeof item.name === 'string' ? item.name.trim() : '';
-      const type = typeof item.type === 'string' ? item.type : '';
-      const createdTime = typeof item.createdTime === 'string' ? item.createdTime.trim() : '';
-      const createdBy = typeof item.createdBy === 'string' ? item.createdBy.trim() : '';
-      if (!name || name.length > 200) continue;
-      if (!validTypes.includes(type)) continue;
-      if (!createdTime) continue;
-      if (createdBy.length > 100) continue;
-      entries.push({ name, type, createdTime: createdTime || new Date().toISOString(), createdBy });
-    }
-    if (entries.length > 0) {
-      appendCreationLog(entries);
-    }
-    res.json({ success: true, data: { logged: entries.length } });
-  } catch (e) { next(e); }
+// ── Log Creation — called after job creation to track items ───────────────────
+router.post('/log-creation', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { items } = req.body;
+  if (Array.isArray(items) && items.length > 0) {
+    appendCreationLog(items);
+  }
+  res.json({ success: true });
+});
+
+// ── Operations Summary — parallel queries with cache ──────────────────────────
+router.get('/summary', async (req: AuthRequest, res: Response): Promise<void> => {
+  // Check cache first
+  const cached = loadCache();
+  if (cached) {
+    res.json({ success: true, data: cached.summary, cached: true, lastUpdated: cached.lastUpdated });
+    return;
+  }
+
+  const client = sbClient(req);
+  const summary: any = { agents: 0, activeInstances: 0, failedToday: 0 };
+
+  // All queries in parallel — each with 10s timeout, fail gracefully
+  const today = new Date().toISOString().split('T')[0];
+  const [agents, running, failed] = await Promise.all([
+    safeQuery(client, '/resources/agent/list', {}),
+    safeQuery(client, '/resources/taskinstance/listadv', { status: 'Running' }),
+    safeQuery(client, '/resources/taskinstance/listadv', { status: 'Failed', startedge: today }),
+  ]);
+
+  summary.agents = agents.length;
+  summary.activeInstances = running.length;
+  summary.failedToday = failed.length;
+
+  // Save to cache
+  saveCache({ failedJobs: failed, summary, lastUpdated: new Date().toISOString() });
+
+  res.json({ success: true, data: summary, cached: false, lastUpdated: new Date().toISOString() });
 });
 
 // ── Retrieve creation log entries ─────────────────────────────────────────────
-router.get('/creation-log', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const startDate = req.query.startDate as string | undefined;
-    const endDate = req.query.endDate as string | undefined;
-    let entries = loadCreationLog();
-    if (startDate) entries = entries.filter(e => e.createdTime >= startDate);
-    if (endDate) entries = entries.filter(e => e.createdTime <= endDate + 'T23:59:59Z');
-    res.json({ success: true, data: { entries, count: entries.length } });
-  } catch (e) { next(e); }
-});
-
-// ── Operations summary — overall stats ────────────────────────────────────────
-router.get('/summary', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const client = sbClient(req);
-    const summary: any = { agents: 0, tasks: 0, triggers: 0, activeInstances: 0 };
-
-    // Count agents
-    try {
-      const r = await client.get('/resources/agent/list');
-      const list = Array.isArray(r.data) ? r.data : (r.data?.agent ?? []);
-      summary.agents = list.length;
-    } catch {}
-
-    // Count active task instances
-    try {
-      const r = await client.post('/resources/taskinstance/list', { status: 'Running' });
-      const list = Array.isArray(r.data) ? r.data : (r.data?.taskInstance ?? []);
-      summary.activeInstances = list.length;
-    } catch {}
-
-    res.json({ success: true, data: summary });
-  } catch (e) { next(e); }
+router.get('/creation-log', async (req: AuthRequest, res: Response): Promise<void> => {
+  const startDate = req.query.startDate as string | undefined;
+  const endDate = req.query.endDate as string | undefined;
+  let entries = loadCreationLog();
+  if (startDate) entries = entries.filter(e => e.createdTime >= startDate);
+  if (endDate) entries = entries.filter(e => e.createdTime <= endDate + 'T23:59:59Z');
+  res.json({ success: true, data: { entries, count: entries.length } });
 });
 
 export { router as analyticsRouter };
