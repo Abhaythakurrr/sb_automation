@@ -24,15 +24,17 @@ echo "[1/6] Pulling latest code..."
 git pull origin main
 echo "      Done."
 
-# ── 3. Install backend dependencies ──────────────────────────────────────────
+# ── 3. Install backend dependencies (full — needed for TypeScript build) ─────
 echo "[2/6] Installing backend dependencies..."
 cd "$APP_DIR/backend"
-npm ci --omit=dev
+npm ci
 echo "      Done."
 
 # ── 4. Build backend ──────────────────────────────────────────────────────────
 echo "[3/6] Building backend (TypeScript)..."
 npm run build
+# Remove dev deps after build to save space in production
+npm prune --omit=dev
 echo "      Done."
 
 # ── 5. Install frontend dependencies ─────────────────────────────────────────
