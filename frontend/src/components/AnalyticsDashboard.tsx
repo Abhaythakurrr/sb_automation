@@ -754,9 +754,9 @@ export default function AnalyticsDashboard() {
                         <td className="px-4 py-2 text-slate-300 font-mono text-[10px] max-w-[200px] truncate">{item.name}</td>
                         <td className="px-4 py-2">
                           <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                            item.type.includes('task') ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                            (item.type || '').includes('task') ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
                           }`}>
-                            {item.type.includes('task') ? 'TASK' : 'TRIGGER'}
+                            {(item.type || '').includes('task') ? 'TASK' : 'TRIGGER'}
                           </span>
                         </td>
                         <td className="px-4 py-2 text-slate-500 text-[10px]">{item.createdBy || '—'}</td>
