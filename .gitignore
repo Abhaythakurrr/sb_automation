@@ -85,3 +85,9 @@ backend/generate_*.js
 
 # Internal docs — never push to repo
 docs/
+analytics_cache.json
+**/analytics_cache.json
+
+# Design theme docs — not application code
+themes/
+**/themes/

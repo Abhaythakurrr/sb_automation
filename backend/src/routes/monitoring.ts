@@ -1,7 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../middleware/session';
-import { runMonitoringCycle, MonitorConfig, loadAlertHistory } from '../services/monitoringService';
+import { runMonitoringCycle, MonitorConfig, loadAlertHistory, resolveWebhook } from '../services/monitoringService';
 import fs   from 'fs';
 import path from 'path';
 import { auditLog } from '../middleware/auditLogger';
@@ -35,6 +35,30 @@ function loadConfig(): MonitorConfig | null {
 
 function saveConfig(cfg: MonitorConfig): void {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
+}
+
+// Normalize a base URL for stable per-environment comparison.
+function envKey(baseUrl?: string): string {
+  if (!baseUrl) return '';
+  try {
+    const u = new URL(baseUrl);
+    return `${u.protocol}//${u.host}${u.pathname}`.replace(/\/+$/, '').toLowerCase();
+  } catch {
+    return baseUrl.replace(/\/+$/, '').toLowerCase();
+  }
+}
+
+// Keep the running monitor's TOKEN in sync with the latest authenticated session
+// — but ONLY when the session is for the SAME environment the monitor runs in.
+// We must never silently re-point the monitor at a different environment.
+function refreshMonitorAuth(req: AuthRequest): void {
+  if (!activeConfig || !req.token) return;
+  if (envKey(req.sbBaseUrl) !== envKey(activeConfig.sbBaseUrl)) return; // different env — leave it alone
+  if (activeConfig.sbToken !== req.token) {
+    activeConfig.sbToken = req.token;
+    saveConfig(activeConfig);
+    console.log('[MONITOR] Refreshed monitoring token from active session (same environment)');
+  }
 }
 
 async function runCycle(): Promise<void> {
@@ -90,11 +114,8 @@ router.post('/start', async (req: AuthRequest, res: Response, next: NextFunction
       environment,
     } = parsed.data;
 
-    // Webhook URL: env var is the default; request body can override for flexibility
-    const resolvedWebhookUrl = teamsWebhookUrl || process.env.TEAMS_WEBHOOK_URL || '';
-
-    // Webhook is OPTIONAL — monitoring works without it (alerts logged but not sent to Teams)
-    // If not configured, alerts are stored in alert_history.json only
+    // Webhook: explicit request → env → hardcoded default (always linked).
+    const resolvedWebhookUrl = resolveWebhook(teamsWebhookUrl);
 
     const config: MonitorConfig = {
       sbBaseUrl:       req.sbBaseUrl || process.env.BASE_URL || '',
@@ -147,48 +168,71 @@ router.post('/stop', (_req: AuthRequest, res: Response): void => {
 });
 
 // ── Status ─────────────────────────────────────────────────────────────────────
-router.get('/status', (_req: AuthRequest, res: Response): void => {
+router.get('/status', (req: AuthRequest, res: Response): void => {
+  // Keep the background monitor's token fresh from the live session.
+  refreshMonitorAuth(req);
+  // Determine whether the running monitor belongs to the environment the caller
+  // is currently connected to. If not, its stats/alerts are NOT for this env.
+  const matchesConnectedEnv = !!activeConfig &&
+    envKey(req.sbBaseUrl) === envKey(activeConfig.sbBaseUrl);
   res.json({
     success: true,
     data: {
-      running:     monitorRunning,
-      lastRunAt,
-      lastResult,
+      // Only report "running" for THIS environment when it actually matches.
+      running:     monitorRunning && matchesConnectedEnv,
+      runningAnyEnv: monitorRunning,
+      matchesConnectedEnv,
+      connectedBaseUrl: req.sbBaseUrl || '',
+      lastRunAt:   matchesConnectedEnv ? lastRunAt : null,
+      lastResult:  matchesConnectedEnv ? lastResult : null,
       config: activeConfig ? {
         environment:        activeConfig.environment,
         pollIntervalMs:     activeConfig.pollIntervalMs,
         monitorAgents:      activeConfig.monitorAgents,
         monitorJobs:        activeConfig.monitorJobs,
         sbBaseUrl:          activeConfig.sbBaseUrl,
-        // Never expose token in status
+        webhookConfigured:  !!activeConfig.teamsWebhookUrl,
+        // Never expose token or the raw webhook URL in status
       } : null,
+      webhookEnvConfigured: !!process.env.TEAMS_WEBHOOK_URL,
     },
     timestamp: new Date().toISOString(),
   });
 });
 
 // ── Run one cycle manually ─────────────────────────────────────────────────────
-router.post('/run-now', async (_req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+router.post('/run-now', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!activeConfig) { res.status(400).json({ error: 'Monitoring not configured. Start it first.' }); return; }
+    // Run Now always checks the environment the user is currently connected to —
+    // retarget the monitor to the live session's token + base URL.
+    if (req.token) activeConfig.sbToken = req.token;
+    if (req.sbBaseUrl) activeConfig.sbBaseUrl = req.sbBaseUrl;
+    saveConfig(activeConfig);
     await runCycle();
     res.json({ success: true, data: lastResult, timestamp: new Date().toISOString() });
   } catch (e) { next(e); }
 });
 
-// ── Clear alert state (reset deduplication) ────────────────────────────────────
+// ── Clear alert state + history (reset dedup and wipe old alerts) ───────────────
 router.post('/clear-state', (_req: AuthRequest, res: Response): void => {
-  const stateFile = path.join(process.cwd(), 'monitor_state.json');
+  const stateFile   = path.join(process.cwd(), 'monitor_state.json');
+  const historyFile = path.join(process.cwd(), 'alert_history.json');
   try { fs.unlinkSync(stateFile); } catch { /* ignore */ }
-  res.json({ success: true, message: 'Alert state cleared', timestamp: new Date().toISOString() });
+  try { fs.unlinkSync(historyFile); } catch { /* ignore */ }
+  res.json({ success: true, message: 'Alert state and history cleared', timestamp: new Date().toISOString() });
 });
 
-// ── Alert history ──────────────────────────────────────────────────────────────
-router.get('/alerts', (_req: AuthRequest, res: Response): void => {
-  const history = loadAlertHistory();
+// ── Alert history (scoped to the connected environment) ─────────────────────────
+router.get('/alerts', (req: AuthRequest, res: Response): void => {
+  refreshMonitorAuth(req);
+  const key = envKey(req.sbBaseUrl);
+  let history = loadAlertHistory();
+  // Only show alerts that belong to the environment the user is connected to.
+  if (key) history = history.filter(a => envKey(a.baseUrl) === key);
   res.json({
     success: true,
-    data: { total: history.length, alerts: history.slice().reverse() }, // newest first
+    data: { total: history.length, alerts: history.slice().reverse(), environment: req.sbBaseUrl || '' }, // newest first
     timestamp: new Date().toISOString(),
   });
 });

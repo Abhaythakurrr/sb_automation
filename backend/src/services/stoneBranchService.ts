@@ -95,6 +95,34 @@ export class StoneBranchService {
     return results;
   }
 
+  // ── Agent Cluster suspend / resume ─────────────────────────────────────────
+  // UAC: POST /resources/agentcluster/suspend|resume with { agentClusterName }
+  async suspendClusters(clusterNames: string[]): Promise<any[]> {
+    const results = [];
+    for (const name of clusterNames) {
+      try {
+        const res = await this.client.post('/resources/agentcluster/suspend', { agentClusterName: name });
+        results.push({ name, status: 'success', response: res.data });
+      } catch (e: any) {
+        results.push({ name, status: 'failed', error: e.response?.data ?? e.message });
+      }
+    }
+    return results;
+  }
+
+  async resumeClusters(clusterNames: string[]): Promise<any[]> {
+    const results = [];
+    for (const name of clusterNames) {
+      try {
+        const res = await this.client.post('/resources/agentcluster/resume', { agentClusterName: name });
+        results.push({ name, status: 'success', response: res.data });
+      } catch (e: any) {
+        results.push({ name, status: 'failed', error: e.response?.data ?? e.message });
+      }
+    }
+    return results;
+  }
+
   // ── Ref Job Resolution ─────────────────────────────────────────────────────
   async resolveRefJob(refJob: string, logFn?: (msg: string) => void): Promise<ResolvedRefJob> {
     const log = logFn ?? (() => {});

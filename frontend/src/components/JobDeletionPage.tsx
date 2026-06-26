@@ -32,47 +32,162 @@ const PHASE_DESCRIPTION: Record<JobPhase, string> = {
 };
 
 function JobCard({ job, onForceFinish, onSkip }: { job: JobState; onForceFinish: (n: string) => void; onSkip: (n: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
   const isActive = ['inspecting','force_finishing','deleting'].includes(job.phase);
+  const hasWorkflow = job.steps.some(s => s.label.toLowerCase().includes('workflow'));
+  const hasTrigger = job.steps.some(s => s.label.toLowerCase().includes('trigger'));
+  const hasError = job.steps.some(s => s.status === 'error');
+  const displaySteps = expanded ? job.steps : job.steps.slice(-6);
+
+  // Categorize a step for visual grouping
+  const getStepCategory = (s: Step): 'workflow' | 'trigger' | 'task' | 'general' => {
+    const l = s.label.toLowerCase();
+    if (l.includes('workflow')) return 'workflow';
+    if (l.includes('trigger')) return 'trigger';
+    if (l.includes('task deleted') || l.includes('task deletion')) return 'task';
+    return 'general';
+  };
+
   return (
     <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-      className="glass-card p-4">
-      <div className="flex items-center gap-3 mb-2">
+      className="rounded-2xl p-5 relative overflow-hidden group transition-all duration-300"
+      style={{
+        background: job.phase === 'done'
+          ? (job.success ? 'rgba(4,20,12,0.6)' : 'rgba(20,4,4,0.6)')
+          : 'rgba(8,12,21,0.7)',
+        border: `1px solid ${job.phase === 'done'
+          ? (job.success ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)')
+          : isActive ? 'rgba(6,182,212,0.25)' : 'rgba(51,65,85,0.15)'}`,
+        boxShadow: isActive ? '0 0 30px rgba(6,182,212,0.05)' : 'none',
+      }}>
+      {/* Progress accent line */}
+      {isActive && (
+        <motion.div className="absolute top-0 left-0 right-0 h-[2px]"
+          style={{ background: 'linear-gradient(90deg, transparent, #22d3ee, transparent)' }}
+          animate={{ x: ['-100%', '100%'] }}
+          transition={{ duration: 2, repeat: Infinity, ease: 'linear' }} />
+      )}
+
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-3">
         <PhaseIcon phase={job.phase} success={job.success} />
         <span className="text-sm font-mono font-bold text-slate-200 truncate flex-1">{job.name}</span>
+
+        {/* Workflow/Trigger badges */}
+        <div className="flex items-center gap-1.5">
+          {hasWorkflow && (
+            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider"
+              style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.25)', color: '#c084fc' }}>
+              WF
+            </span>
+          )}
+          {hasTrigger && (
+            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider"
+              style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.2)', color: '#fbbf24' }}>
+              TR
+            </span>
+          )}
+        </div>
+
         <span className="text-[9px] font-mono font-bold uppercase tracking-wider"
           style={{ color: job.phase === 'done' ? (job.success ? '#4ade80' : '#f87171') : job.phase === 'prompt_force_finish' ? '#fb923c' : '#67e8f9' }}>
-          {job.phase === 'done' ? (job.success ? 'DELETED' : 'FAILED') : job.phase.replace(/_/g,' ')}
+          {job.phase === 'done' ? (job.success ? 'DELETED' : 'FAILED') : PHASE_DESCRIPTION[job.phase] || job.phase.replace(/_/g,' ')}
         </span>
       </div>
 
+      {/* Steps */}
       {job.steps.length > 0 && (
-        <div className="space-y-0.5 mb-3 ml-8">
-          {job.steps.slice(-5).map((s, i) => (
-            <div key={i} className="flex items-center gap-1.5 text-[10px] font-mono">
-              <span style={{ color: s.status === 'ok' ? '#4ade80' : s.status === 'error' ? '#f87171' : s.status === 'warn' ? '#fbbf24' : '#67e8f9' }}>
-                {s.status === 'ok' ? '✓' : s.status === 'error' ? '✗' : s.status === 'warn' ? '!' : '›'}
-              </span>
-              <span className="text-slate-500">{s.label}</span>
-            </div>
-          ))}
+        <div className="space-y-1 mb-3 ml-8">
+          {displaySteps.map((s, i) => {
+            const cat = getStepCategory(s);
+            const catColor = cat === 'workflow' ? 'rgba(168,85,247,0.08)' : cat === 'trigger' ? 'rgba(251,191,36,0.06)' : 'transparent';
+            return (
+              <motion.div key={i} initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.03 }}
+                className="rounded-md px-2 py-1 transition-all"
+                style={{ background: catColor }}>
+                <div className="flex items-start gap-2 text-[10px] font-mono">
+                  <span className="mt-0.5 shrink-0" style={{
+                    color: s.status === 'ok' ? '#4ade80' : s.status === 'error' ? '#f87171' : s.status === 'warn' ? '#fbbf24' : '#67e8f9'
+                  }}>
+                    {s.status === 'ok' ? '✓' : s.status === 'error' ? '✗' : s.status === 'warn' ? '⚠' : '›'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <span className={`${s.status === 'error' ? 'text-red-300' : s.status === 'warn' ? 'text-amber-300/80' : 'text-slate-400'}`}>
+                      {s.label}
+                    </span>
+                    {s.detail && (
+                      <p className="text-[9px] text-slate-600 mt-0.5 truncate" title={s.detail}>
+                        {s.detail}
+                      </p>
+                    )}
+                  </div>
+                  {/* Category indicator */}
+                  {cat === 'workflow' && (
+                    <span className="text-[7px] text-purple-500/60 uppercase tracking-widest shrink-0">wf</span>
+                  )}
+                  {cat === 'trigger' && (
+                    <span className="text-[7px] text-amber-500/60 uppercase tracking-widest shrink-0">tr</span>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
+
+          {/* Expand/collapse */}
+          {job.steps.length > 6 && (
+            <button onClick={() => setExpanded(!expanded)}
+              className="text-[9px] font-mono text-cyan-500/70 hover:text-cyan-400 ml-2 mt-1 transition-colors">
+              {expanded ? '▲ Show less' : `▼ Show all ${job.steps.length} steps`}
+            </button>
+          )}
         </div>
       )}
 
+      {/* Force finish prompt */}
       {job.phase === 'prompt_force_finish' && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-          className="ml-8 rounded-lg p-3 mt-2" style={{ background: 'rgba(251,146,60,0.05)', border: '1px solid rgba(251,146,60,0.15)' }}>
-          <p className="text-[10px] text-orange-300 font-medium mb-2">
-            {job.inspect?.activeInstances.length} active instance(s) — force finish before deleting?
-          </p>
+          className="ml-8 rounded-xl p-4 mt-2" style={{ background: 'rgba(251,146,60,0.06)', border: '1px solid rgba(251,146,60,0.15)' }}>
+          <div className="flex items-center gap-2 mb-2">
+            <motion.div className="w-2 h-2 rounded-full bg-orange-400"
+              animate={{ scale: [1, 1.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} />
+            <p className="text-[10px] text-orange-300 font-medium">
+              {job.inspect?.activeInstances.length} active instance(s) — force finish before deleting?
+            </p>
+          </div>
           <div className="flex gap-2">
-            <button onClick={() => onForceFinish(job.name)} className="btn-danger px-3 py-1.5 rounded-md text-[10px]">
-              Force Finish
+            <button onClick={() => onForceFinish(job.name)}
+              className="px-4 py-2 rounded-lg text-[10px] font-bold transition-all hover:scale-105"
+              style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}>
+              Force Finish & Delete
             </button>
-            <button onClick={() => onSkip(job.name)} className="px-3 py-1.5 rounded-md text-[10px] text-slate-500 hover:text-slate-300"
+            <button onClick={() => onSkip(job.name)}
+              className="px-4 py-2 rounded-lg text-[10px] font-medium text-slate-500 hover:text-slate-300 transition-all"
               style={{ border: '1px solid rgba(51,65,85,0.2)' }}>
               Skip
             </button>
           </div>
+        </motion.div>
+      )}
+
+      {/* Summary bar for completed jobs */}
+      {job.phase === 'done' && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          className="flex items-center gap-3 mt-2 ml-8 pt-2"
+          style={{ borderTop: '1px solid rgba(51,65,85,0.1)' }}>
+          <span className="text-[9px] font-mono text-slate-600">
+            {job.steps.filter(s => s.status === 'ok').length} ok
+          </span>
+          {job.steps.filter(s => s.status === 'warn').length > 0 && (
+            <span className="text-[9px] font-mono text-amber-600">
+              {job.steps.filter(s => s.status === 'warn').length} warn
+            </span>
+          )}
+          {job.steps.filter(s => s.status === 'error').length > 0 && (
+            <span className="text-[9px] font-mono text-red-500">
+              {job.steps.filter(s => s.status === 'error').length} error
+            </span>
+          )}
         </motion.div>
       )}
     </motion.div>
@@ -231,12 +346,30 @@ export default function JobDeletionPage() {
 
   return (
     <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>
-      <GlobalHeader title="Job Deletion" subtitle="SAFE TRIGGER + TASK REMOVAL" />
+      {/* ── Ambient Background Effects ── */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <motion.div className="absolute w-[500px] h-[500px] rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(239,68,68,0.04) 0%, transparent 70%)', right: '-10%', top: '10%' }}
+          animate={{ y: [0, -20, 0], scale: [1, 1.06, 1] }} transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut' }} />
+        <motion.div className="absolute w-[400px] h-[400px] rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.03) 0%, transparent 70%)', left: '-5%', bottom: '10%' }}
+          animate={{ y: [0, 15, 0], x: [0, -8, 0] }} transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut', delay: 3 }} />
+        <motion.div className="absolute w-[300px] h-[300px] rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(245,158,11,0.025) 0%, transparent 70%)', left: '40%', top: '30%' }}
+          animate={{ y: [0, -12, 0] }} transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 5 }} />
+        <div className="absolute inset-0 opacity-[0.012]"
+          style={{ backgroundImage: 'linear-gradient(rgba(239,68,68,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(239,68,68,0.4) 1px, transparent 1px)', backgroundSize: '72px 72px' }} />
+      </div>
 
-      <main className="max-w-4xl mx-auto px-6 pb-24 space-y-6">
+      <GlobalHeader title="Job Deletion" subtitle="SAFE TRIGGER + TASK REMOVAL" sopHref="/SOP_Job_deletion" />
+
+      <main className="max-w-4xl mx-auto px-6 pb-24 space-y-6 relative z-10">
 
         {/* Input */}
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6">
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-6 relative group">
+          {/* Hover glow effect */}
+          <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"
+            style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(239,68,68,0.04), transparent 70%)' }} />
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.15)' }}>
@@ -311,14 +444,19 @@ export default function JobDeletionPage() {
             <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
               className="grid grid-cols-3 gap-3">
               {[
-                { label: 'Deleted', val: summary.done, color: '#4ade80' },
-                { label: 'Failed', val: summary.failed, color: '#f87171' },
-                { label: 'Total', val: summary.total, color: '#94a3b8' },
+                { label: 'Deleted', val: summary.done, color: '#4ade80', icon: '✓' },
+                { label: 'Failed', val: summary.failed, color: '#f87171', icon: '✗' },
+                { label: 'Total', val: summary.total, color: '#94a3b8', icon: '∑' },
               ].map(s => (
-                <div key={s.label} className="stat-card">
-                  <div className="text-2xl font-black tabular-nums" style={{ color: s.color }}>{s.val}</div>
-                  <div className="text-[8px] text-slate-600 uppercase tracking-widest mt-1 font-bold">{s.label}</div>
-                </div>
+                <motion.div key={s.label} className="stat-card relative group" whileHover={{ scale: 1.03, y: -3 }}>
+                  <div className="absolute inset-0 rounded-[14px] opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
+                    style={{ background: `radial-gradient(ellipse at 50% 0%, ${s.color}10, transparent 70%)` }} />
+                  <div className="flex items-center justify-center gap-2 relative z-10">
+                    <span className="text-lg" style={{ color: s.color }}>{s.icon}</span>
+                    <div className="text-2xl font-black tabular-nums" style={{ color: s.color }}>{s.val}</div>
+                  </div>
+                  <div className="text-[8px] text-slate-600 uppercase tracking-widest mt-1.5 font-bold text-center relative z-10">{s.label}</div>
+                </motion.div>
               ))}
             </motion.div>
           )}

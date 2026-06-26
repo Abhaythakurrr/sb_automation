@@ -9,8 +9,8 @@ import { ApiClient } from '@/services/api';
 // Singleton API client — one instance for the whole app
 export const globalApi = new ApiClient();
 
-// Session timeout: 8 hours
-const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000;
+// Session idle timeout: 30 minutes of inactivity (matches backend SESSION_IDLE_MS).
+const SESSION_IDLE_MS = 30 * 60 * 1000;
 
 interface ConnectionState {
   sessionId:   string;
@@ -21,6 +21,7 @@ interface ConnectionState {
   baseUrlHint: string;
   username:    string;
   connectedAt: number | null;
+  lastActivity: number | null;
 
   setSessionId:   (id: string)    => void;
   setConnected:   (v: boolean)    => void;
@@ -29,6 +30,7 @@ interface ConnectionState {
   setEnvironment: (e: string)     => void;
   setBaseUrlHint: (h: string)     => void;
   setUsername:    (u: string)     => void;
+  recordActivity: () => void;
   disconnect:     () => void;
   isSessionValid: () => boolean;
 }
@@ -42,38 +44,64 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   baseUrlHint: '',
   username:    '',
   connectedAt: null,
+  lastActivity: null,
 
   setSessionId:   (id)  => set({ sessionId: id }),
-  setConnected:   (v)   => set({ connected: v, connectedAt: v ? Date.now() : null }),
+  setConnected:   (v)   => set({ connected: v, connectedAt: v ? Date.now() : null, lastActivity: v ? Date.now() : null }),
   setConnecting:  (v)   => set({ connecting: v }),
   setConnError:   (e)   => set({ connError: e }),
   setEnvironment: (e)   => set({ environment: e }),
   setBaseUrlHint: (h)   => set({ baseUrlHint: h }),
   setUsername:    (u)   => set({ username: u }),
 
+  // Called on user interaction and on every API request to slide the idle window.
+  recordActivity: () => {
+    if (get().connected) set({ lastActivity: Date.now() });
+  },
+
   disconnect: () => {
     globalApi.disconnect().catch(() => {});
-    set({ connected: false, sessionId: '', connError: '', baseUrlHint: '', username: '', connectedAt: null });
+    globalApi.clearSession();
+    set({ connected: false, sessionId: '', connError: '', baseUrlHint: '', username: '', connectedAt: null, lastActivity: null });
   },
 
   isSessionValid: () => {
-    const { connectedAt } = get();
-    if (!connectedAt) return false;
-    return Date.now() - connectedAt < SESSION_TIMEOUT_MS;
+    const { lastActivity } = get();
+    if (!lastActivity) return false;
+    return Date.now() - lastActivity < SESSION_IDLE_MS;
   },
 }));
 
-// Listen for session expiry events from the API client
+// ── Idle-timeout + activity wiring (browser only) ──────────────────────────
 if (typeof window !== 'undefined') {
+  // Backend told us the session is gone — clear local state.
   window.addEventListener('session-expired', () => {
     useConnectionStore.getState().disconnect();
   });
 
-  // Check session timeout every minute
+  // API client signals real request activity — slide the idle window.
+  window.addEventListener('api-activity', () => {
+    useConnectionStore.getState().recordActivity();
+  });
+
+  // Track genuine user interaction (throttled to once per 15s to avoid churn).
+  let lastRecorded = 0;
+  const onUserActivity = () => {
+    const now = Date.now();
+    if (now - lastRecorded > 15000) {
+      lastRecorded = now;
+      useConnectionStore.getState().recordActivity();
+    }
+  };
+  ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach(evt => {
+    window.addEventListener(evt, onUserActivity, { passive: true });
+  });
+
+  // Check every 30s — disconnect after 30 min of no activity.
   setInterval(() => {
     const { connected, isSessionValid, disconnect } = useConnectionStore.getState();
     if (connected && !isSessionValid()) {
       disconnect();
     }
-  }, 60000);
+  }, 30000);
 }

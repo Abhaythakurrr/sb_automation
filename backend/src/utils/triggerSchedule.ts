@@ -79,11 +79,52 @@ export interface TriggerScheduleFields {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// Normalize many time spellings to 24-hour HH:MM.
+// Handles: "0730", "07:30", "7:30", "07.30", "7.30", "07:30 AM", "7:30 pm",
+//          "7 AM", "12:00 PM" (noon), "12:00 AM" (midnight), "7am".
+// Falls back to returning the trimmed input unchanged if it can't be parsed,
+// so existing callers relying on pass-through behaviour are unaffected.
 function toHHMM(raw: string): string {
-  const s = raw.trim();
-  if (/^\d{4}$/.test(s)) return s.slice(0, 2) + ':' + s.slice(2, 4);
-  if (/^\d{1,2}:\d{2}$/.test(s)) return s.padStart(5, '0');
-  return s;
+  if (!raw) return '';
+  let s = raw.trim().toLowerCase();
+
+  // Detect and strip an AM/PM marker (with or without surrounding space/dots)
+  const ampm = s.match(/\b(a\.?m\.?|p\.?m\.?)\b/);
+  const isPM = !!ampm && ampm[1].startsWith('p');
+  const isAM = !!ampm && ampm[1].startsWith('a');
+  s = s.replace(/\b(a\.?m\.?|p\.?m\.?)\b/, '').trim();
+
+  // Normalize separators: dots / middots / spaces between digits → colon
+  s = s.replace(/[.\u00b7]/g, ':').replace(/\s+/g, '');
+
+  let h: number;
+  let m: number;
+  if (/^\d{1,2}:\d{2}$/.test(s)) {
+    [h, m] = s.split(':').map(Number);
+  } else if (/^\d{4}$/.test(s)) {
+    h = parseInt(s.slice(0, 2), 10);
+    m = parseInt(s.slice(2, 4), 10);
+  } else if (/^\d{1,2}$/.test(s)) {
+    h = parseInt(s, 10);
+    m = 0;
+  } else {
+    return raw.trim(); // unknown shape — pass through unchanged
+  }
+
+  if (isNaN(h) || isNaN(m)) return raw.trim();
+
+  // Apply 12-hour → 24-hour conversion only when AM/PM was present
+  if (isPM && h < 12) h += 12;
+  if (isAM && h === 12) h = 0;
+
+  if (h > 23 || m > 59) return raw.trim();
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+
+// True when a string looks like any recognizable clock time (incl. AM/PM, dots).
+function looksLikeTime(s: string): boolean {
+  return /^\s*\d{1,2}\s*[:.\u00b7]?\s*\d{0,2}\s*(a\.?m\.?|p\.?m\.?)?\s*$/i.test(s.trim()) &&
+    /\d/.test(s);
 }
 
 function parseHHMMtoMinutes(hhmm: string): number {
@@ -137,10 +178,11 @@ function parseTimeInput(starttime: string): Partial<TriggerScheduleFields> {
     return result;
   }
 
-  // Natural language: "at HH:MM"
-  const atNatural = starttime.match(/at\s+(\d{1,2}):(\d{2})/i);
+  // Natural language: "at HH:MM" / "at 7:30 AM" / "at 07.30" / "at 7 pm"
+  const atNatural = starttime.match(/\bat\s+(\d{1,2}(?:[:.\u00b7]\d{2})?(?:\s*[ap]\.?m\.?)?)/i);
   if (atNatural) {
-    result.time = atNatural[1].padStart(2, '0') + ':' + atNatural[2];
+    const t = toHHMM(atNatural[1]);
+    if (/^\d{2}:\d{2}$/.test(t)) result.time = t;
   }
 
   // Natural language: "every N minutes/hours"
@@ -153,11 +195,15 @@ function parseTimeInput(starttime: string): Partial<TriggerScheduleFields> {
     result.timeIntervalUnits = unit.startsWith('h') ? 'Hours' : unit.startsWith('s') ? 'Seconds' : 'Minutes';
   }
 
-  // Window: "from HH:MM to HH:MM"
-  const windowMatch = starttime.match(/from\s+(\d{1,2}:\d{2})\s+to\s+(\d{1,2}:\d{2})/i);
+  // Window: "from X to Y" / "between X and Y" — accepts :, ., AM/PM, and bare HHMM
+  const windowMatch = starttime.match(
+    /(?:from|between)\s+(\d{1,4}(?:[:.\u00b7]\d{2})?(?:\s*[ap]\.?m\.?)?)\s+(?:to|and|until|till|-|–)\s+(\d{1,4}(?:[:.\u00b7]\d{2})?(?:\s*[ap]\.?m\.?)?)/i
+  );
   if (windowMatch) {
-    result.enabledStart = windowMatch[1].padStart(5, '0');
-    result.enabledEnd = windowMatch[2].padStart(5, '0');
+    const start = toHHMM(windowMatch[1]);
+    const end = toHHMM(windowMatch[2]);
+    if (/^\d{2}:\d{2}$/.test(start)) result.enabledStart = start;
+    if (/^\d{2}:\d{2}$/.test(end)) result.enabledEnd = end;
     result.restrictedTimes = true;
   }
 
@@ -166,12 +212,12 @@ function parseTimeInput(starttime: string): Partial<TriggerScheduleFields> {
     result.timeStyle = 'Absolute';
   }
 
-  // Bare HHMM or HH:MM (just a time value)
-  if (!result.time && !result.timeStyle) {
-    const bare = starttime.trim();
-    if (/^\d{4}$/.test(bare) || /^\d{1,2}:\d{2}$/.test(bare)) {
+  // Bare time value (no AT prefix): "0730", "07:30", "07.30", "7:30 AM", "7 pm"
+  if (!result.time && !result.timeStyle && looksLikeTime(starttime)) {
+    const t = toHHMM(starttime);
+    if (/^\d{2}:\d{2}$/.test(t)) {
       result.timeStyle = 'Absolute';
-      result.time = toHHMM(bare);
+      result.time = t;
     }
   }
 
@@ -179,6 +225,103 @@ function parseTimeInput(starttime: string): Partial<TriggerScheduleFields> {
 }
 
 // ── Parse Frequency (from Scheduled Frequency) ───────────────────────────────
+
+// Natural-language interval detector.
+// Recognizes "every N <unit>" with optional "from X to Y" / "between X and Y"
+// window and an optional day pattern (daily / weekdays / specific day names).
+// Returns null when no interval phrase is present so callers fall through to
+// the existing keyword/day parsing.
+function parseNaturalInterval(text: string): Partial<TriggerScheduleFields> | null {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+
+  const everyMatch = lower.match(/every\s+(\d+)\s*(hours?|hrs?|minutes?|mins?|seconds?|secs?)\b/);
+  if (!everyMatch) return null;
+
+  const amount = parseInt(everyMatch[1], 10);
+  if (isNaN(amount) || amount <= 0) return null;
+  const unit = everyMatch[2];
+  const units = unit.startsWith('h') ? 'Hours' : unit.startsWith('s') ? 'Seconds' : 'Minutes';
+
+  const result: Partial<TriggerScheduleFields> = {
+    dayStyle: 'Simple',
+    simpleDateType: 'Daily',
+    timeStyle: 'Interval',
+    timeInterval: amount,
+    timeIntervalUnits: units,
+  };
+
+  // Optional time window: "from X to Y" / "between X and Y" — :, ., AM/PM, bare HHMM
+  const windowMatch = lower.match(
+    /(?:from|between)\s+(\d{1,4}(?:[:.\u00b7]\d{2})?(?:\s*[ap]\.?m\.?)?)\s+(?:to|and|until|till|-|–)\s+(\d{1,4}(?:[:.\u00b7]\d{2})?(?:\s*[ap]\.?m\.?)?)/
+  );
+  if (windowMatch) {
+    const start = toHHMM(windowMatch[1]);
+    const end = toHHMM(windowMatch[2]);
+    if (/^\d{2}:\d{2}$/.test(start)) { result.enabledStart = start; result.restrictedTimes = true; }
+    if (/^\d{2}:\d{2}$/.test(end))   { result.enabledEnd = end;     result.restrictedTimes = true; }
+  } else {
+    // Alternative: "starting at X" / "from X" with no end
+    const startOnly = lower.match(/(?:starting\s+(?:at|from)|from|starting)\s+(\d{1,2}(?:[:.\u00b7]\d{2})?(?:\s*[ap]\.?m\.?)?)/);
+    if (startOnly) {
+      const start = toHHMM(startOnly[1]);
+      if (/^\d{2}:\d{2}$/.test(start)) { result.enabledStart = start; result.restrictedTimes = true; }
+    }
+  }
+
+  // Optional day pattern
+  if (/\bweekdays?\b|\bbusiness\s*days?\b|\bmon\s*-\s*fri\b/.test(lower)) {
+    result.mon = true; result.tue = true; result.wed = true; result.thu = true; result.fri = true;
+  } else {
+    const found: string[] = [];
+    for (const [name, short] of Object.entries(DAY_MAP)) {
+      if (name.length > 3 && new RegExp(`\\b${name}\\b`).test(lower) && !found.includes(short)) {
+        found.push(short);
+      }
+    }
+    if (found.length > 0) found.forEach(d => { (result as any)[d] = true; });
+  }
+
+  return result;
+}
+
+// Monthly day-range detector.
+// Recognizes "from 1st till 10th each month", "day 1 to day 10 each month",
+// "1-10 of each month", "between 1st and 10th of the month", etc. and produces
+// a UAC Complex day pattern listing each day-of-month in the range.
+// Returns null when no monthly day-range phrase is present.
+function parseMonthDayRange(text: string): Partial<TriggerScheduleFields> | null {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  // Must be month-scoped to avoid clashing with time windows like "07:30 to 19:30".
+  if (!/month/.test(lower)) return null;
+
+  // day N (to|till|through|until|-|and) day M  — ordinals optional, "day" optional
+  const m = lower.match(
+    /(?:day\s*)?(\d{1,2})\s*(?:st|nd|rd|th)?\s*(?:to|till|thru|through|until|-|–|and)\s*(?:day\s*)?(\d{1,2})\s*(?:st|nd|rd|th)?/
+  );
+  if (!m) return null;
+
+  let a = parseInt(m[1], 10);
+  let b = parseInt(m[2], 10);
+  if (isNaN(a) || isNaN(b)) return null;
+  // Clamp to valid days-of-month and normalize order.
+  a = Math.max(1, Math.min(31, a));
+  b = Math.max(1, Math.min(31, b));
+  if (a > b) [a, b] = [b, a];
+
+  const dateNouns: { value: string }[] = [];
+  for (let d = a; d <= b; d++) {
+    dateNouns.push({ value: `Month Day ${String(d).padStart(2, '0')}` });
+  }
+
+  return {
+    dayStyle: 'Complex',
+    dateAdjective: 'Every',
+    dateNouns,
+    dateQualifiers: [{ value: 'Year' }],
+  };
+}
 
 function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> {
   if (!frequency) return { dayStyle: 'Simple', simpleDateType: 'Daily' };
@@ -298,6 +441,15 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
   }
 
   // ── Natural language ──
+
+  // Interval phrasing: "every 2 hours from 07.30 to 19.30",
+  // "Daily every 30 mins from 6am to 10pm", "run every 15 minutes between 0800 and 1800 on weekdays"
+  const nlInterval = parseNaturalInterval(frequency);
+  if (nlInterval) return nlInterval;
+
+  // Monthly day range: "from 1st till 10th each month", "day 1 to day 10 each month"
+  const nlMonthRange = parseMonthDayRange(frequency);
+  if (nlMonthRange) return nlMonthRange;
 
   // "Monthly" or "Monthly Day 24"
   if (lower.startsWith('monthly')) {

@@ -452,6 +452,7 @@ export default function AgentControlPage() {
   const [clusters, setClusters] = useState<any[]>([]);
   const [loading, setLoading]   = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedClusters, setSelectedClusters] = useState<Set<string>>(new Set());
 
   // Donut filter
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(null);
@@ -543,6 +544,14 @@ export default function AgentControlPage() {
 
   const clearAll = () => setSelected(new Set());
 
+  const toggleCluster = (name: string) => {
+    setSelectedClusters(prev => {
+      const next = new Set(prev);
+      next.has(name) ? next.delete(name) : next.add(name);
+      return next;
+    });
+  };
+
   // ── Execute ───────────────────────────────────────────────────────────────
   const handleExecute = async () => {
     const manualNames = manualInput
@@ -550,18 +559,23 @@ export default function AgentControlPage() {
       .map(s => s.trim())
       .filter(Boolean);
     const names = Array.from(new Set([...Array.from(selected), ...manualNames]));
+    const clusterNames = Array.from(selectedClusters);
 
-    if (names.length === 0) {
-      addLog('✗ No agents selected. Click a donut segment to browse agents, or enter names manually.');
+    if (names.length === 0 && clusterNames.length === 0) {
+      addLog('✗ Nothing selected. Pick agents (via the donut) and/or clusters, or enter agent names manually.');
       return;
     }
 
     setExecuting(true);
     setResults([]);
-    addLog(`► Starting ${action.toUpperCase()} on ${names.length} agent(s) [${timing}] …`);
+    const totalTargets = names.length + clusterNames.length;
+    addLog(`► Starting ${action.toUpperCase()} on ${names.length} agent(s) + ${clusterNames.length} cluster(s) [${timing}] …`);
 
     // Seed pending results
-    setResults(names.map(n => ({ name: n, status: 'pending', message: 'Queued…' })));
+    setResults([
+      ...names.map(n => ({ name: n, status: 'pending' as const, message: 'Queued (agent)…' })),
+      ...clusterNames.map(n => ({ name: n, status: 'pending' as const, message: 'Queued (cluster)…' })),
+    ]);
 
     try {
       if (timing === 'scheduled') {
@@ -572,33 +586,52 @@ export default function AgentControlPage() {
         }
         const isoDatetime = buildScheduledISO(schedDate, schedTime, schedTz);
         addLog(`Scheduling ${action} at ${schedDate} ${schedTime} ${schedTz} → UTC: ${isoDatetime}`);
-        const res = await globalApi.scheduleAgentAction(names, action, isoDatetime);
-        addLog(`✓ Job scheduled: ${res?.data?.jobId || 'OK'} [TZ: ${schedTz}]`);
-        setResults(names.map(n => ({
-          name: n,
-          status: 'success',
-          message: `Scheduled at ${isoDatetime} (${schedTz})`,
-        })));
+        const scheduled: AgentResult[] = [];
+        if (names.length > 0) {
+          const r = await globalApi.scheduleAgentAction(names, action, isoDatetime, 'agent');
+          addLog(`✓ Agent job scheduled: ${r?.data?.data?.jobId || 'OK'}`);
+          scheduled.push(...names.map(n => ({ name: n, status: 'success' as const, message: `Scheduled (agent) ${isoDatetime} (${schedTz})` })));
+        }
+        if (clusterNames.length > 0) {
+          const r = await globalApi.scheduleAgentAction(clusterNames, action, isoDatetime, 'cluster');
+          addLog(`✓ Cluster job scheduled: ${r?.data?.data?.jobId || 'OK'}`);
+          scheduled.push(...clusterNames.map(n => ({ name: n, status: 'success' as const, message: `Scheduled (cluster) ${isoDatetime} (${schedTz})` })));
+        }
+        setResults(scheduled);
       } else {
-        const fn = action === 'suspend' ? globalApi.suspendAgents.bind(globalApi) : globalApi.resumeAgents.bind(globalApi);
-        addLog(`Executing ${action} on: ${names.join(', ')}`);
-        const res = await fn(names);
-        const raw = res?.data;
+        const perTarget: AgentResult[] = [];
 
-        const perAgent: AgentResult[] = names.map(n => {
-          const found = Array.isArray(raw?.results)
-            ? raw.results.find((r: any) => r.name === n || r.agent === n)
-            : null;
-          if (found) {
-            const ok = found.success || found.status === 'success';
-            return { name: n, status: ok ? 'success' : 'error', message: found.message || (ok ? 'Done' : 'Failed') };
-          }
-          return { name: n, status: 'success', message: 'Done' };
-        });
+        // Agents
+        if (names.length > 0) {
+          const fn = action === 'suspend' ? globalApi.suspendAgents.bind(globalApi) : globalApi.resumeAgents.bind(globalApi);
+          addLog(`Executing ${action} on agent(s): ${names.join(', ')}`);
+          const res = await fn(names);
+          const raw = res?.data;
+          perTarget.push(...names.map(n => {
+            const found = Array.isArray(raw?.data) ? raw.data.find((r: any) => r.agentName === n || r.name === n || r.agent === n) : null;
+            const ok = !found || found.status === 'success' || found.success;
+            return { name: n, status: ok ? 'success' as const : 'error' as const, message: ok ? 'Done (agent)' : (typeof found?.error === 'string' ? found.error : 'Failed') };
+          }));
+        }
 
-        setResults(perAgent);
-        const successCount = perAgent.filter(r => r.status === 'success').length;
-        addLog(`✓ Completed: ${successCount}/${names.length} succeeded.`);
+        // Clusters
+        if (clusterNames.length > 0) {
+          const fn = action === 'suspend' ? globalApi.suspendClusters.bind(globalApi) : globalApi.resumeClusters.bind(globalApi);
+          addLog(`Executing ${action} on cluster(s): ${clusterNames.join(', ')}`);
+          const res = await fn(clusterNames);
+          const raw = res?.data;
+          perTarget.push(...clusterNames.map(n => {
+            const found = Array.isArray(raw?.data) ? raw.data.find((r: any) => r.name === n) : null;
+            const ok = !found || found.status === 'success';
+            return { name: n, status: ok ? 'success' as const : 'error' as const, message: ok ? 'Done (cluster)' : (typeof found?.error === 'string' ? found.error : 'Failed') };
+          }));
+        }
+
+        setResults(perTarget);
+        const successCount = perTarget.filter(r => r.status === 'success').length;
+        addLog(`✓ Completed: ${successCount}/${totalTargets} succeeded.`);
+        // Refresh so suspended/resumed state is reflected
+        fetchAgents();
       }
     } catch (e: any) {
       addLog(`✗ Execution error: ${e?.message}`);
@@ -797,6 +830,89 @@ export default function AgentControlPage() {
                 >
                   {selected.size} agent{selected.size !== 1 ? 's' : ''} selected
                 </motion.p>
+              )}
+            </motion.section>
+          )}
+        </AnimatePresence>
+
+        {/* ── Agent Clusters Panel ── */}
+        <AnimatePresence>
+          {clusters.length > 0 && (
+            <motion.section
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mt-6 rounded-xl border p-6"
+              style={{
+                background: 'linear-gradient(145deg, rgba(6,15,30,0.9), rgba(2,8,18,0.95))',
+                borderColor: 'rgba(51,65,85,0.2)',
+              }}
+            >
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <h2 className="text-xs font-semibold tracking-widest uppercase text-slate-500">
+                  Agent Clusters
+                  <span className="ml-2 text-cyan-600">{clusters.length}</span>
+                  <span className="ml-2 text-slate-700 normal-case font-normal">— select clusters to suspend / resume</span>
+                </h2>
+                {selectedClusters.size > 0 && (
+                  <button
+                    onClick={() => setSelectedClusters(new Set())}
+                    className="text-xs text-slate-500 hover:text-red-400 transition-colors px-2 py-1 rounded"
+                    style={{ border: '1px solid rgba(51,65,85,0.4)' }}
+                  >
+                    Clear ({selectedClusters.size})
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {clusters.map((c: any) => {
+                  const isSel = selectedClusters.has(c.name);
+                  const suspended = c.suspended === true;
+                  return (
+                    <motion.div
+                      key={c.name}
+                      layout
+                      whileHover={{ y: -2 }}
+                      onClick={() => toggleCluster(c.name)}
+                      className="relative rounded-xl border p-4 cursor-pointer transition-all select-none"
+                      style={{
+                        background: isSel ? 'rgba(6,182,212,0.07)' : 'rgba(15,23,42,0.6)',
+                        borderColor: isSel ? 'rgba(6,182,212,0.45)' : 'rgba(51,65,85,0.5)',
+                        boxShadow: isSel ? '0 0 18px rgba(6,182,212,0.1)' : 'none',
+                      }}
+                    >
+                      <div className="absolute top-3 right-3">
+                        <div className="w-4 h-4 rounded border flex items-center justify-center transition-all"
+                          style={{ borderColor: isSel ? '#06b6d4' : '#334155', background: isSel ? '#06b6d4' : 'transparent' }}>
+                          {isSel && (
+                            <svg className="w-2.5 h-2.5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ background: suspended ? '#eab308' : '#22c55e' }} />
+                        <span className="text-xs font-semibold" style={{ color: suspended ? '#eab308' : '#4ade80' }}>
+                          {suspended ? 'Suspended' : 'Active'}
+                        </span>
+                      </div>
+                      <p className="text-sm font-bold text-slate-100 mb-1 pr-6 truncate">{c.name}</p>
+                      <p className="text-[10px] font-semibold tracking-widest uppercase text-cyan-600">{c.type || 'Cluster'}</p>
+                      {Array.isArray(c.agents) && (
+                        <p className="text-[10px] text-slate-600 mt-2">{c.agents.length} member agent(s)</p>
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </div>
+
+              {selectedClusters.size > 0 && (
+                <p className="mt-3 text-xs text-cyan-600">
+                  {selectedClusters.size} cluster{selectedClusters.size !== 1 ? 's' : ''} selected — set Action below and Execute
+                </p>
               )}
             </motion.section>
           )}
@@ -1031,7 +1147,7 @@ export default function AgentControlPage() {
               )}
 
               {/* Selection summary */}
-              {(selected.size > 0 || manualInput.trim()) && (
+              {(selected.size > 0 || selectedClusters.size > 0 || manualInput.trim()) && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -1044,6 +1160,11 @@ export default function AgentControlPage() {
                   {selected.size > 0 && (
                     <p className="text-cyan-700">
                       {selected.size} agent{selected.size !== 1 ? 's' : ''} selected from grid
+                    </p>
+                  )}
+                  {selectedClusters.size > 0 && (
+                    <p className="text-cyan-700 mt-0.5">
+                      {selectedClusters.size} cluster{selectedClusters.size !== 1 ? 's' : ''} selected
                     </p>
                   )}
                   {manualInput.trim() && (

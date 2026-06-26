@@ -251,13 +251,15 @@ router.post('/stream', async (req: AuthRequest, res: Response): Promise<void> =>
     timestamp: new Date().toISOString(),
   });
 
-  // Log created items to analytics
+  // Log created items to analytics — tagged with the environment (baseUrl) so
+  // Test and Prod creations are tracked separately.
   const now = new Date().toISOString();
   const creationLogItems = rows.map(row => ({
     name: row.task_name,
     type: 'task',
     createdTime: now,
     createdBy: 'automation',
+    baseUrl: baseUrl || '',
   }));
   try {
     const fs = await import('fs');
@@ -266,7 +268,7 @@ router.post('/stream', async (req: AuthRequest, res: Response): Promise<void> =>
     let existing: any[] = [];
     try { if (fs.default.existsSync(logFile)) existing = JSON.parse(fs.default.readFileSync(logFile, 'utf-8')); } catch {}
     existing.push(...creationLogItems);
-    fs.default.writeFileSync(logFile, JSON.stringify(existing.slice(-500), null, 2));
+    fs.default.writeFileSync(logFile, JSON.stringify(existing.slice(-2000), null, 2));
   } catch {}
 
   auditLog({

@@ -26,6 +26,7 @@ export interface AlertRecord {
   agent?:          string;
   time:            string;
   environment:     string;
+  baseUrl?:        string;   // UAC environment (base URL) this alert came from
   operationalMemo: string;
   incidentNumbers: string[];
   serviceNowLinks: string[];
@@ -34,6 +35,16 @@ export interface AlertRecord {
 
 const STATE_FILE   = path.join(process.cwd(), 'monitor_state.json');
 const HISTORY_FILE = path.join(process.cwd(), 'alert_history.json');
+
+// Hardcoded default MS Teams webhook (Power Automate channel). Used whenever no
+// webhook is explicitly configured via env or the monitoring config.
+export const DEFAULT_TEAMS_WEBHOOK =
+  'https://default189de737c93a4f5a8b686f4ca99419.12.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4f2dfb629f224989ac59d51c0c92f1ea/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=h5M4DuQzQG1hAcd30k_FIwzD2pUMctRLclxjoV7BTKo';
+
+// Resolve the effective webhook: explicit config → env override → hardcoded default.
+export function resolveWebhook(configured?: string): string {
+  return (configured && configured.trim()) || process.env.TEAMS_WEBHOOK_URL || DEFAULT_TEAMS_WEBHOOK;
+}
 
 interface AlertState {
   offlineAgents: Record<string, string>;
@@ -111,7 +122,7 @@ function buildAgentOfflineCard(agent: any, env: string): object {
               { title: 'Detected',    value: new Date().toUTCString() },
             ],
           },
-          { type: 'TextBlock', text: 'Please investigate and resume the agent when ready.', wrap: true, color: 'Warning', size: 'Small' },
+          { type: 'TextBlock', text: 'Please investigate and bring the agent back online when ready.', wrap: true, color: 'Warning', size: 'Small' },
         ],
       },
     }],
@@ -168,11 +179,15 @@ function buildJobFailureCard(instance: any, env: string, incidentNumbers: string
 }
 
 export async function runMonitoringCycle(config: MonitorConfig): Promise<{
-  agentAlerts: number;
-  jobAlerts:   number;
-  errors:      string[];
+  agentAlerts:   number;
+  jobAlerts:     number;
+  agentsTotal:   number;
+  agentsOffline: number;
+  jobsFailed:    number;
+  errors:        string[];
 }> {
   const state  = loadState();
+  const webhook = resolveWebhook(config.teamsWebhookUrl);
   const client = axios.create({
     baseURL: config.sbBaseUrl,
     headers: {
@@ -183,19 +198,27 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
     timeout: 15000,
   });
 
-  let agentAlerts = 0;
-  let jobAlerts   = 0;
+  let agentAlerts   = 0;
+  let jobAlerts     = 0;
+  let agentsTotal   = 0;
+  let agentsOffline = 0;
+  let jobsFailed    = 0;
   const errors: string[] = [];
 
   // ── Monitor agents ──────────────────────────────────────────────────────────
+  // Monitoring operates at the AGENT level (offline detection). Cluster
+  // suspend/resume is a separate concern handled by Agent Control (management).
   if (config.monitorAgents) {
     try {
       const res    = await client.get('/resources/agent/list');
       const agents = Array.isArray(res.data) ? res.data : (res.data?.agent ?? []);
       const currentOffline = new Set<string>();
+      agentsTotal = agents.length;
 
       for (const agent of agents) {
-        const isOffline = agent.status !== 'Active' && !agent.suspended;
+        if (!agent?.name) continue;
+        // An agent is "offline" when it is not Active and not intentionally suspended.
+        const isOffline = agent.status !== 'Active' && agent.suspended !== true;
         if (isOffline) {
           currentOffline.add(agent.name);
           if (!state.offlineAgents[agent.name]) {
@@ -208,13 +231,14 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
               agent:           agent.name,
               time:            new Date().toISOString(),
               environment:     config.environment,
+              baseUrl:         config.sbBaseUrl,
               operationalMemo: '',
               incidentNumbers: [],
               serviceNowLinks: [],
               teamsSent:       false,
             };
             try {
-              await sendTeamsCard(config.teamsWebhookUrl, buildAgentOfflineCard(agent, config.environment));
+              await sendTeamsCard(webhook, buildAgentOfflineCard(agent, config.environment));
               alert.teamsSent = true;
               agentAlerts++;
               console.log(`[MONITOR] Agent offline alert sent: ${agent.name}`);
@@ -226,64 +250,64 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
         }
       }
 
-      // Clear agents that came back online
+      // Clear agents that came back online.
       for (const name of Object.keys(state.offlineAgents)) {
         if (!currentOffline.has(name)) {
           delete state.offlineAgents[name];
           console.log(`[MONITOR] Agent back online: ${name}`);
         }
       }
+      agentsOffline = currentOffline.size;
     } catch (e: any) {
-      errors.push(`Agent monitoring error: ${e.message}`);
+      const status = e.response?.status;
+      const hint = status === 401
+        ? ' (401 Unauthorized — the monitoring token is missing/expired; reconnect and reopen the Monitoring page)'
+        : '';
+      errors.push(`Agent monitoring error: ${e.message}${hint}`);
     }
   }
 
   // ── Monitor job failures ────────────────────────────────────────────────────
   if (config.monitorJobs) {
     try {
-      // UAC POST /resources/taskinstance/list requires `name` or `sysId` — cannot query by status alone.
-      // Use GET /resources/taskinstance/listadv which supports status + time range without requiring a name.
-      const failureStatuses = ['Failed', 'Start Failure'];
+      // UAC: POST /resources/taskinstance/list (it is a POST, not GET — GET returns 405).
+      // `name` is required but accepts wildcards, so "*" matches all task instances.
+      // status codes: Failed = 140, Start Failure = 120. updatedTimeType "Today"
+      // scopes to today's instances (updatedTime is ignored when type is Today).
       const allInstances: any[] = [];
-
-      // Build today's date range for the query
-      const now = new Date();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString().slice(0, 10);
-
-      for (const status of failureStatuses) {
+      try {
+        const res = await client.post('/resources/taskinstance/list', {
+          name: '*',
+          status: '140,120',          // Failed, Start Failure
+          updatedTimeType: 'Today',
+        }, { timeout: 20000 });
+        const list = Array.isArray(res.data) ? res.data : (res.data?.taskInstance ?? []);
+        allInstances.push(...list);
+      } catch (e: any) {
+        // Fallback: query each status by name and a 1-day offset window.
         try {
-          const res = await client.get('/resources/taskinstance/listadv', {
-            params: {
-              status,
-              updatedTime: todayStart,
-            },
-            timeout: 20000,
-          });
-          const list = Array.isArray(res.data) ? res.data : (res.data?.taskInstance ?? []);
-          allInstances.push(...list);
-        } catch (e: any) {
-          // Fallback: try with startedge param (some UAC versions use different param names)
-          try {
-            const res = await client.get('/resources/taskinstance/listadv', {
-              params: {
-                status,
-                startedge: todayStart,
-              },
-              timeout: 20000,
-            });
+          for (const code of ['140', '120']) {
+            const res = await client.post('/resources/taskinstance/list', {
+              name: '*',
+              status: code,
+              updatedTimeType: 'Offset',
+              updatedTime: '-1d',
+            }, { timeout: 20000 });
             const list = Array.isArray(res.data) ? res.data : (res.data?.taskInstance ?? []);
             allInstances.push(...list);
-          } catch (e2: any) {
-            const msg = typeof e2.response?.data === 'string' ? e2.response.data : e2.message;
-            console.warn(`[MONITOR] taskinstance/listadv status="${status}" error:`, msg);
           }
+        } catch (e2: any) {
+          const msg = typeof e2.response?.data === 'string' ? e2.response.data : e2.message;
+          console.warn('[MONITOR] taskinstance/list error:', msg);
+          errors.push(`Job monitoring query failed: ${msg}`);
         }
       }
+
+      jobsFailed = allInstances.length;
 
       for (const instance of allInstances) {
         const id = instance.sysId || instance.id || `${instance.name}-${instance.startTime}`;
         if (!id) continue;
-
         if (!state.failedJobs[id]) {
           state.failedJobs[id] = new Date().toISOString();
 
@@ -300,6 +324,7 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
             agent:           instance.agent || instance.agentName || '',
             time:            instance.endTime || instance.startTime || new Date().toISOString(),
             environment:     config.environment,
+            baseUrl:         config.sbBaseUrl,
             operationalMemo: memo,
             incidentNumbers,
             serviceNowLinks,
@@ -308,7 +333,7 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
 
           try {
             await sendTeamsCard(
-              config.teamsWebhookUrl,
+              webhook,
               buildJobFailureCard(instance, config.environment, incidentNumbers, serviceNowLinks)
             );
             alert.teamsSent = true;
@@ -348,5 +373,5 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
   }
 
   saveState(state);
-  return { agentAlerts, jobAlerts, errors };
+  return { agentAlerts, jobAlerts, agentsTotal, agentsOffline, jobsFailed, errors };
 }

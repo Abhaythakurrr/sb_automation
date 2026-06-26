@@ -17,11 +17,17 @@ const activeTimers = new Map<string, NodeJS.Timeout>();
 
 // ── Execute a scheduled job ───────────────────────────────────────────────────
 async function executeJob(job: PersistedJob): Promise<void> {
-  console.log(`[SCHEDULE] Executing ${job.action} for ${job.agents.length} agent(s) — Job: ${job.jobId}`);
+  const target = job.target || 'agent';
+  console.log(`[SCHEDULE] Executing ${job.action} on ${job.agents.length} ${target}(s) — Job: ${job.jobId}`);
   try {
     const service = new StoneBranchService(job.token, job.baseUrl);
-    if (job.action === 'suspend') await service.suspendAgents(job.agents);
-    else                          await service.resumeAgents(job.agents);
+    if (target === 'cluster') {
+      if (job.action === 'suspend') await service.suspendClusters(job.agents);
+      else                          await service.resumeClusters(job.agents);
+    } else {
+      if (job.action === 'suspend') await service.suspendAgents(job.agents);
+      else                          await service.resumeAgents(job.agents);
+    }
     console.log(`[SCHEDULE] Job ${job.jobId} completed successfully`);
   } catch (e: any) {
     console.error(`[SCHEDULE] Job ${job.jobId} failed:`, e.message);
@@ -146,13 +152,44 @@ router.post('/resume', async (req: AuthRequest, res: Response, next: NextFunctio
   } catch (e) { next(e); }
 });
 
+// ── Suspend clusters (bulk, immediate) ────────────────────────────────────────
+router.post('/clusters/suspend', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { clusters } = req.body as { clusters: string[] };
+    if (!clusters?.length) { res.status(400).json({ error: 'clusters array required' }); return; }
+    const results = await svc(req).suspendClusters(clusters);
+    auditLog({
+      timestamp: new Date().toISOString(), requestId: (req as any).requestId || '',
+      action: 'CLUSTER_SUSPEND', resource: clusters.join(','),
+      result: 'success', sessionId: req.sessionId,
+    });
+    res.json({ success: true, data: results, timestamp: new Date().toISOString() });
+  } catch (e) { next(e); }
+});
+
+// ── Resume clusters (bulk, immediate) ──────────────────────────────────────────
+router.post('/clusters/resume', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { clusters } = req.body as { clusters: string[] };
+    if (!clusters?.length) { res.status(400).json({ error: 'clusters array required' }); return; }
+    const results = await svc(req).resumeClusters(clusters);
+    auditLog({
+      timestamp: new Date().toISOString(), requestId: (req as any).requestId || '',
+      action: 'CLUSTER_RESUME', resource: clusters.join(','),
+      result: 'success', sessionId: req.sessionId,
+    });
+    res.json({ success: true, data: results, timestamp: new Date().toISOString() });
+  } catch (e) { next(e); }
+});
+
 // ── Schedule suspend/resume (persisted to disk) ────────────────────────────────
 router.post('/schedule', async (req: AuthRequest, res: Response, _next: NextFunction): Promise<void> => {
   try {
-    const { agents, action, scheduledAt } = req.body as {
+    const { agents, action, scheduledAt, target } = req.body as {
       agents:      string[];
       action:      'suspend' | 'resume';
       scheduledAt: string;
+      target?:     'agent' | 'cluster';
     };
 
     if (!agents?.length)  { res.status(400).json({ error: 'agents required' }); return; }
@@ -173,6 +210,7 @@ router.post('/schedule', async (req: AuthRequest, res: Response, _next: NextFunc
       jobId,
       action,
       agents,
+      target: target === 'cluster' ? 'cluster' : 'agent',
       scheduledAt,
       token,
       baseUrl,
