@@ -18,8 +18,11 @@ function sbClient(req: AuthRequest) {
   });
 }
 
-// Read-only fields to strip before PUT update
-const READ_ONLY = ['sysId','version','exportReleaseLevel','exportTable','retainSysIds',
+// Read-only fields to strip before PUT update.
+// NOTE: `sysId` is intentionally NOT stripped — it is the record identifier UAC
+// needs to apply a rename (changing the `name` field). It is only sent by the
+// client when a rename is requested.
+const READ_ONLY = ['version','exportReleaseLevel','exportTable','retainSysIds',
   'nextScheduledTime','enabledBy','enabledTime','disabledBy','disabledTime',
   'avgRunTime','avgRunTimeDisplay','minRunTime','minRunTimeDisplay',
   'maxRunTimeDisplay','lastRunTime','lastRunTimeDisplay','runCount','runTime','firstRun','lastRun',
@@ -61,6 +64,18 @@ router.put('/task', async (req: AuthRequest, res: Response, next: NextFunction):
     // Strip read-only fields
     READ_ONLY.forEach(f => delete payload[f]);
     const client = sbClient(req);
+    // UAC requires the polymorphic `type` discriminator (e.g. taskUnix). If the
+    // caller sent a partial diff without it, recover it from the current task.
+    if (!payload.type) {
+      try {
+        const cur = await client.get('/resources/task', { params: { taskname: payload.name } });
+        if (cur.data?.type) payload.type = cur.data.type;
+      } catch { /* fall through — UAC will report if still missing */ }
+    }
+    if (!payload.type) {
+      res.status(400).json({ success: false, error: 'Task "type" is required by UAC and could not be determined. Re-open the task and try again.' });
+      return;
+    }
     const r = await client.put('/resources/task', payload);
     auditLog({
       timestamp: new Date().toISOString(),
@@ -84,6 +99,17 @@ router.put('/trigger', async (req: AuthRequest, res: Response, next: NextFunctio
     if (!payload.name) { res.status(400).json({ success: false, error: 'name required in body' }); return; }
     READ_ONLY.forEach(f => delete payload[f]);
     const client = sbClient(req);
+    // Recover the `type` discriminator (e.g. triggerTime) if a partial diff omitted it.
+    if (!payload.type) {
+      try {
+        const cur = await client.get('/resources/trigger', { params: { triggername: payload.name } });
+        if (cur.data?.type) payload.type = cur.data.type;
+      } catch { /* fall through */ }
+    }
+    if (!payload.type) {
+      res.status(400).json({ success: false, error: 'Trigger "type" is required by UAC and could not be determined. Re-open the trigger and try again.' });
+      return;
+    }
     const r = await client.put('/resources/trigger', payload);
     auditLog({
       timestamp: new Date().toISOString(),

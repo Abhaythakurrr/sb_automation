@@ -23,6 +23,26 @@ function sbClient(req: AuthRequest) {
 async function findTriggersForTask(client: any, taskname: string): Promise<any[]> {
   const found: any[] = [];
 
+  // Strategy 0: Use POST /resources/trigger/list with tasks filter (most reliable)
+  try {
+    const r = await client.post('/resources/trigger/list', { tasks: taskname }, { timeout: 8000 });
+    const list = Array.isArray(r.data) ? r.data : (r.data?.trigger ?? []);
+    if (list.length > 0) {
+      // Fetch full details for each trigger
+      for (const trig of list) {
+        if (trig.name) {
+          try {
+            const full = await client.get('/resources/trigger', { params: { triggername: trig.name } });
+            if (full.data?.name) found.push(full.data);
+          } catch {
+            found.push(trig);
+          }
+        }
+      }
+      if (found.length > 0) return found;
+    }
+  } catch { /* fall through to other strategies */ }
+
   // Strategy 1: try common naming conventions directly (no list call needed)
   const candidates = [
     `${taskname}_TR001`,
@@ -77,8 +97,9 @@ router.get('/inspect', async (req: AuthRequest, res: Response, next: NextFunctio
     step('Checking parent workflows', 'checking');
     let parents: any[] = [];
     try {
-      const r = await client.get('/resources/task/listadv', { params: { workflowname: taskname as string } });
-      parents = Array.isArray(r.data) ? r.data : (r.data?.task ?? []);
+      // Use the correct UAC endpoint: "List All Workflows That a Task Belongs To"
+      const r = await client.get('/resources/task/parent/list', { params: { taskname: taskname as string } });
+      parents = Array.isArray(r.data) ? r.data : (r.data?.task ?? r.data?.workflow ?? []);
       if (parents.length > 0) {
         step(`Found in ${parents.length} workflow(s)`, 'warn', parents.map((p: any) => p.name).join(', '));
       } else {
@@ -214,29 +235,165 @@ router.post('/force-finish', async (req: AuthRequest, res: Response, next: NextF
 });
 
 // ── Core deletion logic (shared by single + bulk) ─────────────────────────
-async function performDeletion(client: any, taskname: string): Promise<{ success: boolean; steps: any[] }> {
+// tasknamesBeingDeleted: all task names in the current bulk operation (for workflow cleanup logic)
+async function performDeletion(client: any, taskname: string, tasknamesBeingDeleted: string[] = []): Promise<{ success: boolean; steps: any[] }> {
   const steps: any[] = [];
   const step = (label: string, status: string, detail?: string) =>
     steps.push({ label, status, detail, ts: new Date().toISOString() });
 
   step(`Starting deletion: ${taskname}`, 'ok');
 
-  // STEP 1: Check if task is in a workflow → set skip restriction first
-  let parentWorkflows: string[] = [];
-  try {
-    const r = await client.get('/resources/task/listadv', { params: { workflowname: taskname }, timeout: 8000 });
-    const parents = Array.isArray(r.data) ? r.data : (r.data?.task ?? []);
-    if (parents.length > 0) {
-      parentWorkflows = parents.map((p: any) => p.name);
-      step(`Task is in ${parents.length} workflow(s): ${parentWorkflows.join(', ')}`, 'warn');
+  // Normalize the full list of tasks being deleted for comparison
+  const deletionSet = new Set(
+    (tasknamesBeingDeleted.length > 0 ? tasknamesBeingDeleted : [taskname])
+      .map(n => n.toLowerCase())
+  );
 
-      // Set skip restriction on the task in each workflow
-      for (const wfName of parentWorkflows) {
+  // STEP 1: Check if task is in a workflow → handle workflow cleanup
+  let parentWorkflows: { name: string; sysId?: string; vertexId?: string }[] = [];
+  try {
+    // Use the correct UAC endpoint: "List All Workflows That a Task Belongs To"
+    const r = await client.get('/resources/task/parent/list', { params: { taskname }, timeout: 8000 });
+    const parents = Array.isArray(r.data) ? r.data : (r.data?.task ?? r.data?.workflow ?? []);
+    if (parents.length > 0) {
+      parentWorkflows = parents.map((p: any) => ({ name: p.name, sysId: p.sysId, vertexId: p.vertexId }));
+      step(`Task is in ${parents.length} workflow(s): ${parentWorkflows.map(p => p.name).join(', ')}`, 'warn');
+
+      // For each parent workflow: handle triggers, set skip restriction, then remove task
+      for (const wf of parentWorkflows) {
         try {
-          await client.get('/resources/task', { params: { taskname: wfName } });
-          step(`Set skip restriction for ${taskname} in workflow ${wfName}`, 'ok');
-        } catch {
-          step(`Could not set skip restriction in workflow ${wfName} — proceeding`, 'warn');
+          // 1a. Get the vertexId for this task in the workflow (from parent/list response)
+          const vertexId = wf.vertexId;
+
+          // 1b. ALWAYS find and handle workflow-level triggers first
+          // This is essential — workflow cannot be deleted/modified while triggers exist
+          let wfTriggers: any[] = [];
+          try {
+            wfTriggers = await findTriggersForTask(client, wf.name);
+            if (wfTriggers.length > 0) {
+              step(`Workflow ${wf.name} has ${wfTriggers.length} trigger(s)`, 'ok');
+            }
+          } catch { /* no triggers */ }
+
+          // 1c. Set "Skip" execution restriction on the task vertex within the workflow
+          // PUT /resources/workflow/vertices?workflowname=WF_NAME
+          try {
+            const modifyPayload: any = { task: taskname };
+            if (vertexId) modifyPayload.vertexId = vertexId;
+            await client.put('/resources/workflow/vertices', modifyPayload, {
+              params: { workflowname: wf.name },
+            });
+            step(`Set skip restriction for ${taskname} in workflow ${wf.name}`, 'ok');
+          } catch {
+            step(`Could not set skip restriction in ${wf.name} — proceeding`, 'warn');
+          }
+
+          // 1d. Get the list of all tasks/vertices in this workflow
+          // GET /resources/workflow/vertices?workflowname=WF_NAME
+          let workflowTaskNames: string[] = [];
+          try {
+            const verticesRes = await client.get('/resources/workflow/vertices', {
+              params: { workflowname: wf.name },
+              timeout: 8000,
+            });
+            const vertices = Array.isArray(verticesRes.data)
+              ? verticesRes.data
+              : (verticesRes.data?.workflowVertex ?? verticesRes.data?.vertices ?? []);
+            workflowTaskNames = vertices
+              .map((v: any) => {
+                // v.task can be a string OR an object like { value: "name" } or { name: "name" }
+                const t = v.task;
+                if (typeof t === 'string') return t;
+                if (t && typeof t === 'object') return t.value || t.name || '';
+                return v.taskName || v.name || '';
+              })
+              .filter((n: string) => n);
+          } catch {
+            step(`Could not list tasks in workflow ${wf.name}`, 'warn');
+          }
+
+          // 1e. Determine if ALL tasks in this workflow are being deleted
+          const allTasksBeingDeleted = workflowTaskNames.length > 0 &&
+            workflowTaskNames.every((wfTask: string) => deletionSet.has(wfTask.toLowerCase()));
+
+          if (allTasksBeingDeleted) {
+            // All tasks in the workflow are scheduled for deletion → delete the entire workflow
+            step(`All ${workflowTaskNames.length} task(s) in workflow ${wf.name} are being deleted — removing workflow`, 'ok');
+
+            // Disable and delete all workflow triggers
+            for (const wfTrig of wfTriggers) {
+              try {
+                if (wfTrig.enabled) {
+                  await client.post('/resources/trigger/enabledisable', [{ name: wfTrig.name, enable: false }]);
+                  step(`Disabled workflow trigger: ${wfTrig.name}`, 'ok');
+                }
+                await client.delete('/resources/trigger', { params: { triggername: wfTrig.name } });
+                step(`Deleted workflow trigger: ${wfTrig.name}`, 'ok');
+              } catch (trigErr: any) {
+                const msg = typeof trigErr.response?.data === 'string' ? trigErr.response.data : JSON.stringify(trigErr.response?.data ?? trigErr.message);
+                step(`Could not delete workflow trigger ${wfTrig.name}`, 'warn', msg);
+              }
+            }
+
+            // Delete the workflow itself
+            try {
+              await client.delete('/resources/task', { params: { taskname: wf.name } });
+              step(`Workflow ${wf.name} deleted`, 'ok');
+            } catch (delErr: any) {
+              const msg = typeof delErr.response?.data === 'string' ? delErr.response.data : JSON.stringify(delErr.response?.data ?? delErr.message);
+              step(`Could not delete workflow ${wf.name}`, 'warn', msg);
+            }
+          } else {
+            // Other tasks remain in the workflow → remove only this task from it
+            const remaining = workflowTaskNames.filter((n: string) => !deletionSet.has(n.toLowerCase()));
+            step(`Workflow ${wf.name} has other tasks — removing ${taskname} from it`, 'ok',
+              `Remaining: ${remaining.join(', ')}`);
+
+            // If workflow trigger references this specific task, update it
+            for (const wfTrig of wfTriggers) {
+              const trigTasks: string[] = wfTrig.tasks ?? [];
+              if (trigTasks.some((t: string) => t.toLowerCase() === taskname.toLowerCase())) {
+                try {
+                  const updatedTasks = trigTasks.filter((t: string) => t.toLowerCase() !== taskname.toLowerCase());
+                  if (updatedTasks.length === 0) {
+                    // No tasks left in this trigger — delete it
+                    if (wfTrig.enabled) {
+                      await client.post('/resources/trigger/enabledisable', [{ name: wfTrig.name, enable: false }]);
+                    }
+                    await client.delete('/resources/trigger', { params: { triggername: wfTrig.name } });
+                    step(`Deleted workflow trigger ${wfTrig.name} (no tasks remain)`, 'ok');
+                  } else {
+                    // Update trigger to remove this task
+                    const full = await client.get('/resources/trigger', { params: { triggername: wfTrig.name } });
+                    const payload = { ...full.data, tasks: updatedTasks };
+                    ['sysId','version','exportReleaseLevel','exportTable','nextScheduledTime',
+                     'enabledBy','enabledTime','disabledBy','disabledTime'].forEach(f => delete payload[f]);
+                    await client.put('/resources/trigger', payload);
+                    step(`Removed ${taskname} from workflow trigger ${wfTrig.name}`, 'ok');
+                  }
+                } catch { /* best effort */ }
+              }
+            }
+
+            // Remove the task vertex from the workflow
+            // DELETE /resources/workflow/vertices?workflowname=WF_NAME&taskname=TASK_NAME
+            try {
+              const deleteParams: any = { workflowname: wf.name };
+              if (vertexId) {
+                deleteParams.vertexid = vertexId;
+              } else {
+                deleteParams.taskname = taskname;
+              }
+              await client.delete('/resources/workflow/vertices', { params: deleteParams });
+              step(`Removed ${taskname} from workflow ${wf.name}`, 'ok');
+            } catch (removeErr: any) {
+              const msg = typeof removeErr.response?.data === 'string' ? removeErr.response.data : JSON.stringify(removeErr.response?.data ?? removeErr.message);
+              step(`Could not remove ${taskname} from workflow ${wf.name}`, 'warn', msg);
+            }
+          }
+        } catch (wfErr: any) {
+          const msg = typeof wfErr.response?.data === 'string' ? wfErr.response.data : JSON.stringify(wfErr.response?.data ?? wfErr.message);
+          step(`Workflow ${wf.name} handling error — proceeding`, 'warn', msg);
         }
       }
     } else {
@@ -315,7 +472,7 @@ router.delete('/job', async (req: AuthRequest, res: Response, next: NextFunction
     const { taskname } = req.body;
     if (!taskname) { res.status(400).json({ error: 'taskname required' }); return; }
     const client = sbClient(req);
-    const result = await performDeletion(client, taskname);
+    const result = await performDeletion(client, taskname, [taskname]);
     auditLog({
       timestamp: new Date().toISOString(),
       requestId: (req as any).requestId || '',
@@ -339,7 +496,8 @@ router.delete('/jobs', async (req: AuthRequest, res: Response, next: NextFunctio
     const results: any[] = [];
 
     for (const taskname of tasknames) {
-      const result = await performDeletion(client, taskname);
+      // Pass ALL tasknames so workflow cleanup logic knows if all tasks in a workflow are being removed
+      const result = await performDeletion(client, taskname, tasknames);
       auditLog({
         timestamp: new Date().toISOString(),
         requestId: (req as any).requestId || '',

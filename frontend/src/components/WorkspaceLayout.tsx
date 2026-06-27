@@ -7,7 +7,7 @@ import PipelinePage from './PipelinePage';
 import AgentControlPage from './AgentControlPage';
 import MonitoringPage from './MonitoringPage';
 import JobDeletionPage from './JobDeletionPage';
-import AnalyticsDashboard from './AnalyticsDashboard';
+import SearchEditPage from './SearchEditPage';
 
 // ── Tab Bar ───────────────────────────────────────────────────────────────────
 function TabBar() {
@@ -39,9 +39,9 @@ function TabBar() {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
       </svg>
     ),
-    'analytics': (
+    'search': (
       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
       </svg>
     ),
   };
@@ -151,10 +151,10 @@ export default function WorkspaceLayout() {
           </div>
         )}
 
-        {/* Analytics */}
-        {mountedIds.includes('analytics') && (
-          <div style={{ display: activeTab === 'analytics' ? 'block' : 'none' }}>
-            <AnalyticsDashboard />
+        {/* Search & Edit */}
+        {mountedIds.includes('search') && (
+          <div style={{ display: activeTab === 'search' ? 'block' : 'none' }}>
+            <SearchEditPage />
           </div>
         )}
       </div>
@@ -182,6 +182,7 @@ function LandingPageWrapper() {
         '/agent-control': { id: 'agent-control', title: 'Agent Control' },
         '/monitoring':    { id: 'monitoring',    title: 'Monitoring' },
         '/job-deletion':  { id: 'job-deletion',  title: 'Job Deletion' },
+        '/search':        { id: 'search',        title: 'Search & Edit' },
       };
 
       const match = routeMap[href];

@@ -262,7 +262,7 @@ function AutomationCard({ auto, index }: { auto: Automation; index: number }) {
       '/agent-control': 'agent-control',
       '/monitoring':    'monitoring',
       '/job-deletion':  'job-deletion',
-      '/analytics':     'analytics',
+      '/search':        'search',
     };
     const id = routeMap[auto.route];
     if (id) openTab(id, auto.title);
@@ -730,7 +730,7 @@ export default function LandingPage() {
 
               {/* Subtitle */}
               <p className="text-sm text-slate-500 max-w-lg leading-relaxed mb-8">
-                Orchestrate job creation, agent lifecycle, monitoring, analytics, and deletion
+                Orchestrate job creation, agent lifecycle, monitoring, and deletion
                 through a unified command interface. Powered by the UAC REST API.
               </p>
 
@@ -742,7 +742,6 @@ export default function LandingPage() {
                   { label: 'Agent Lifecycle', active: true, tier: 'purple' },
                   { label: 'Real-time Alerts', active: true, tier: 'purple' },
                   { label: 'Safe Deletion', active: true, tier: 'gold' },
-                  { label: 'Analytics', active: true, tier: 'cyan' },
                   { label: 'Bulk Updates', active: false, tier: 'silver' },
                 ].map(cap => (
                   <motion.span

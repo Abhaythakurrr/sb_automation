@@ -11,7 +11,6 @@ import { agentControlRouter, restoreScheduledJobs } from './routes/agentControl'
 import { monitoringRouter, restoreMonitoring } from './routes/monitoring';
 import { jobDeletionRouter } from './routes/jobDeletion';
 import { jobDocRouter } from './routes/jobDoc';
-import { analyticsRouter } from './routes/analytics';
 import { searchRouter } from './routes/search';
 import { errorHandler } from './middleware/errorHandler';
 import { sessionMiddleware } from './middleware/session';
@@ -34,10 +33,36 @@ console.log(`[CONFIG] Teams webhook configured: ${!!process.env.TEAMS_WEBHOOK_UR
 const app = express();
 const PORT = process.env.BACKEND_PORT || 3001;
 
+// Behind nginx/reverse proxy — trust the first proxy hop so rate limiting and
+// logging use the real client IP (X-Forwarded-For) rather than the proxy IP.
+app.set('trust proxy', 1);
+// Do not advertise the framework.
+app.disable('x-powered-by');
+
 // Security headers
 app.use(helmet({
   contentSecurityPolicy: false, // disabled — API server, not serving HTML
   crossOriginEmbedderPolicy: false,
+}));
+
+// ── CORS — restrict to known frontend origin(s) ────────────────────────────
+// Set CORS_ORIGINS in env as a comma-separated allow-list. Defaults to the
+// local dev frontend. A wildcard ('*') is intentionally NOT the default so a
+// malicious site cannot drive the API from a victim's browser.
+const allowedOrigins = (process.env.CORS_ORIGINS ||
+  'http://localhost:3000,http://127.0.0.1:3000')
+  .split(',').map(o => o.trim()).filter(Boolean);
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow same-origin / server-to-server / curl (no Origin header).
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-ID', 'X-SB-Base-URL'],
+  maxAge: 600,
 }));
 
 // Rate limiting — 200 requests per minute per IP
@@ -54,15 +79,29 @@ app.use(limiter);
 const executionLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 200,  // same as global — bulk ops need many calls per job
+  standardHeaders: true,
+  legacyHeaders: false,
   message: { success: false, error: 'Execution rate limit exceeded' },
 });
 app.use('/api/execution', executionLimiter);
 app.use('/api/deletion', executionLimiter);
 
+// Upload limiter — uploads are heavier; cap them per IP.
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many uploads, please slow down' },
+});
+app.use('/api/upload', uploadLimiter);
+
 // Strict rate limit for auth endpoint — prevent brute force
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
   message: { success: false, error: 'Too many connection attempts. Please wait 15 minutes.' },
 });
 app.use('/api/stonebranch/connect', authLimiter);
@@ -75,9 +114,8 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 // Middleware
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ limit: '15mb', extended: true }));
 app.use(requestLogger);
 
 // Routes
@@ -90,7 +128,6 @@ app.use('/api/agents',      sessionMiddleware, agentControlRouter);
 app.use('/api/monitoring',  sessionMiddleware, monitoringRouter);
 app.use('/api/deletion',    sessionMiddleware, jobDeletionRouter);
 app.use('/api/jobdoc',      sessionMiddleware, jobDocRouter);
-app.use('/api/analytics',   sessionMiddleware, analyticsRouter);
 app.use('/api/search',      sessionMiddleware, searchRouter);
 
 // Health check

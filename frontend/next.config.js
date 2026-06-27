@@ -28,6 +28,25 @@ const nextConfig = {
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }];
   },
+  webpack: (config, { webpack, isServer }) => {
+    if (!isServer) {
+      // The `docx` library references the Node globals `Buffer` and `process`,
+      // which don't exist in the browser. Provide polyfills so client-side
+      // DOCX generation (SOP download) works.
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        buffer: require.resolve('buffer/'),
+        process: require.resolve('process/browser'),
+      };
+      config.plugins.push(
+        new webpack.ProvidePlugin({
+          Buffer: ['buffer', 'Buffer'],
+          process: 'process/browser',
+        })
+      );
+    }
+    return config;
+  },
 };
 
 module.exports = nextConfig;

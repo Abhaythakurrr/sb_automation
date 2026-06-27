@@ -13,6 +13,7 @@ export interface PersistedJob {
   jobId:       string;
   action:      'suspend' | 'resume';
   agents:      string[];
+  target?:     'agent' | 'cluster';  // what `agents` refers to (default 'agent')
   scheduledAt: string;   // ISO UTC string
   token:       string;
   baseUrl:     string;

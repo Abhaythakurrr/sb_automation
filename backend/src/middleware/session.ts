@@ -12,17 +12,20 @@ interface Session {
 // In-memory session store — sessions never written to disk
 const sessions = new Map<string, Session>();
 
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+// Idle timeout: session expires after 30 minutes of inactivity.
+const SESSION_IDLE_MS = 30 * 60 * 1000;
+// Absolute cap: a session cannot live longer than 8 hours even if active.
+const SESSION_ABSOLUTE_MS = 8 * 60 * 60 * 1000;
 
-// Clean up expired sessions every 30 minutes
+// Clean up expired sessions every 5 minutes
 setInterval(() => {
   const now = Date.now();
   for (const [id, session] of sessions.entries()) {
-    if (now - session.lastUsed > SESSION_TTL_MS) {
+    if (now - session.lastUsed > SESSION_IDLE_MS || now - session.createdAt > SESSION_ABSOLUTE_MS) {
       sessions.delete(id);
     }
   }
-}, 30 * 60 * 1000);
+}, 5 * 60 * 1000);
 
 export function createSession(token: string, sbBaseUrl: string): string {
   const sessionId = randomUUID();
@@ -38,12 +41,14 @@ export function createSession(token: string, sbBaseUrl: string): string {
 export function getSession(sessionId: string): Session | null {
   const session = sessions.get(sessionId);
   if (!session) return null;
-  if (Date.now() - session.lastUsed > SESSION_TTL_MS) {
+  const now = Date.now();
+  // Expire on idle OR absolute lifetime.
+  if (now - session.lastUsed > SESSION_IDLE_MS || now - session.createdAt > SESSION_ABSOLUTE_MS) {
     sessions.delete(sessionId);
     return null;
   }
-  // Refresh last used
-  session.lastUsed = Date.now();
+  // Refresh last used (sliding idle window)
+  session.lastUsed = now;
   return session;
 }
 
@@ -99,8 +104,11 @@ export function sessionMiddleware(req: AuthRequest, res: Response, next: NextFun
     }
   }
 
-  // Option 3: Server-side env token (for monitoring service auto-restore)
-  if (process.env.AUTH_TOKEN) {
+  // Option 3: Server-side env token — DISABLED by default.
+  // Granting access from an env token to any request without a session is a
+  // serious auth-bypass risk. Only enable in trusted/internal single-tenant
+  // deployments by explicitly setting ALLOW_ENV_TOKEN_FALLBACK=true.
+  if (process.env.ALLOW_ENV_TOKEN_FALLBACK === 'true' && process.env.AUTH_TOKEN) {
     req.token     = process.env.AUTH_TOKEN;
     req.sbBaseUrl = process.env.BASE_URL || '';
     next();

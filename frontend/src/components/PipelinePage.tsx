@@ -416,13 +416,6 @@ export default function PipelinePage() {
           setProgress(100);
           log(`[INFO] Done — ${data.successful} success, ${data.failed} failed out of ${data.total}`);
           playComplete();
-          // Log creations to analytics
-          if (createdNames.length > 0) {
-            const { username } = useConnectionStore.getState();
-            const now = new Date().toISOString();
-            const items = createdNames.map(c => ({ name: c.name, type: c.type, createdTime: now, createdBy: username || 'operator' }));
-            globalApi.logCreation(items).catch(() => { /* non-critical */ });
-          }
         }
       },
       // onDone
@@ -605,7 +598,7 @@ export default function PipelinePage() {
 
   return (
     <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>
-      <GlobalHeader title="Job Creation" subtitle="BULK TASK + TRIGGER PIPELINE" />
+      <GlobalHeader title="Job Creation" subtitle="BULK TASK + TRIGGER PIPELINE" sopHref="/SOP_Job_creation" />
 
       <main className="pb-16 px-4 max-w-7xl mx-auto space-y-6 min-h-screen">
 

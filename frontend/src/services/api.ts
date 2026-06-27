@@ -22,6 +22,10 @@ export class ApiClient {
     this.http.interceptors.request.use(cfg => {
       if (this.sessionId) {
         cfg.headers['X-Session-ID'] = this.sessionId;
+        // Signal activity so the idle-timeout window slides on real API use.
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('api-activity'));
+        }
       }
       return cfg;
     });
@@ -168,8 +172,16 @@ export class ApiClient {
     return this.http.post('/api/agents/resume', { agents });
   }
 
-  async scheduleAgentAction(agents: string[], action: 'suspend' | 'resume', scheduledAt: string): Promise<any> {
-    return this.http.post('/api/agents/schedule', { agents, action, scheduledAt });
+  async suspendClusters(clusters: string[]): Promise<any> {
+    return this.http.post('/api/agents/clusters/suspend', { clusters });
+  }
+
+  async resumeClusters(clusters: string[]): Promise<any> {
+    return this.http.post('/api/agents/clusters/resume', { clusters });
+  }
+
+  async scheduleAgentAction(agents: string[], action: 'suspend' | 'resume', scheduledAt: string, target: 'agent' | 'cluster' = 'agent'): Promise<any> {
+    return this.http.post('/api/agents/schedule', { agents, action, scheduledAt, target });
   }
 
   async getScheduledJobs(): Promise<any> {
@@ -186,6 +198,7 @@ export class ApiClient {
     monitorAgents:       boolean;
     monitorJobs:         boolean;
     environment:         string;
+    teamsWebhookUrl?:    string;
   }): Promise<any> {
     return this.http.post('/api/monitoring/start', config);
   }
@@ -243,11 +256,6 @@ export class ApiClient {
   // ── Preview — get the exact payload that will be sent to UAC ───────────────
   async previewPayloads(rows: any[], resolvedRefs: Record<string, any>): Promise<any> {
     return this.http.post('/api/execution/preview', { rows, resolvedRefs });
-  }
-
-  // ── Creation logging — persist created items to analytics ──────────────────
-  async logCreation(items: Array<{name: string; type: string; createdTime: string; createdBy: string}>): Promise<any> {
-    return this.http.post('/api/analytics/log-creation', { items });
   }
 
   // ── Qualifying Times — fetch run cycle from UAC ────────────────────────────
