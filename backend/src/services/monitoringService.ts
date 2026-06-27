@@ -83,9 +83,20 @@ function parseIncidentNumbers(memo: string): string[] {
   return [...new Set(matches.map((m: string) => m.toUpperCase()))];
 }
 
-function buildServiceNowLinks(incidentNumbers: string[]): string[] {
+// Choose the ServiceNow instance based on the connected UAC environment.
+// Prod UAC (e.g. adient.stonebranch.cloud)      → adientprod.service-now.com
+// Non-prod UAC (e.g. adienttst.stonebranch.cloud) → adientdev.service-now.com
+function serviceNowHost(baseUrl?: string): string {
+  const url = (baseUrl || '').toLowerCase();
+  const isNonProd = /\b(tst|test|dev|qa|uat|stg|stage|staging|nonprod|non-prod|sandbox)\b/.test(url)
+    || /adienttst|adientdev|adientqa|adientuat/.test(url);
+  return isNonProd ? 'adientdev.service-now.com' : 'adientprod.service-now.com';
+}
+
+function buildServiceNowLinks(incidentNumbers: string[], baseUrl?: string): string[] {
+  const host = serviceNowHost(baseUrl);
   return incidentNumbers.map(inc =>
-    `https://adientprod.service-now.com/nav_to.do?uri=incident_list.do?sysparm_query=number=${inc}`
+    `https://${host}/nav_to.do?uri=incident_list.do?sysparm_query=number=${inc}`
   );
 }
 
@@ -314,7 +325,7 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
           // Parse ServiceNow incident from operationalMemo
           const memo           = instance.operationalMemo || '';
           const incidentNumbers = parseIncidentNumbers(memo);
-          const serviceNowLinks = buildServiceNowLinks(incidentNumbers);
+          const serviceNowLinks = buildServiceNowLinks(incidentNumbers, config.sbBaseUrl);
 
           const alert: AlertRecord = {
             id:              `job-${id}-${Date.now()}`,
