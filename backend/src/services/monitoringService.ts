@@ -84,8 +84,6 @@ function parseIncidentNumbers(memo: string): string[] {
 }
 
 // Choose the ServiceNow instance based on the connected UAC environment.
-// Prod UAC (e.g. adient.stonebranch.cloud)      → adientprod.service-now.com
-// Non-prod UAC (e.g. adienttst.stonebranch.cloud) → adientdev.service-now.com
 function serviceNowHost(baseUrl?: string): string {
   const url = (baseUrl || '').toLowerCase();
   const isNonProd = /\b(tst|test|dev|qa|uat|stg|stage|staging|nonprod|non-prod|sandbox)\b/.test(url)
