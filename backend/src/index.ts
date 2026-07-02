@@ -12,6 +12,7 @@ import { monitoringRouter, restoreMonitoring } from './routes/monitoring';
 import { jobDeletionRouter } from './routes/jobDeletion';
 import { jobDocRouter } from './routes/jobDoc';
 import { searchRouter } from './routes/search';
+import { adhocRouter } from './routes/adhoc';
 import { errorHandler } from './middleware/errorHandler';
 import { sessionMiddleware } from './middleware/session';
 import { requestLogger } from './middleware/requestLogger';
@@ -129,6 +130,7 @@ app.use('/api/monitoring',  sessionMiddleware, monitoringRouter);
 app.use('/api/deletion',    sessionMiddleware, jobDeletionRouter);
 app.use('/api/jobdoc',      sessionMiddleware, jobDocRouter);
 app.use('/api/search',      sessionMiddleware, searchRouter);
+app.use('/api/adhoc',       sessionMiddleware, adhocRouter);
 
 // Health check
 app.get('/health', (_req, res) => {

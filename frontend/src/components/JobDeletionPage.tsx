@@ -271,6 +271,17 @@ export default function JobDeletionPage() {
   const jobsRef = useRef(jobs);
   useEffect(() => { jobsRef.current = jobs; }, [jobs]);
 
+  // Load server-persisted recoverable jobs for the connected env (survives
+  // refresh / timeout; backend auto-expires entries after 7 days).
+  const loadRecovery = useCallback(async () => {
+    try {
+      const res = await globalApi.getRecovery();
+      const backups = res.data?.data?.backups || [];
+      if (backups.length) setBackupData(backups);
+    } catch { /* not connected / no recovery */ }
+  }, []);
+  useEffect(() => { if (connected) loadRecovery(); }, [connected, loadRecovery]);
+
   const handleRun = async () => {
     if (!jobs.length || !connected) return;
     setRunning(true); setSummary(null);
@@ -340,6 +351,8 @@ export default function JobDeletionPage() {
     setRunning(false);
     const final = jobsRef.current;
     setSummary({ done: final.filter(j => j.success).length, failed: final.filter(j => j.phase === 'done' && !j.success).length, total: final.length });
+    // Pull the latest server-persisted recovery list (backend persisted backups).
+    loadRecovery();
   };
 
   const canRun = connected && jobs.length > 0 && !running && jobs.some(j => j.phase === 'idle');
@@ -438,6 +451,34 @@ export default function JobDeletionPage() {
           )}
         </motion.div>
 
+        {/* Progress bar — overall deletion progress */}
+        {jobs.length > 0 && (running || summary) && (() => {
+          const doneCount = jobs.filter(j => j.phase === 'done').length;
+          const failedCount = jobs.filter(j => j.phase === 'done' && !j.success).length;
+          const pct = Math.round((doneCount / jobs.length) * 100);
+          return (
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold text-slate-300">
+                  {running ? '🗑 Deleting…' : '✓ Completed'}
+                  <span className="text-slate-500 font-mono ml-2">{doneCount}/{jobs.length}</span>
+                </span>
+                <span className="text-[11px] font-mono font-bold" style={{ color: running ? '#67e8f9' : '#4ade80' }}>{pct}%</span>
+              </div>
+              <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'rgba(2,8,18,0.8)', border: '1px solid rgba(51,65,85,0.2)' }}>
+                <motion.div className="h-full rounded-full"
+                  initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ ease: 'easeOut', duration: 0.4 }}
+                  style={{ background: failedCount > 0
+                    ? 'linear-gradient(90deg, #ef4444, #f59e0b)'
+                    : 'linear-gradient(90deg, #06b6d4, #22c55e)' }} />
+              </div>
+              {failedCount > 0 && (
+                <p className="text-[9px] text-red-400/80 font-mono mt-1.5">{failedCount} failed</p>
+              )}
+            </motion.div>
+          );
+        })()}
+
         {/* Summary */}
         <AnimatePresence>
           {summary && (
@@ -483,9 +524,19 @@ export default function JobDeletionPage() {
               </div>
               <div>
                 <h3 className="text-xs font-bold text-slate-300">Recovery Center</h3>
-                <p className="text-[9px] text-slate-600 font-mono">{backupData.filter((b: any) => b.task).length} JOB(S) RECOVERABLE</p>
+                <p className="text-[9px] text-slate-600 font-mono">{backupData.filter((b: any) => b.task).length} JOB(S) RECOVERABLE · AUTO-EXPIRES IN 7 DAYS</p>
               </div>
               <div className="ml-auto flex items-center gap-2">
+                {/* Clear all recovery (manual cleanup) */}
+                <button
+                  onClick={async () => {
+                    if (!confirm('Clear all recoverable jobs for this environment? This cannot be undone.')) return;
+                    try { await globalApi.clearRecovery(); setBackupData([]); } catch (err: any) { alert('Clear failed: ' + err.message); }
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
+                  Clear All
+                </button>
                 {/* Upload Excel to restore */}
                 <label className="px-3 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center gap-1.5"
                   style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)', color: '#67e8f9' }}>
@@ -522,7 +573,7 @@ export default function JobDeletionPage() {
             </div>
 
             <p className="text-[10px] text-slate-500 mb-3">
-              Backup downloaded as job creation template — upload it to restore, or click individual job buttons below.
+              Recoverable jobs are kept on the server (per environment) — they survive refresh and session timeout, and auto-expire after 7 days. Cleared on logout or manual removal.
             </p>
 
             {/* All recoverable jobs */}
@@ -545,6 +596,20 @@ export default function JobDeletionPage() {
                     className="px-2.5 py-1 rounded text-[9px] font-bold shrink-0 transition-all hover:scale-105"
                     style={{ background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.25)', color: '#c4b5fd' }}>
                     Recover
+                  </button>
+                  <button
+                    title="Remove from recovery"
+                    onClick={async () => {
+                      try {
+                        await globalApi.removeRecovery(b.taskName);
+                        setBackupData(prev => prev.filter((x: any) => x.taskName !== b.taskName));
+                      } catch (err: any) {
+                        alert('Remove failed: ' + err.message);
+                      }
+                    }}
+                    className="px-2 py-1 rounded text-[9px] font-bold shrink-0 transition-all hover:scale-105"
+                    style={{ background: 'rgba(51,65,85,0.2)', border: '1px solid rgba(51,65,85,0.3)', color: '#94a3b8' }}>
+                    ✕
                   </button>
                 </motion.div>
               ))}

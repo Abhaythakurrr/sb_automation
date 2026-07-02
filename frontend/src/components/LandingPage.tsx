@@ -263,6 +263,7 @@ function AutomationCard({ auto, index }: { auto: Automation; index: number }) {
       '/monitoring':    'monitoring',
       '/job-deletion':  'job-deletion',
       '/search':        'search',
+      '/adhoc-launch':  'adhoc-launch',
     };
     const id = routeMap[auto.route];
     if (id) openTab(id, auto.title);

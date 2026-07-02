@@ -153,6 +153,41 @@ router.post('/start', async (req: AuthRequest, res: Response, next: NextFunction
   } catch (e) { next(e); }
 });
 
+// ── Per-session failed task instances (used by Self-Service bot, per env) ──────
+router.get('/failures', async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const token   = req.token     || '';
+    const baseUrl = req.sbBaseUrl  || '';
+    if (!baseUrl) { res.status(400).json({ success: false, error: 'No base URL for this session' }); return; }
+    const client = (await import('axios')).default.create({
+      baseURL: baseUrl,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      timeout: 20000,
+    });
+    let instances: any[] = [];
+    try {
+      const r = await client.post('/resources/taskinstance/list', {
+        name: '*', status: '140,120', updatedTimeType: 'Today',
+      });
+      instances = Array.isArray(r.data) ? r.data : (r.data?.taskInstance ?? []);
+    } catch (e: any) {
+      const msg = typeof e.response?.data === 'string' ? e.response.data : (e.message || 'query failed');
+      res.status(502).json({ success: false, error: msg });
+      return;
+    }
+    const jobs = instances.map((i: any) => ({
+      name: i.name || i.taskName || '',
+      status: i.status || 'Failed',
+      agent: i.agent || i.agentName || '',
+      startTime: i.startTime || i.triggerTime || '',
+      endTime: i.endTime || '',
+      sysId: i.sysId || i.id || '',
+      exitCode: i.exitCode != null ? String(i.exitCode) : '',
+    }));
+    res.json({ success: true, data: { jobs, count: jobs.length }, timestamp: new Date().toISOString() });
+  } catch (e) { next(e); }
+});
+
 // ── Stop monitoring ────────────────────────────────────────────────────────────
 router.post('/stop', (_req: AuthRequest, res: Response): void => {
   stopMonitor();

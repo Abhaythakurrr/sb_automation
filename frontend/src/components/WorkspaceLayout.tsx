@@ -8,6 +8,7 @@ import AgentControlPage from './AgentControlPage';
 import MonitoringPage from './MonitoringPage';
 import JobDeletionPage from './JobDeletionPage';
 import SearchEditPage from './SearchEditPage';
+import AdhocLaunchPage from './AdhocLaunchPage';
 
 // ── Tab Bar ───────────────────────────────────────────────────────────────────
 function TabBar() {
@@ -42,6 +43,11 @@ function TabBar() {
     'search': (
       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+    ),
+    'adhoc-launch': (
+      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
       </svg>
     ),
   };
@@ -157,6 +163,13 @@ export default function WorkspaceLayout() {
             <SearchEditPage />
           </div>
         )}
+
+        {/* Ad-hoc Launch */}
+        {mountedIds.includes('adhoc-launch') && (
+          <div style={{ display: activeTab === 'adhoc-launch' ? 'block' : 'none' }}>
+            <AdhocLaunchPage />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -183,6 +196,7 @@ function LandingPageWrapper() {
         '/monitoring':    { id: 'monitoring',    title: 'Monitoring' },
         '/job-deletion':  { id: 'job-deletion',  title: 'Job Deletion' },
         '/search':        { id: 'search',        title: 'Search & Edit' },
+        '/adhoc-launch':  { id: 'adhoc-launch',  title: 'Ad-hoc Launch' },
       };
 
       const match = routeMap[href];

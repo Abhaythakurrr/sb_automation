@@ -3,6 +3,7 @@ import { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/session';
 import axios from 'axios';
 import { auditLog } from '../middleware/auditLogger';
+import * as recovery from '../utils/recoveryStore';
 
 const router = Router();
 
@@ -591,10 +592,41 @@ router.post('/backup', async (req: AuthRequest, res: Response): Promise<void> =>
     backups.push(entry);
   }
 
+  // Persist successful backups server-side so the Recovery Center survives
+  // session refresh/timeout/restart (per environment; auto-expires after 7 days).
+  try {
+    const persistable = backups
+      .filter(b => b.task)
+      .map(b => ({ taskName: b.taskName, task: b.task, triggers: b.triggers || [], savedAt: new Date().toISOString(), savedBy: (req as any).username }));
+    if (persistable.length) recovery.addEntries(req.sbBaseUrl || '', persistable);
+  } catch { /* non-critical */ }
+
   res.json({
     success: true,
     data: { backups, templateRows, count: backups.length },
   });
+});
+
+// ── List recoverable jobs (server-persisted) for the connected environment ──
+router.get('/recovery', (req: AuthRequest, res: Response): void => {
+  const entries = recovery.listEntries(req.sbBaseUrl || '');
+  res.json({
+    success: true,
+    data: {
+      backups: entries.map(e => ({ taskName: e.taskName, task: e.task, triggers: e.triggers, savedAt: e.savedAt })),
+      count: entries.length,
+      environment: req.sbBaseUrl || '',
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// ── Remove from recovery — one job, or all (manual cleanup) ──────────────────
+router.delete('/recovery', (req: AuthRequest, res: Response): void => {
+  const taskname = (req.body?.taskname || req.query?.taskname) as string | undefined;
+  if (taskname) recovery.removeEntry(req.sbBaseUrl || '', taskname);
+  else recovery.clearEnv(req.sbBaseUrl || '');
+  res.json({ success: true, timestamp: new Date().toISOString() });
 });
 
 // ── Recover — recreate task + trigger from backup data ───────────────────────
@@ -639,6 +671,10 @@ router.post('/recover', async (req: AuthRequest, res: Response): Promise<void> =
       }
     }
   }
+
+  // If the task was recreated successfully, drop it from the recovery store.
+  const taskOk = results.some(r => r.type === 'task' && r.status === 'success');
+  if (taskOk) { try { recovery.removeEntry(req.sbBaseUrl || '', task.name); } catch { /* ignore */ } }
 
   res.json({ success: true, data: { results } });
 });

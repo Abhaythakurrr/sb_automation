@@ -16,6 +16,23 @@ export interface Automation {
 
 export const AUTOMATIONS: Automation[] = [
   {
+    id:          'adhoc-launch',
+    title:       'Ad-hoc Launch',
+    description: 'Global search across tasks, workflows, and triggers. Launch any of them on demand and watch the instance run in real time with cancel, force-finish, halt, rerun, hold and release controls.',
+    icon:        'monitor',
+    status:      'live',
+    category:    'Operations',
+    features:    [
+      'Global search (task/workflow/trigger)',
+      'One-click launch / trigger now',
+      'Real-time instance monitoring',
+      'Cancel / Force Finish / Halt',
+      'Rerun / Hold / Release',
+      'Live status until complete',
+    ],
+    route:       '/adhoc-launch',
+  },
+  {
     id:          'job-creation',
     title:       'Job Creation',
     description: 'Automate Stonebranch task and time trigger creation from Excel, ODS, or CSV files. Supports ref_job inheritance, complex schedules, and bulk creation.',

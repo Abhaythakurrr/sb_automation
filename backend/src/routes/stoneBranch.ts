@@ -1,8 +1,9 @@
 import { Router, Response, NextFunction } from 'express';
 import { StoneBranchService } from '../services/stoneBranchService';
 import { AuthRequest } from '../middleware/session';
-import { createSession, deleteSession, sessionMiddleware } from '../middleware/session';
+import { createSession, deleteSession, getSession, sessionMiddleware } from '../middleware/session';
 import { auditLog } from '../middleware/auditLogger';
+import * as recovery from '../utils/recoveryStore';
 
 const router = Router();
 
@@ -62,7 +63,13 @@ router.post('/connect', async (req: AuthRequest, res: Response, next: NextFuncti
 // ── PUBLIC: Destroy session ────────────────────────────────────────────────
 router.post('/disconnect', (req: AuthRequest, res: Response): void => {
   const sessionId = req.headers['x-session-id'] as string;
-  if (sessionId) deleteSession(sessionId);
+  // On explicit logout, clear this environment's recovery store (per requirement:
+  // recovery survives refresh/timeout, but a manual logout clears it).
+  if (sessionId) {
+    const session = getSession(sessionId);
+    if (session?.sbBaseUrl) { try { recovery.clearEnv(session.sbBaseUrl); } catch { /* ignore */ } }
+    deleteSession(sessionId);
+  }
   auditLog({
     timestamp: new Date().toISOString(),
     requestId: (req as any).requestId || '',

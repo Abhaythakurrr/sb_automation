@@ -72,6 +72,8 @@ alert_history.json
 monitor_config.json
 **/monitor_config.json
 creation_log.json
+recovery_store.json
+**/recovery_store.json
 **/creation_log.json
 
 # Scratch scripts — one-off scripts with hardcoded values
@@ -91,3 +93,6 @@ analytics_cache.json
 # Design theme docs — not application code
 themes/
 **/themes/
+
+# Self-Service Telegram bot — PRIVATE feature, do not push
+SELF_SERVICE/

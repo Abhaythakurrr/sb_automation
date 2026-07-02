@@ -245,6 +245,36 @@ export class ApiClient {
     return this.http.post('/api/deletion/recover', { task, triggers });
   }
 
+  // ── Recovery Center — server-persisted recoverable jobs (per env) ──────────
+  async getRecovery(): Promise<any> {
+    return this.http.get('/api/deletion/recovery');
+  }
+
+  async removeRecovery(taskname: string): Promise<any> {
+    return this.http.delete('/api/deletion/recovery', { data: { taskname } });
+  }
+
+  async clearRecovery(): Promise<any> {
+    return this.http.delete('/api/deletion/recovery', { data: {} });
+  }
+
+  // ── Ad-hoc Launch & Live Monitor ───────────────────────────────────────────
+  async adhocSearch(q: string): Promise<any> {
+    return this.http.get('/api/adhoc/search', { params: { q } });
+  }
+
+  async adhocLaunch(kind: string, name: string): Promise<any> {
+    return this.http.post('/api/adhoc/launch', { kind, name });
+  }
+
+  async adhocStatus(instances: { id: string; name: string }[]): Promise<any> {
+    return this.http.post('/api/adhoc/instance/status', { instances });
+  }
+
+  async adhocOp(op: string, id: string, name: string): Promise<any> {
+    return this.http.post('/api/adhoc/instance/op', { op, id, name });
+  }
+
   // ── Job Doc — push to Power Automate / shared Excel ────────────────────────
   async pushJobDoc(rows: any[]): Promise<any> {
     return this.http.post('/api/jobdoc/push', { rows }, { timeout: 300000 });
