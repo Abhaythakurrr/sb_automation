@@ -351,8 +351,8 @@ export function parseFrequencyString(freq: string): FrequencyFields | null {
     extractedTime = timeMatch[1].padStart(2, '0') + ':' + timeMatch[2];
   }
 
-  // Timezone: Asia/Kolkata, UTC, America/New_York etc.
-  const tzMatch = f.match(/((?:Asia|Europe|America|Pacific|Africa|Australia)\/[\w\/]+|UTC|GMT)/i);
+  // Timezone: Asia/Kolkata, UTC, America/New_York, EST, PST, IST, etc.
+  const tzMatch = f.match(/((?:Asia|Europe|America|Pacific|Africa|Australia)\/[\w\/]+|UTC|GMT|[A-Z]{2,4}T)/i);
   if (tzMatch) extractedTz = tzMatch[1];
 
   // Window: "from HH:MM to HH:MM"

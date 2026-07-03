@@ -147,7 +147,8 @@ function parseTimeInput(starttime: string): Partial<TriggerScheduleFields> {
   const result: Partial<TriggerScheduleFields> = {};
 
   // Extract timezone from anywhere in the string
-  const tzMatch = starttime.match(/((?:Asia|Europe|America|Pacific|Africa|Australia)\/[\w\/]+|UTC|GMT)/i);
+  // Match full IANA names (Asia/Kolkata), UTC/GMT, and common abbreviations (EST, PST, IST, etc.)
+  const tzMatch = starttime.match(/((?:Asia|Europe|America|Pacific|Africa|Australia)\/[\w\/]+|UTC|GMT|[A-Z]{2,4}T)/i);
   if (tzMatch) result.timeZone = tzMatch[1];
 
   // AT HHMM format
@@ -212,12 +213,22 @@ function parseTimeInput(starttime: string): Partial<TriggerScheduleFields> {
     result.timeStyle = 'Absolute';
   }
 
-  // Bare time value (no AT prefix): "0730", "07:30", "07.30", "7:30 AM", "7 pm"
-  if (!result.time && !result.timeStyle && looksLikeTime(starttime)) {
-    const t = toHHMM(starttime);
-    if (/^\d{2}:\d{2}$/.test(t)) {
-      result.timeStyle = 'Absolute';
-      result.time = t;
+  // Bare time value (no AT prefix): "0730", "07:30", "07.30", "7:30 AM", "7 pm", "21:00 EST"
+  if (!result.time && !result.timeStyle) {
+    // Try to extract time from start of string, ignoring timezone suffix
+    const bareTimeMatch = starttime.match(/^(\d{1,2}(?:[:.\u00b7]\d{2})?(?:\s*[ap]\.?m\.?)?)/i);
+    if (bareTimeMatch) {
+      const t = toHHMM(bareTimeMatch[1]);
+      if (/^\d{2}:\d{2}$/.test(t)) {
+        result.timeStyle = 'Absolute';
+        result.time = t;
+      }
+    } else if (looksLikeTime(starttime)) {
+      const t = toHHMM(starttime);
+      if (/^\d{2}:\d{2}$/.test(t)) {
+        result.timeStyle = 'Absolute';
+        result.time = t;
+      }
     }
   }
 
