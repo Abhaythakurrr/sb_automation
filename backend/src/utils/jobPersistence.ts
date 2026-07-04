@@ -8,6 +8,10 @@
 import fs   from 'fs';
 import path from 'path';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+import dotenv from 'dotenv';
+
+// Load .env before accessing process.env
+dotenv.config();
 
 export interface PersistedJob {
   jobId:       string;
@@ -31,7 +35,7 @@ const JOBS_FILE = path.join(process.cwd(), 'scheduled_jobs.json');
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length < 32) {
-  console.warn('[PERSISTENCE] WARNING: ENCRYPTION_KEY must be minimum 32 characters');
+  throw new Error('[PERSISTENCE] FATAL: ENCRYPTION_KEY environment variable must be set and minimum 32 characters');
 }
 
 const KEY = scryptSync(ENCRYPTION_KEY, 'salt', 32);

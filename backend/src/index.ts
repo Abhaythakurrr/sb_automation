@@ -1,6 +1,10 @@
+// CRITICAL: Load .env FIRST before any other imports
+// This ensures environment variables are available when modules initialize
+import dotenv from 'dotenv';
+dotenv.config(); // Will load from backend/.env
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import fs from 'fs';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -16,8 +20,6 @@ import { adhocRouter } from './routes/adhoc';
 import { errorHandler } from './middleware/errorHandler';
 import { sessionMiddleware } from './middleware/session';
 import { requestLogger } from './middleware/requestLogger';
-
-dotenv.config();
 
 // Validate required environment variables at startup
 const requiredEnvVars = ['BACKEND_PORT'];
