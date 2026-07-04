@@ -14,7 +14,9 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self'",
-      "connect-src 'self' http://localhost:* https://localhost:* https://*.stonebranch.cloud https://*.adient.internal",
+      // ── FIX 5 COMPLETE: Removed http://localhost:* from CSP
+      // Only allow HTTPS connections to prevent MITM attacks
+      "connect-src 'self' https://localhost:* https://*.stonebranch.cloud https://*.adient.internal",
       "frame-ancestors 'none'",
     ].join('; '),
   },

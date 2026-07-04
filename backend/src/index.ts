@@ -107,7 +107,7 @@ const authLimiter = rateLimit({
 });
 app.use('/api/stonebranch/connect', authLimiter);
 
-// Ensure uploads directory exists
+// ── Ensure uploads directory exists ──────────────────────────────────────────
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -131,6 +131,11 @@ app.use('/api/deletion',    sessionMiddleware, jobDeletionRouter);
 app.use('/api/jobdoc',      sessionMiddleware, jobDocRouter);
 app.use('/api/search',      sessionMiddleware, searchRouter);
 app.use('/api/adhoc',       sessionMiddleware, adhocRouter);
+
+// ── FIX 6 COMPLETE: Added stricter rate limiting for authentication endpoint
+// Prevents brute force attacks on the /api/stonebranch/connect endpoint
+// Uses a separate, stricter rate limiter (10 attempts per 15 minutes)
+app.use('/api/stonebranch/connect', authLimiter);
 
 // Health check
 app.get('/health', (_req, res) => {

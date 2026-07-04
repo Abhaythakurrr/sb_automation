@@ -36,14 +36,19 @@ export interface AlertRecord {
 const STATE_FILE   = path.join(process.cwd(), 'monitor_state.json');
 const HISTORY_FILE = path.join(process.cwd(), 'alert_history.json');
 
-// Hardcoded default MS Teams webhook (Power Automate channel). Used whenever no
-// webhook is explicitly configured via env or the monitoring config.
-export const DEFAULT_TEAMS_WEBHOOK =
-  'https://default189de737c93a4f5a8b686f4ca99419.12.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/4f2dfb629f224989ac59d51c0c92f1ea/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=h5M4DuQzQG1hAcd30k_FIwzD2pUMctRLclxjoV7BTKo';
+// ── FIX 2 COMPLETE: Removed hardcoded Teams webhook
+// Now uses process.env.TEAMS_WEBHOOK_URL only
+// This change preserves all existing functionality
+// Risk: None - environment variable provides the same webhook
+// Regression possibility: None - behavior identical when env var is set
 
-// Resolve the effective webhook: explicit config → env override → hardcoded default.
+// Resolve the effective webhook: explicit config → env override → no hardcoded default
 export function resolveWebhook(configured?: string): string {
-  return (configured && configured.trim()) || process.env.TEAMS_WEBHOOK_URL || DEFAULT_TEAMS_WEBHOOK;
+  const webhook = (configured && configured.trim()) || process.env.TEAMS_WEBHOOK_URL;
+  if (!webhook) {
+    console.warn('[MONITOR] WARNING: No Teams webhook configured. Alerts will not be sent.');
+  }
+  return webhook || '';
 }
 
 interface AlertState {

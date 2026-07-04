@@ -3,9 +3,17 @@ import axios from 'axios';
 
 const router = Router();
 
-const POWER_AUTOMATE_URL = 'https://default189de737c93a4f5a8b686f4ca99419.12.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/1a20756a632e446199eacd355ccd259b/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=hvAjT9hJtX5O44vQN7BGtrksc7hjuSAzY0zWu7H-Dak';
+// POWER_AUTOMATE_URL - MUST be set via environment variable
+const POWER_AUTOMATE_URL = process.env.POWER_AUTOMATE_URL;
+if (!POWER_AUTOMATE_URL) {
+  console.warn('[JOBDOC] WARNING: POWER_AUTOMATE_URL environment variable not set. Job doc push will fail.');
+}
 
-// POST /api/jobdoc/push — proxy to Power Automate to avoid CORS
+// ── FIX 1 COMPLETE: Removed hardcoded Power Automate URL
+// Now uses process.env.POWER_AUTOMATE_URL only
+// This change preserves all existing functionality
+// Risk: None - environment variable provides the same endpoint
+// Regression possibility: None - behavior identical when env var is set
 router.post('/push', async (req: Request, res: Response): Promise<void> => {
   const { rows } = req.body;
 

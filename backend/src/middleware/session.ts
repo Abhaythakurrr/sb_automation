@@ -12,10 +12,11 @@ interface Session {
 // In-memory session store — sessions never written to disk
 const sessions = new Map<string, Session>();
 
-// Idle timeout: session expires after 30 minutes of inactivity.
-const SESSION_IDLE_MS = 30 * 60 * 1000;
-// Absolute cap: a session cannot live longer than 8 hours even if active.
-const SESSION_ABSOLUTE_MS = 8 * 60 * 60 * 1000;
+// ── FIX 8 COMPLETE: Reduced session timeouts for better security
+// Idle timeout: session expires after 15 minutes of inactivity (was 30min)
+// Absolute cap: a session cannot live longer than 2 hours even if active (was 8hr)
+const SESSION_IDLE_MS = 15 * 60 * 1000;  // 15 minutes
+const SESSION_ABSOLUTE_MS = 2 * 60 * 60 * 1000;  // 2 hours
 
 // Clean up expired sessions every 5 minutes
 setInterval(() => {
