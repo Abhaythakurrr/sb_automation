@@ -81,12 +81,17 @@ export interface TriggerScheduleFields {
 
 // Normalize many time spellings to 24-hour HH:MM.
 // Handles: "0730", "07:30", "7:30", "07.30", "7.30", "07:30 AM", "7:30 pm",
-//          "7 AM", "12:00 PM" (noon), "12:00 AM" (midnight), "7am".
+//          "7 AM", "12:00 PM" (noon), "12:00 AM" (midnight), "7am",
+//          "midnight", "noon", "midday".
 // Falls back to returning the trimmed input unchanged if it can't be parsed,
 // so existing callers relying on pass-through behaviour are unaffected.
 function toHHMM(raw: string): string {
   if (!raw) return '';
   let s = raw.trim().toLowerCase();
+
+  // Handle special time names
+  if (s === 'midnight' || s === '12:00 am' || s === '00:00') return '00:00';
+  if (s === 'noon' || s === 'midday' || s === '12:00 pm') return '12:00';
 
   // Detect and strip an AM/PM marker (with or without surrounding space/dots)
   const ampm = s.match(/\b(a\.?m\.?|p\.?m\.?)\b/);
@@ -145,18 +150,49 @@ const DAY_MAP: Record<string, string> = {
 function parseTimeInput(starttime: string): Partial<TriggerScheduleFields> {
   if (!starttime) return {};
   const result: Partial<TriggerScheduleFields> = {};
+  const lower = starttime.toLowerCase();
 
   // Extract timezone from anywhere in the string
   // Match full IANA names (Asia/Kolkata), UTC/GMT, and common abbreviations (EST, PST, IST, etc.)
   const tzMatch = starttime.match(/((?:Asia|Europe|America|Pacific|Africa|Australia)\/[\w\/]+|UTC|GMT|[A-Z]{2,4}T)/i);
   if (tzMatch) result.timeZone = tzMatch[1];
 
-  // AT HHMM format
+  // Handle special phrase: "everyday" / "every day" → treat as frequency, not time
+  if (/\bevery\s*day\b|\beveryday\b/.test(lower) && !/every\s+\d+/.test(lower)) {
+    // This is just "everyday", not "every 30 minutes" — return empty for time parsing
+    // The frequency parser will handle it
+    return result;
+  }
+
+  // Handle "AT HHMM every N minutes" format (e.g., "AT 0001 every 30 minutes 7 days a week")
+  // Extract AT time, EVERY interval, and optional day pattern
+  const atEveryMatch = starttime.match(/AT\s+(\d{4})\s+every\s+(\d+)\s*(min|mins|minutes?|hr|hrs|hours?|sec|secs|seconds?)/i);
+  if (atEveryMatch) {
+    const atTime = toHHMM(atEveryMatch[1]);
+    const amount = parseInt(atEveryMatch[2]);
+    const unit = atEveryMatch[3].toLowerCase();
+    const units = unit.startsWith('h') ? 'Hours' : unit.startsWith('s') ? 'Seconds' : 'Minutes';
+
+    result.timeStyle = 'Interval';
+    result.timeInterval = amount;
+    result.timeIntervalUnits = units;
+    result.enabledStart = atTime;
+
+    // Check for UNTIL (end time)
+    const untilMatch = starttime.match(/UNTIL\s+(\d{4})/i);
+    if (untilMatch) {
+      result.enabledEnd = toHHMM(untilMatch[1]);
+      result.restrictedTimes = true;
+    }
+    return result;
+  }
+
+  // AT HHMM format (without "every")
   const atMatch = starttime.match(/AT\s+(\d{4})/i);
   if (atMatch) {
     const time = toHHMM(atMatch[1]);
 
-    // Check for EVERY (interval)
+    // Check for EVERY (interval) in old format
     const everyMatch = starttime.match(/EVERY\s+(\d{4})/i);
     if (everyMatch) {
       const mins = parseHHMMtoMinutes(everyMatch[1]);
@@ -176,6 +212,28 @@ function parseTimeInput(starttime: string): Partial<TriggerScheduleFields> {
       result.timeStyle = 'Absolute';
       result.time = time;
     }
+    return result;
+  }
+
+  // Handle "HH:MM TIMEZONE" format without AT prefix
+  // e.g., "21:00 EST", "08:30 America/New_York", "midnight 12:00 EST", "everyday, Time: midnight 12:00 EST"
+  // First, extract just the time part, ignoring "everyday", "Time:", commas
+  const cleanedTime = starttime.replace(/everyday|every day|time:|,/gi, '').trim();
+  
+  const timeTzMatch = cleanedTime.match(/^(\d{1,2}):?(\d{2})\s+(.+)$/i);
+  if (timeTzMatch) {
+    const time = toHHMM(timeTzMatch[1] + ':' + timeTzMatch[2]);
+    if (/^\d{2}:\d{2}$/.test(time)) {
+      result.timeStyle = 'Absolute';
+      result.time = time;
+    }
+    return result;
+  }
+
+  // Handle "midnight HH:MM TIMEZONE" or "midnight TIMEZONE"
+  if (lower.includes('midnight')) {
+    result.timeStyle = 'Absolute';
+    result.time = '00:00';
     return result;
   }
 
