@@ -154,7 +154,8 @@ function parseTimeInput(starttime: string): Partial<TriggerScheduleFields> {
 
   // Extract timezone from anywhere in the string
   // Match full IANA names (Asia/Kolkata), UTC/GMT, and common abbreviations (EST, PST, IST, etc.)
-  const tzMatch = starttime.match(/((?:Asia|Europe|America|Pacific|Africa|Australia)\/[\w\/]+|UTC|GMT|[A-Z]{2,4}T)/i);
+  // Use word boundaries to avoid matching parts of words like "midnight" or "minutes"
+  const tzMatch = starttime.match(/((?:Asia|Europe|America|Pacific|Africa|Australia)\/[\w\/]+|UTC|GMT|\b(?:EST|EDT|CST|CDT|MST|MDT|PST|PDT|IST|JST|AEST|AEDT|BST|CET|CEST)\b)/i);
   if (tzMatch) result.timeZone = tzMatch[1];
 
   // Handle special phrase: "everyday" / "every day" → treat as frequency, not time
