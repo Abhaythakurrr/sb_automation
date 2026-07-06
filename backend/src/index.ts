@@ -17,6 +17,7 @@ import { jobDeletionRouter } from './routes/jobDeletion';
 import { jobDocRouter } from './routes/jobDoc';
 import { searchRouter } from './routes/search';
 import { adhocRouter } from './routes/adhoc';
+import { scheduleAIRouter } from './routes/scheduleAI';
 import { errorHandler } from './middleware/errorHandler';
 import { sessionMiddleware } from './middleware/session';
 import { requestLogger } from './middleware/requestLogger';
@@ -133,6 +134,7 @@ app.use('/api/deletion',    sessionMiddleware, jobDeletionRouter);
 app.use('/api/jobdoc',      sessionMiddleware, jobDocRouter);
 app.use('/api/search',      sessionMiddleware, searchRouter);
 app.use('/api/adhoc',       sessionMiddleware, adhocRouter);
+app.use('/api/schedule-ai', scheduleAIRouter); // Public - no session required
 
 // ── FIX 6 COMPLETE: Added stricter rate limiting for authentication endpoint
 // Prevents brute force attacks on the /api/stonebranch/connect endpoint

@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 // - Debugging in development (NODE_ENV=development)
 // - Critical operational messages that should always be visible
 // For production, all logs go through auditLog middleware
+export function requestLogger(req: Request, res: Response, next: NextFunction): void {
   const requestId = randomUUID().slice(0, 8);
   const start = Date.now();
 

@@ -96,13 +96,13 @@ function parseStartTime(schedStr: string): { start_time: string; timezone: strin
 
   // "AT HHMM TIMEZONE tz" → simple absolute
   const atMatch = schedStr.match(/AT\s+(\d{4})/i);
-  const tzMatch = schedStr.match(/TIMEZONE\s+(\S+)/i);
+  const atTzMatch = schedStr.match(/TIMEZONE\s+(\S+)/i);
   if (atMatch) {
     const h = atMatch[1].slice(0, 2);
     const m = atMatch[1].slice(2, 4);
     return {
       start_time:      `${h}:${m}`,
-      timezone:        tzMatch?.[1] ?? '',
+      timezone:        atTzMatch?.[1] ?? '',
       schedule_string: '',
     };
   }
@@ -117,6 +117,18 @@ function parseStartTime(schedStr: string): { start_time: string; timezone: strin
     };
   }
 
+  // "HH:MM TIMEZONE" or "HH:MM TZ" format (e.g., "21:00 EST", "08:30 America/New_York")
+  // Without AT prefix, with timezone at the end
+  const timeTzMatch = schedStr.match(/^(\d{2}):?(\d{2})\s+(.+)$/i);
+  if (timeTzMatch) {
+    return {
+      start_time:      `${timeTzMatch[1]}:${timeTzMatch[2]}`,
+      timezone:        timeTzMatch[3].trim(),
+      schedule_string: '',
+    };
+  }
+
+  // Fallback: treat as schedule_string for complex formats
   return { start_time: '', timezone: '', schedule_string: schedStr };
 }
 
