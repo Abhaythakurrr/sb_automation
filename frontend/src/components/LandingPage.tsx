@@ -831,7 +831,7 @@ export default function LandingPage() {
         <footer className="border-t py-8" style={{ borderColor: 'rgba(245,158,11,0.05)', background: 'rgba(2,8,18,0.5)' }}>
           <div className="max-w-6xl mx-auto px-6">
             {/* Documentation Links */}
-            <div className="flex items-center justify-center gap-6 mb-6">
+            <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
               <a
                 href="/how-to-use"
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-amber-400 transition-colors"
@@ -842,6 +842,17 @@ export default function LandingPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                 </svg>
                 How to Use
+              </a>
+              <a
+                href="/trigger-guide"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-amber-400 transition-colors"
+                style={{ background: 'rgba(245,158,11,0.03)', border: '1px solid rgba(245,158,11,0.08)' }}
+                onClick={playClick}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Trigger Guide
               </a>
               <a
                 href="/about-tool"
