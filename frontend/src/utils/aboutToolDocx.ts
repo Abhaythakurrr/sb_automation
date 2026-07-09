@@ -249,8 +249,8 @@ function createDiagramPlaceholder(diagram: NonNullable<AboutSection['diagram']>)
   ];
 }
 
-function createSection(section: AboutSection): Paragraph[] {
-  const elements: Paragraph[] = [];
+function createSection(section: AboutSection): (Paragraph | Table)[] {
+  const elements: (Paragraph | Table)[] = [];
 
   // Section heading
   elements.push(createSectionHeading(section.heading));
@@ -290,10 +290,11 @@ function createSection(section: AboutSection): Paragraph[] {
     elements.push(...createDiagramPlaceholder(section.diagram));
   }
 
-  // Table
+  // Table (add directly to elements, not as placeholder)
   if (section.table) {
     elements.push(new Paragraph({ spacing: { before: 200 } }));
-    // Tables are added separately in the main loop
+    elements.push(createTable(section.table));
+    elements.push(new Paragraph({ spacing: { after: 300 } }));
   }
 
   // Code example
@@ -310,14 +311,9 @@ export async function generateAboutToolDocx(doc: AboutToolDoc): Promise<void> {
   // Title page
   children.push(...createTitle(doc));
 
-  // Sections
+  // Sections (tables are now included in createSection)
   doc.sections.forEach((section) => {
     children.push(...createSection(section));
-    // Add table if present (needs to be inserted separately)
-    if (section.table) {
-      children.push(createTable(section.table));
-      children.push(new Paragraph({ spacing: { after: 300 } }));
-    }
   });
 
   // Create document
