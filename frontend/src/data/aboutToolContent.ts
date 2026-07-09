@@ -58,7 +58,7 @@ export const ABOUT_TOOL_DOC: AboutToolDoc = {
         {
           title: 'Key Benefits',
           points: [
-            '95% faster job creation (15 min → 45 sec per job)',
+            '98% faster job creation (15 min → 2-3 sec per job)',
             '85% error reduction through automated validation',
             '24/7 self-service availability (no admin dependency)',
             'Complete audit trail for compliance',
