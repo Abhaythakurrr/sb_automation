@@ -1,54 +1,36 @@
 /**
- * DOCX generator for About Tool technical documentation.
- * Diagrams are rendered as text-based flowcharts using DOCX tables —
- * fully self-contained, no "see web version" references.
+ * DOCX generator — StoneBranch Technical Documentation
+ *
+ * Diagrams are rendered to PNG images via an offscreen HTML canvas,
+ * then embedded as real images in the DOCX. No "see web version" text.
+ * The result opens cleanly in Microsoft Word and can be sent to clients.
  */
 
 import {
-  Document,
-  Packer,
-  Paragraph,
-  TextRun,
-  HeadingLevel,
-  AlignmentType,
-  Table,
-  TableRow,
-  TableCell,
-  WidthType,
-  BorderStyle,
-  convertInchesToTwip,
-  ShadingType,
+  Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
+  Table, TableRow, TableCell, WidthType, BorderStyle, convertInchesToTwip,
+  ShadingType, ImageRun,
 } from 'docx';
 import { saveAs } from 'file-saver';
 import type { AboutToolDoc, AboutSection } from '@/data/aboutToolContent';
 
-// ── Colour palette ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Colours
+// ─────────────────────────────────────────────────────────────────────────────
 const C = {
-  cyan:       '0e7490',  // heading accent
-  body:       '334155',  // slate-700
-  heading:    '0f172a',  // slate-900
-  subhead:    '0e7490',  // cyan-700
-  border:     'cbd5e1',  // slate-300
-  rowEven:    'f8fafc',  // slate-50
-  rowOdd:     'ffffff',
-  tableHead:  'e0f2fe',  // sky-100
-  // diagram node fills
-  nodeStart:  'd1fae5',  // green-100
-  nodeEnd:    'fee2e2',  // red-100
-  nodeProc:   'dbeafe',  // blue-100
-  nodeDec:    'fef9c3',  // yellow-100
-  nodeData:   'f3e8ff',  // purple-100
-  // diagram node text
-  txtStart:   '065f46',
-  txtEnd:     '991b1b',
-  txtProc:    '1e40af',
-  txtDec:     '92400e',
-  txtData:    '6b21a8',
-  // arrow cell
-  arrow:      'f1f5f9',
+  cyan:    '0e7490',
+  body:    '334155',
+  heading: '0f172a',
+  sub:     '0e7490',
+  border:  'cbd5e1',
+  thFill:  'e0f2fe',
+  rowA:    'f8fafc',
+  rowB:    'ffffff',
 };
 
-// ── Tiny helpers ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// DOCX paragraph helpers
+// ─────────────────────────────────────────────────────────────────────────────
 const sp = (after = 120, before = 0) => ({ spacing: { after, before } });
 
 function h1(text: string): Paragraph {
@@ -58,22 +40,19 @@ function h1(text: string): Paragraph {
     children: [new TextRun({ text, bold: true, size: 28, color: C.heading })],
   });
 }
-
 function h2(text: string): Paragraph {
   return new Paragraph({
     heading: HeadingLevel.HEADING_2,
     ...sp(120, 280),
-    children: [new TextRun({ text, bold: true, size: 22, color: C.subhead })],
+    children: [new TextRun({ text, bold: true, size: 22, color: C.sub })],
   });
 }
-
 function body(text: string): Paragraph {
   return new Paragraph({
     ...sp(120),
     children: [new TextRun({ text, size: 20, color: C.body })],
   });
 }
-
 function bullet(text: string, level = 0): Paragraph {
   return new Paragraph({
     bullet: { level },
@@ -81,18 +60,19 @@ function bullet(text: string, level = 0): Paragraph {
     children: [new TextRun({ text, size: 19, color: C.body })],
   });
 }
-
-function gap(size = 100): Paragraph {
-  return new Paragraph({ spacing: { after: size } });
+function gap(n = 120): Paragraph {
+  return new Paragraph({ spacing: { after: n } });
 }
 
-// ── Data table ────────────────────────────────────────────────────────────────
-function makeTable(table: NonNullable<AboutSection['table']>): Table {
-  const headerRow = new TableRow({
+// ─────────────────────────────────────────────────────────────────────────────
+// Data table
+// ─────────────────────────────────────────────────────────────────────────────
+function makeTable(tbl: NonNullable<AboutSection['table']>): Table {
+  const header = new TableRow({
     tableHeader: true,
-    children: table.columns.map(col =>
+    children: tbl.columns.map(col =>
       new TableCell({
-        shading: { type: ShadingType.CLEAR, fill: C.tableHead },
+        shading: { type: ShadingType.CLEAR, fill: C.thFill },
         margins: { top: 80, bottom: 80, left: 120, right: 120 },
         children: [new Paragraph({
           children: [new TextRun({ text: col, bold: true, size: 19, color: C.heading })],
@@ -100,12 +80,11 @@ function makeTable(table: NonNullable<AboutSection['table']>): Table {
       })
     ),
   });
-
-  const dataRows = table.rows.map((row, ri) =>
+  const rows = tbl.rows.map((row, ri) =>
     new TableRow({
       children: row.map(cell =>
         new TableCell({
-          shading: { type: ShadingType.CLEAR, fill: ri % 2 === 0 ? C.rowEven : C.rowOdd },
+          shading: { type: ShadingType.CLEAR, fill: ri % 2 === 0 ? C.rowA : C.rowB },
           margins: { top: 70, bottom: 70, left: 120, right: 120 },
           children: [new Paragraph({
             children: [new TextRun({ text: cell, size: 18, color: C.body })],
@@ -114,10 +93,9 @@ function makeTable(table: NonNullable<AboutSection['table']>): Table {
       ),
     })
   );
-
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: [headerRow, ...dataRows],
+    rows: [header, ...rows],
     borders: {
       top:              { style: BorderStyle.SINGLE, size: 1, color: C.border },
       bottom:           { style: BorderStyle.SINGLE, size: 1, color: C.border },
@@ -129,187 +107,285 @@ function makeTable(table: NonNullable<AboutSection['table']>): Table {
   });
 }
 
-// ── Flowchart diagram — rendered as a DOCX table grid ────────────────────────
-// Each node becomes a shaded box. Edges are rendered as an arrow list beneath.
-// This is fully self-contained in the DOCX — no browser required.
+// ─────────────────────────────────────────────────────────────────────────────
+// Canvas-based diagram renderer
+// ─────────────────────────────────────────────────────────────────────────────
+// Produces a PNG ArrayBuffer that can be embedded directly into the DOCX.
 
 type NodeType = 'process' | 'data' | 'decision' | 'start' | 'end';
 
-function nodeFill(type: NodeType): string {
-  return type === 'start' ? C.nodeStart
-       : type === 'end'   ? C.nodeEnd
-       : type === 'data'  ? C.nodeData
-       : type === 'decision' ? C.nodeDec
-       : C.nodeProc;
-}
+interface DiagramNode { id: string; label: string; type: NodeType; }
+interface DiagramEdge { from: string; to: string; label?: string; }
 
-function nodeTxt(type: NodeType): string {
-  return type === 'start' ? C.txtStart
-       : type === 'end'   ? C.txtEnd
-       : type === 'data'  ? C.txtData
-       : type === 'decision' ? C.txtDec
-       : C.txtProc;
-}
+// Visual config for each node type
+const NODE_STYLE: Record<NodeType, { fill: string; stroke: string; text: string; shape: 'rect' | 'diamond' | 'rounded' | 'stadium' }> = {
+  start:    { fill: '#dcfce7', stroke: '#16a34a', text: '#14532d', shape: 'stadium'  },
+  end:      { fill: '#fee2e2', stroke: '#dc2626', text: '#7f1d1d', shape: 'stadium'  },
+  process:  { fill: '#dbeafe', stroke: '#2563eb', text: '#1e3a8a', shape: 'rect'     },
+  decision: { fill: '#fef9c3', stroke: '#ca8a04', text: '#78350f', shape: 'diamond'  },
+  data:     { fill: '#f3e8ff', stroke: '#9333ea', text: '#4a044e', shape: 'rounded'  },
+};
 
-function nodeShape(type: NodeType): string {
-  return type === 'start'    ? '▶ '
-       : type === 'end'      ? '■ '
-       : type === 'decision' ? '◆ '
-       : type === 'data'     ? '⬡ '
-       : '□ ';
-}
+/**
+ * Lay out nodes in a top-down flow: each node gets a (col, row) slot.
+ * We use edge order to assign rows, grouping parallel branches in the same row.
+ */
+function layoutNodes(
+  nodes: DiagramNode[],
+  edges: DiagramEdge[]
+): Map<string, { x: number; y: number; w: number; h: number }> {
+  // Build adjacency for BFS rank assignment
+  const rankMap = new Map<string, number>();
+  const adj = new Map<string, string[]>();
+  for (const n of nodes) adj.set(n.id, []);
+  for (const e of edges) adj.get(e.from)?.push(e.to);
 
-function makeDiagram(diagram: NonNullable<AboutSection['diagram']>): (Paragraph | Table)[] {
-  const out: (Paragraph | Table)[] = [];
+  // BFS from nodes with no incoming edges
+  const inDeg = new Map<string, number>();
+  for (const n of nodes) inDeg.set(n.id, 0);
+  for (const e of edges) inDeg.set(e.to, (inDeg.get(e.to) ?? 0) + 1);
 
-  out.push(body(diagram.description));
-  out.push(gap(80));
+  const queue: string[] = nodes.filter(n => (inDeg.get(n.id) ?? 0) === 0).map(n => n.id);
+  for (const id of queue) rankMap.set(id, 0);
 
-  // ── Node grid (3 columns) ──────────────────────────────────────────────────
-  if (diagram.nodes && diagram.nodes.length > 0) {
-    const COLS = 3;
-    const nodes = diagram.nodes;
-    // Pad to multiple of COLS
-    const padded = [...nodes];
-    while (padded.length % COLS !== 0) padded.push(null as any);
-
-    const tableRows: TableRow[] = [];
-
-    for (let r = 0; r < padded.length / COLS; r++) {
-      const cells: TableCell[] = [];
-      for (let c = 0; c < COLS; c++) {
-        const node = padded[r * COLS + c];
-        if (!node) {
-          // Empty filler cell
-          cells.push(new TableCell({
-            borders: {
-              top:    { style: BorderStyle.NONE, size: 0, color: 'ffffff' },
-              bottom: { style: BorderStyle.NONE, size: 0, color: 'ffffff' },
-              left:   { style: BorderStyle.NONE, size: 0, color: 'ffffff' },
-              right:  { style: BorderStyle.NONE, size: 0, color: 'ffffff' },
-            },
-            children: [new Paragraph({ children: [] })],
-          }));
-          continue;
-        }
-        cells.push(new TableCell({
-          shading: { type: ShadingType.CLEAR, fill: nodeFill(node.type) },
-          margins: { top: 80, bottom: 80, left: 100, right: 100 },
-          borders: {
-            top:    { style: BorderStyle.SINGLE, size: 4, color: C.border },
-            bottom: { style: BorderStyle.SINGLE, size: 4, color: C.border },
-            left:   { style: BorderStyle.SINGLE, size: 4, color: C.border },
-            right:  { style: BorderStyle.SINGLE, size: 4, color: C.border },
-          },
-          children: [
-            new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [
-                new TextRun({
-                  text: nodeShape(node.type) + node.label.replace(/\n/g, ' '),
-                  bold: node.type === 'start' || node.type === 'end',
-                  size: 18,
-                  color: nodeTxt(node.type),
-                }),
-              ],
-            }),
-          ],
-        }));
-      }
-      tableRows.push(new TableRow({ children: cells }));
-    }
-
-    out.push(new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: tableRows,
-      borders: {
-        top:              { style: BorderStyle.NONE, size: 0, color: 'ffffff' },
-        bottom:           { style: BorderStyle.NONE, size: 0, color: 'ffffff' },
-        left:             { style: BorderStyle.NONE, size: 0, color: 'ffffff' },
-        right:            { style: BorderStyle.NONE, size: 0, color: 'ffffff' },
-        insideHorizontal: { style: BorderStyle.NONE, size: 0, color: 'ffffff' },
-        insideVertical:   { style: BorderStyle.NONE, size: 0, color: 'ffffff' },
-      },
-    }));
-    out.push(gap(120));
-  }
-
-  // ── Flow arrows ────────────────────────────────────────────────────────────
-  if (diagram.edges && diagram.edges.length > 0) {
-    out.push(new Paragraph({
-      ...sp(80, 100),
-      children: [new TextRun({ text: 'Flow Sequence', bold: true, size: 19, color: C.heading })],
-    }));
-
-    for (const edge of diagram.edges) {
-      const label = edge.label ? `  [${edge.label}]` : '';
-      out.push(new Paragraph({
-        ...sp(60),
-        children: [
-          new TextRun({ text: `  ${edge.from}`, size: 18, color: C.txtProc, bold: true }),
-          new TextRun({ text: '  →  ', size: 18, color: C.body }),
-          new TextRun({ text: edge.to, size: 18, color: C.txtProc, bold: true }),
-          new TextRun({ text: label, size: 17, color: C.subhead, italics: true }),
-        ],
-      }));
-    }
-
-    // Legend
-    out.push(gap(80));
-    out.push(new Paragraph({
-      ...sp(60, 80),
-      children: [new TextRun({ text: 'Legend:', bold: true, size: 17, color: C.heading })],
-    }));
-    const legend: [string, string, NodeType][] = [
-      ['▶', 'Start / Entry point', 'start'],
-      ['■', 'End / Terminal state', 'end'],
-      ['□', 'Process / Action', 'process'],
-      ['◆', 'Decision / Condition', 'decision'],
-      ['⬡', 'Data / External system', 'data'],
-    ];
-    for (const [sym, desc, type] of legend) {
-      out.push(new Paragraph({
-        ...sp(50),
-        children: [
-          new TextRun({ text: `  ${sym} `, size: 18, color: nodeTxt(type), bold: true }),
-          new TextRun({ text: desc, size: 17, color: C.body }),
-        ],
-      }));
+  while (queue.length) {
+    const cur = queue.shift()!;
+    const rank = rankMap.get(cur) ?? 0;
+    for (const next of (adj.get(cur) ?? [])) {
+      const existing = rankMap.get(next) ?? -1;
+      if (rank + 1 > existing) rankMap.set(next, rank + 1);
+      if (!queue.includes(next) && (inDeg.get(next) ?? 0) > 0) queue.push(next);
     }
   }
 
-  out.push(gap(160));
-  return out;
+  // Group by rank
+  const byRank = new Map<number, string[]>();
+  for (const n of nodes) {
+    const r = rankMap.get(n.id) ?? 0;
+    if (!byRank.has(r)) byRank.set(r, []);
+    byRank.get(r)!.push(n.id);
+  }
+
+  const NODE_W = 180;
+  const NODE_H = 60;
+  const PAD_X  = 40;
+  const PAD_Y  = 70;
+  const START_Y = 30;
+
+  const pos = new Map<string, { x: number; y: number; w: number; h: number }>();
+  const maxCols = Math.max(...Array.from(byRank.values()).map(a => a.length));
+
+  for (const [rank, ids] of Array.from(byRank.entries()).sort((a, b) => a[0] - b[0])) {
+    const totalW = ids.length * NODE_W + (ids.length - 1) * PAD_X;
+    const canvasW = maxCols * NODE_W + (maxCols - 1) * PAD_X;
+    let startX = (canvasW - totalW) / 2;
+    for (const id of ids) {
+      pos.set(id, {
+        x: startX,
+        y: START_Y + rank * (NODE_H + PAD_Y),
+        w: NODE_W,
+        h: NODE_H,
+      });
+      startX += NODE_W + PAD_X;
+    }
+  }
+  return pos;
 }
 
-// ── Code block ────────────────────────────────────────────────────────────────
-function makeCodeBlock(ex: NonNullable<AboutSection['codeExample']>): (Paragraph | Table)[] {
-  return [
-    body(ex.description),
-    new Paragraph({
-      shading: { type: ShadingType.CLEAR, fill: '1e293b' },
-      ...sp(240, 80),
-      children: [
-        new TextRun({ text: ex.code, font: 'Courier New', size: 18, color: 'e2e8f0' }),
-      ],
-    }),
-  ];
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, r: number
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
 
-// ── Section builder ───────────────────────────────────────────────────────────
-function buildSection(section: AboutSection): (Paragraph | Table)[] {
+function drawNode(ctx: CanvasRenderingContext2D, node: DiagramNode, p: { x: number; y: number; w: number; h: number }) {
+  const s = NODE_STYLE[node.type];
+  ctx.fillStyle   = s.fill;
+  ctx.strokeStyle = s.stroke;
+  ctx.lineWidth   = 2;
+
+  const { x, y, w, h } = p;
+
+  if (s.shape === 'diamond') {
+    const cx = x + w / 2, cy = y + h / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, y);
+    ctx.lineTo(x + w, cy);
+    ctx.lineTo(cx, y + h);
+    ctx.lineTo(x, cy);
+    ctx.closePath();
+  } else if (s.shape === 'stadium') {
+    roundRect(ctx, x, y, w, h, h / 2);
+  } else if (s.shape === 'rounded') {
+    roundRect(ctx, x, y, w, h, 10);
+  } else {
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+  }
+  ctx.fill(); ctx.stroke();
+
+  // Label — wrap at ~22 chars
+  ctx.fillStyle  = s.text;
+  ctx.font       = '13px sans-serif';
+  ctx.textAlign  = 'center';
+  ctx.textBaseline = 'middle';
+  const label = node.label.replace(/\n/g, ' ');
+  const words = label.split(' ');
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(test).width > p.w - 16) { if (cur) lines.push(cur); cur = w; }
+    else cur = test;
+  }
+  if (cur) lines.push(cur);
+
+  const lineH = 16;
+  const totalH = lines.length * lineH;
+  const startY = y + h / 2 - totalH / 2 + lineH / 2;
+  lines.forEach((l, i) => ctx.fillText(l, x + p.w / 2, startY + i * lineH));
+}
+
+function drawArrow(
+  ctx: CanvasRenderingContext2D,
+  x1: number, y1: number, x2: number, y2: number,
+  label?: string
+) {
+  ctx.strokeStyle = '#64748b';
+  ctx.fillStyle   = '#64748b';
+  ctx.lineWidth   = 1.5;
+
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+
+  // Arrowhead
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const AH = 10;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - AH * Math.cos(angle - 0.4), y2 - AH * Math.sin(angle - 0.4));
+  ctx.lineTo(x2 - AH * Math.cos(angle + 0.4), y2 - AH * Math.sin(angle + 0.4));
+  ctx.closePath();
+  ctx.fill();
+
+  // Edge label
+  if (label) {
+    ctx.fillStyle  = '#0e7490';
+    ctx.font       = 'italic 11px sans-serif';
+    ctx.textAlign  = 'center';
+    ctx.textBaseline = 'middle';
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    ctx.fillText(label, mx + 6, my - 8);
+  }
+}
+
+async function renderDiagramToPng(
+  nodes: DiagramNode[],
+  edges: DiagramEdge[],
+  description: string
+): Promise<ArrayBuffer> {
+  const pos    = layoutNodes(nodes, edges);
+  const MARGIN = 40;
+  const NODE_H = 60;
+  const PAD_Y  = 70;
+
+  // Canvas size
+  const maxRank = Math.max(...nodes.map(n => {
+    let maxR = 0;
+    pos.forEach((p, id) => { /* find rank via y */ });
+    return 0;
+  }));
+  const allPos  = Array.from(pos.values());
+  const canvasW = Math.max(...allPos.map(p => p.x + p.w)) + MARGIN * 2;
+  const canvasH = Math.max(...allPos.map(p => p.y + p.h)) + MARGIN * 2 + 30;
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = canvasW  + MARGIN * 2;
+  canvas.height = canvasH  + MARGIN;
+  const ctx = canvas.getContext('2d')!;
+
+  // Background
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Description label
+  ctx.fillStyle    = '#334155';
+  ctx.font         = '12px sans-serif';
+  ctx.textAlign    = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(description, MARGIN, 10);
+
+  // Offset all positions by margin
+  const off = (p: { x: number; y: number; w: number; h: number }) =>
+    ({ x: p.x + MARGIN, y: p.y + MARGIN + 28, w: p.w, h: p.h });
+
+  // Draw edges first (behind nodes)
+  for (const edge of edges) {
+    const fromPos = pos.get(edge.from);
+    const toPos   = pos.get(edge.to);
+    if (!fromPos || !toPos) continue;
+    const fp = off(fromPos), tp = off(toPos);
+    // Exit from bottom-centre, enter at top-centre
+    const x1 = fp.x + fp.w / 2, y1 = fp.y + fp.h;
+    const x2 = tp.x + tp.w / 2, y2 = tp.y;
+    drawArrow(ctx, x1, y1, x2, y2, edge.label);
+  }
+
+  // Draw nodes
+  for (const node of nodes) {
+    const p = pos.get(node.id);
+    if (p) drawNode(ctx, node, off(p));
+  }
+
+  // Legend bar at bottom
+  const legendY = canvas.height - 28;
+  const types: NodeType[] = ['start', 'end', 'process', 'decision', 'data'];
+  const labels = ['Start', 'End', 'Process', 'Decision', 'Data/System'];
+  let lx = MARGIN;
+  for (let i = 0; i < types.length; i++) {
+    const s = NODE_STYLE[types[i]];
+    ctx.fillStyle = s.fill; ctx.strokeStyle = s.stroke; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.rect(lx, legendY, 14, 14); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#334155'; ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(labels[i], lx + 18, legendY + 7);
+    lx += ctx.measureText(labels[i]).width + 36;
+  }
+
+  return await new Promise<ArrayBuffer>((resolve) => {
+    canvas.toBlob((blob) => {
+      blob!.arrayBuffer().then(resolve);
+    }, 'image/png', 1.0);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section builder
+// ─────────────────────────────────────────────────────────────────────────────
+async function buildSection(section: AboutSection): Promise<(Paragraph | Table)[]> {
   const out: (Paragraph | Table)[] = [];
 
   out.push(h1(section.heading));
-
   if (section.intro) out.push(body(section.intro));
 
   if (section.content) {
     for (const line of section.content) {
+      if (!line.trim()) { out.push(gap(80)); continue; }
       if (line.startsWith('**') && line.endsWith('**')) {
         out.push(h2(line.replace(/\*\*/g, '')));
-      } else if (!line.trim()) {
-        out.push(gap(80));
       } else {
         out.push(body(line));
       }
@@ -323,24 +399,71 @@ function buildSection(section: AboutSection): (Paragraph | Table)[] {
     }
   }
 
-  // Diagram — fully inline, no external reference
-  if (section.diagram) out.push(...makeDiagram(section.diagram));
+  // ── Diagram rendered as a real PNG image ───────────────────────────────────
+  if (section.diagram?.nodes && section.diagram.nodes.length > 0) {
+    try {
+      const png = await renderDiagramToPng(
+        section.diagram.nodes,
+        section.diagram.edges ?? [],
+        section.diagram.description
+      );
 
-  // Table
+      // Calculate display size — transformation uses points (1 pt = 12700 EMU)
+      // Target: 6 inches wide = 432 pt; height scaled proportionally.
+      const pos2  = layoutNodes(section.diagram.nodes, section.diagram.edges ?? []);
+      const allP2 = Array.from(pos2.values());
+      const pxW   = Math.max(...allP2.map(p => p.x + p.w)) + 160;
+      const pxH   = Math.max(...allP2.map(p => p.y + p.h)) + 116;
+      const dispW = 432;                                    // 6 inches in pt
+      const dispH = Math.round(dispW * (pxH / pxW));
+
+      out.push(new Paragraph({
+        ...sp(80, 120),
+        children: [
+          new ImageRun({
+            data: png,
+            transformation: { width: dispW, height: dispH },
+            type: 'png',
+          }),
+        ],
+      }));
+    } catch (err) {
+      // Fallback: plain text edge list
+      out.push(body(`[Diagram: ${section.diagram.description}]`));
+      if (section.diagram.edges) {
+        for (const e of section.diagram.edges) {
+          out.push(bullet(`${e.from}  →  ${e.to}${e.label ? '  (' + e.label + ')' : ''}`));
+        }
+      }
+    }
+    out.push(gap(160));
+  }
+
   if (section.table) {
     out.push(gap(120));
     out.push(makeTable(section.table));
     out.push(gap(240));
   }
 
-  // Code
-  if (section.codeExample) out.push(...makeCodeBlock(section.codeExample));
+  if (section.codeExample) {
+    out.push(body(section.codeExample.description));
+    out.push(new Paragraph({
+      shading: { type: ShadingType.CLEAR, fill: '1e293b' },
+      ...sp(240, 80),
+      children: [new TextRun({
+        text: section.codeExample.code,
+        font: 'Courier New', size: 18, color: 'e2e8f0',
+      })],
+    }));
+  }
 
   out.push(gap(80));
   return out;
 }
 
-// ── Cover page ────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Cover page
+// ─────────────────────────────────────────────────────────────────────────────
 function buildCover(doc: AboutToolDoc): Paragraph[] {
   return [
     new Paragraph({
@@ -354,21 +477,23 @@ function buildCover(doc: AboutToolDoc): Paragraph[] {
       ...sp(600),
       children: [new TextRun({ text: doc.subtitle, size: 22, color: C.body })],
     }),
-    // Divider
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      ...sp(400),
+      ...sp(500),
       children: [new TextRun({ text: '─────────────────────────────────', size: 18, color: C.border })],
     }),
   ];
 }
 
-// ── Public entry point ────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Public entry
+// ─────────────────────────────────────────────────────────────────────────────
 export async function generateAboutToolDocx(doc: AboutToolDoc): Promise<void> {
-  const children: (Paragraph | Table)[] = [
-    ...buildCover(doc),
-    ...doc.sections.flatMap(buildSection),
-  ];
+  const children: (Paragraph | Table)[] = [...buildCover(doc)];
+
+  for (const section of doc.sections) {
+    children.push(...await buildSection(section));
+  }
 
   const document = new Document({
     sections: [{
