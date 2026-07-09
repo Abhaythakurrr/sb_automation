@@ -13,6 +13,7 @@
     "axios": "^1.6.2",
     "buffer": "^6.0.3",
     "docx": "^9.7.1",
+    "file-saver": "^2.0.5",
     "framer-motion": "^12.38.0",
     "next": "^14.0.4",
     "process": "^0.11.10",
@@ -23,6 +24,7 @@
     "zustand": "^4.4.1"
   },
   "devDependencies": {
+    "@types/file-saver": "^2.0.7",
     "@types/node": "^20.10.6",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
