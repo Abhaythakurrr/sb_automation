@@ -131,4 +131,21 @@ export const AUTOMATIONS: Automation[] = [
     ],
     route:       '/search',
   },
+  {
+    id:          'about-tool',
+    title:       'About the Tool',
+    description: 'Technical documentation, system architecture, flowcharts, UI/UX details, and trigger creation guide with DOCX export.',
+    icon:        'book',
+    status:      'live',
+    category:    'Documentation',
+    features:    [
+      'System architecture diagrams',
+      'Job creation/deletion workflows',
+      'ML-based schedule parser guide',
+      'Trigger creation examples',
+      'Timezone reference table',
+      'DOCX export for offline viewing',
+    ],
+    route:       '/about-tool',
+  },
 ];
