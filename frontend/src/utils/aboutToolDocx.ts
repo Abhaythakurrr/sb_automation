@@ -31,7 +31,6 @@ const COLORS = {
 function createTitle(doc: AboutToolDoc): Paragraph[] {
   return [
     new Paragraph({
-      text: doc.title.toUpperCase(),
       heading: HeadingLevel.TITLE,
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
@@ -45,7 +44,6 @@ function createTitle(doc: AboutToolDoc): Paragraph[] {
       ],
     }),
     new Paragraph({
-      text: doc.subtitle,
       alignment: AlignmentType.CENTER,
       spacing: { after: 400 },
       children: [
@@ -57,7 +55,6 @@ function createTitle(doc: AboutToolDoc): Paragraph[] {
       ],
     }),
     new Paragraph({
-      text: `Version ${doc.version} • Last Updated: ${doc.lastUpdated}`,
       alignment: AlignmentType.CENTER,
       spacing: { after: 600 },
       children: [
@@ -74,7 +71,6 @@ function createTitle(doc: AboutToolDoc): Paragraph[] {
 
 function createSectionHeading(heading: string): Paragraph {
   return new Paragraph({
-    text: heading,
     heading: HeadingLevel.HEADING_1,
     spacing: { before: 400, after: 200 },
     children: [
@@ -90,7 +86,6 @@ function createSectionHeading(heading: string): Paragraph {
 
 function createSubHeading(title: string): Paragraph {
   return new Paragraph({
-    text: title,
     heading: HeadingLevel.HEADING_2,
     spacing: { before: 300, after: 150 },
     children: [
@@ -106,7 +101,6 @@ function createSubHeading(title: string): Paragraph {
 
 function createBodyText(text: string): Paragraph {
   return new Paragraph({
-    text,
     spacing: { after: 150 },
     children: [
       new TextRun({
@@ -120,7 +114,6 @@ function createBodyText(text: string): Paragraph {
 
 function createBulletPoint(text: string, indent = 0): Paragraph {
   return new Paragraph({
-    text,
     bullet: { level: indent },
     spacing: { after: 100 },
     children: [
@@ -141,7 +134,6 @@ function createTable(table: NonNullable<AboutSection['table']>): Table {
         new TableCell({
           children: [
             new Paragraph({
-              text: col,
               children: [
                 new TextRun({
                   text: col,
@@ -171,7 +163,6 @@ function createTable(table: NonNullable<AboutSection['table']>): Table {
             new TableCell({
               children: [
                 new Paragraph({
-                  text: cell,
                   children: [
                     new TextRun({
                       text: cell,
@@ -210,7 +201,6 @@ function createCodeBlock(example: NonNullable<AboutSection['codeExample']>): Par
   return [
     createBodyText(example.description),
     new Paragraph({
-      text: example.code,
       shading: { fill: '1e293b' }, // slate-800
       spacing: { after: 300 },
       children: [
@@ -229,7 +219,6 @@ function createDiagramPlaceholder(diagram: NonNullable<AboutSection['diagram']>)
   return [
     createBodyText(diagram.description),
     new Paragraph({
-      text: '📊 Diagram: See web version for interactive flowchart',
       spacing: { after: 200 },
       children: [
         new TextRun({
