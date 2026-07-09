@@ -100,6 +100,23 @@ export const AUTOMATIONS: Automation[] = [
     route:       '/job-deletion',
   },
   {
+    id:          'job-recovery',
+    title:       'Job Recovery',
+    description: 'Restore deleted jobs from server backups or uploaded Excel files. Real-time per-job restore progress with full visual feedback.',
+    icon:        'recovery',
+    status:      'live',
+    category:    'Management',
+    features:    [
+      'Server backup list (7-day retention)',
+      'Upload Excel backup file',
+      'Per-job restore status cards',
+      'Real-time progress bar',
+      'Trigger recreation included',
+      'Queue individual or all jobs',
+    ],
+    route:       '/job-recovery',
+  },
+  {
     id:          'bulk-update',
     title:       'Bulk Job Update',
     description: 'Update multiple existing tasks and triggers in one operation — reschedule, migrate agents, rotate credentials.',

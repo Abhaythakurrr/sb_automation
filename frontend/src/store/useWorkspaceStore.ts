@@ -5,7 +5,7 @@
  */
 import { create } from 'zustand';
 
-export type AutomationId = 'home' | 'job-creation' | 'agent-control' | 'monitoring' | 'job-deletion' | 'search' | 'adhoc-launch';
+export type AutomationId = 'home' | 'job-creation' | 'agent-control' | 'monitoring' | 'job-deletion' | 'job-recovery' | 'search' | 'adhoc-launch';
 
 interface Tab {
   id: AutomationId;
