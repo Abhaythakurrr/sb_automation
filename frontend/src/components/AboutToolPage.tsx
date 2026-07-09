@@ -238,7 +238,7 @@ export default function AboutToolPage() {
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="flex-1 min-w-[240px]">
               <span className="text-[10px] font-mono font-bold tracking-widest uppercase text-cyan-400">
-                TECHNICAL DOCUMENTATION · v{ABOUT_TOOL_DOC.version}
+                TECHNICAL DOCUMENTATION
               </span>
               <h1 className="text-2xl font-black text-slate-100 mt-1.5 leading-tight">
                 {ABOUT_TOOL_DOC.title}
@@ -286,22 +286,6 @@ export default function AboutToolPage() {
                 </>
               )}
             </motion.button>
-          </div>
-
-          {/* Meta grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-6">
-            {[
-              { k: 'Version', v: ABOUT_TOOL_DOC.version },
-              { k: 'Last Updated', v: ABOUT_TOOL_DOC.lastUpdated },
-              { k: 'Format', v: 'Web + DOCX Export' },
-            ].map((m) => (
-              <div key={m.k} className="text-center">
-                <p className="text-[10px] text-slate-600 uppercase font-bold tracking-wider">
-                  {m.k}
-                </p>
-                <p className="text-xs text-slate-400 mt-0.5">{m.v}</p>
-              </div>
-            ))}
           </div>
         </motion.div>
 
