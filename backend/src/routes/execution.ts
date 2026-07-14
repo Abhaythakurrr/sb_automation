@@ -5,10 +5,13 @@ import { AuthRequest } from '../middleware/session';
 import { buildTaskPayload, buildTriggerPayload, ExcelRow } from '../utils/payloadMapper';
 import { auditLog } from '../middleware/auditLogger';
 import { MAX_JOBS, CALL_DELAY_MS } from '../utils/executionQueue';
+import { createModuleLogger } from '../config/logger';
 
 const router = Router();
+const log = createModuleLogger('execution');
 
-// Zod schema for batch execution input
+// Zod schema — enforces minimum required columns at the route boundary before
+// the payload builder touches UAC-specific field names.
 const ExcelRowSchema = z.object({
   task_name: z.string().min(1, 'task_name is required'),
   task_type: z.string().min(1, 'task_type is required'),
@@ -36,6 +39,7 @@ router.post('/batch', async (req: AuthRequest, res: Response, next: NextFunction
       rows: ExcelRow[];
       resolvedRefs: Record<string, any>;
     };
+    const requestId = (req as any).requestId || '';
 
     // Audit: log batch execution start
     auditLog({
@@ -66,14 +70,14 @@ router.post('/batch', async (req: AuthRequest, res: Response, next: NextFunction
       // Resolve agent → agent or agentCluster
       const agentResolved = await service.resolveAgentField(
         row.agent,
-        (msg) => console.log(msg)
+        (msg) => log.debug(msg, { requestId })
       );
 
       // Build strict OpenAPI-compliant payloads
       const taskPayload    = buildTaskPayload(row, maxRunTime, agentResolved);
       const triggerPayload = buildTriggerPayload(row, ref?.rawTrigger);
 
-      console.log(`[EXEC] Creating task: ${taskPayload.name} → ${baseUrl}`);
+      log.info(`Creating task ${taskPayload.name}`, { requestId, endpoint: 'POST /api/execution/batch', target: baseUrl });
 
       // Create Task
       try {
@@ -83,7 +87,7 @@ router.post('/batch', async (req: AuthRequest, res: Response, next: NextFunction
           status: 'success', sbId: result.sysId ?? result,
           createdAt: new Date().toISOString(),
         });
-        console.log(`[EXEC] Task created: ${taskPayload.name}`);
+        log.info(`Task created: ${taskPayload.name}`, { requestId });
       } catch (e: any) {
         const msg = e.response?.data ?? e.message;
         results.push({
@@ -100,7 +104,7 @@ router.post('/batch', async (req: AuthRequest, res: Response, next: NextFunction
       }
 
       // Create Trigger
-      console.log(`[EXEC] Creating trigger: ${triggerPayload.name}`);
+      log.info(`Creating trigger ${triggerPayload.name}`, { requestId });
       try {
         const result = await service.createTrigger(triggerPayload);
         results.push({
@@ -108,7 +112,7 @@ router.post('/batch', async (req: AuthRequest, res: Response, next: NextFunction
           status: 'success', sbId: result.sysId ?? result,
           createdAt: new Date().toISOString(),
         });
-        console.log(`[EXEC] Trigger created: ${triggerPayload.name}`);
+        log.info(`Trigger created: ${triggerPayload.name}`, { requestId });
       } catch (e: any) {
         const msg = e.response?.data ?? e.message;
         results.push({
@@ -156,8 +160,9 @@ router.post('/batch', async (req: AuthRequest, res: Response, next: NextFunction
   }
 });
 
-// ── SSE Stream endpoint — real-time execution with live updates ──────────────
-// Frontend opens this as an EventSource. Each job step is streamed back live.
+// ── SSE Stream endpoint ───────────────────────────────────────────────────────
+// Frontend opens this as an EventSource. Steps are pushed incrementally so the
+// user sees live progress rather than waiting for a full batch to complete.
 router.post('/stream', async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = BatchRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -168,6 +173,7 @@ router.post('/stream', async (req: AuthRequest, res: Response): Promise<void> =>
   const { rows, resolvedRefs } = parsed.data as { rows: ExcelRow[]; resolvedRefs: Record<string, any> };
   const token   = req.token     || '';
   const baseUrl = req.sbBaseUrl || '';
+  const requestId = (req as any).requestId || '';
   if (!baseUrl) { res.status(400).json({ success: false, error: 'No base URL configured' }); return; }
 
   // Set up SSE headers
@@ -224,6 +230,8 @@ router.post('/stream', async (req: AuthRequest, res: Response): Promise<void> =>
 
     // Create trigger
     send('step', { index: i, name: row.task_name, step: 'Creating trigger...', status: 'processing' });
+    log.debug(`Creating trigger ${triggerPayload.name}`, { requestId, timeStyle: triggerPayload.timeStyle });
+
     try {
       const result = await service.createTrigger(triggerPayload);
       send('step', { index: i, name: row.task_name, step: 'Trigger created', status: 'success', id: result?.sysId ?? result });
@@ -284,7 +292,9 @@ router.post('/stream', async (req: AuthRequest, res: Response): Promise<void> =>
   res.end();
 });
 
-// ── Preview endpoint — returns the exact payload that would be sent to UAC ────
+// ── Preview ───────────────────────────────────────────────────────────────────
+// Returns the exact payloads that would be sent to UAC without executing them.
+// Used by the UI's dry-run step so users can review what will be created.
 router.post('/preview', async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = BatchRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -343,7 +353,9 @@ router.post('/preview', async (req: AuthRequest, res: Response): Promise<void> =
   res.json({ success: true, data: { previews } });
 });
 
-  // ── Qualifying Times — fetch run cycle from UAC for created triggers ──────────
+// ── Qualifying Times ─────────────────────────────────────────────────────────
+// Fetches the next N run dates from UAC for a trigger. Used by the post-creation
+// verification screen to let users confirm the schedule is correct.
 router.get('/qualifying-times', async (req: AuthRequest, res: Response): Promise<void> => {
   const triggerName = req.query.triggername as string;
   const count = parseInt(req.query.count as string) || 30;
@@ -368,7 +380,9 @@ router.get('/qualifying-times', async (req: AuthRequest, res: Response): Promise
   }
 });
 
-// ── Verify — fetch created task + trigger from UAC and validate fields ────────
+// ── Verify ────────────────────────────────────────────────────────────────────
+// Fetches created task and trigger from UAC and reports key fields. Used by the
+// post-creation step to catch misconfigured fields before the user enables triggers.
 router.post('/verify', async (req: AuthRequest, res: Response): Promise<void> => {
   const { taskName } = req.body;
   if (!taskName) { res.status(400).json({ success: false, error: 'taskName required' }); return; }

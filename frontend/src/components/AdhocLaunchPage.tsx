@@ -3,6 +3,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
+import { useToast } from '@/components/ui/Toast';
 
 type Kind = 'task' | 'workflow' | 'trigger';
 interface SearchResult { kind: Kind; name: string; type?: string; enabled?: boolean; agent?: string; tasks?: string[]; }
@@ -36,6 +37,7 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
 export default function AdhocLaunchPage() {
   const { connected } = useConnectionStore();
+  const toast = useToast();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -78,7 +80,7 @@ export default function AdhocLaunchPage() {
       }));
       if (launched.length) setInstances(prev => [...launched, ...prev].slice(0, 30));
     } catch (e: any) {
-      alert('Launch failed: ' + (e.response?.data?.error || e.message));
+      toast.error('Launch failed: ' + (e.response?.data?.error || e.message));
     } finally {
       setLaunchingName(null);
     }
@@ -117,7 +119,7 @@ export default function AdhocLaunchPage() {
             finishedAt: u?.terminal ? (i.finishedAt || Date.now()) : undefined, busy: null }
         : i));
     } catch (e: any) {
-      alert(`${op} failed: ` + (e.response?.data?.error || e.message));
+      toast.error(`${op} failed: ` + (e.response?.data?.error || e.message));
       setInstances(prev => prev.map(i => i.key === inst.key ? { ...i, busy: null } : i));
     }
   }, []);

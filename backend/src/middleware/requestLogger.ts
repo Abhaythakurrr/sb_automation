@@ -1,30 +1,42 @@
 import { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
+import { createModuleLogger } from '../config/logger';
 
-// ── FIX 7 COMPLETE: Replaced console.log with audit logging for production safety
-// console.log statements preserved only for:
-// - Debugging in development (NODE_ENV=development)
-// - Critical operational messages that should always be visible
-// For production, all logs go through auditLog middleware
+const log = createModuleLogger('http');
+
+/**
+ * Assigns a short correlation ID to every request, echoes it back in the
+ * `X-Request-ID` response header, and records a one-line request/response
+ * summary (method, path, status, duration, client IP) in the API log once the
+ * response finishes. Request bodies are never logged, so credentials submitted
+ * to the connect endpoint never reach disk.
+ */
 export function requestLogger(req: Request, res: Response, next: NextFunction): void {
   const requestId = randomUUID().slice(0, 8);
   const start = Date.now();
 
-  // Attach request ID
-  (req as any).requestId = requestId;
+  (req as Request & { requestId?: string }).requestId = requestId;
   res.setHeader('X-Request-ID', requestId);
 
   res.on('finish', () => {
-    const duration = Date.now() - start;
-    const method = req.method;
-    const url = req.originalUrl;
+    // The health probe is high-frequency and low-value — skip to reduce noise.
+    if (req.originalUrl === '/health') return;
+
+    const durationMs = Date.now() - start;
     const status = res.statusCode;
-    // ── FIX 7 COMPLETE: For production, audit logging handles request logging
-    // console.log preserved only for immediate visibility in development
-    // In production, auditLog middleware captures all requests with proper format
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`[${requestId}] ${method} ${url} ${status} ${duration}ms`);
-    }
+    const context = {
+      requestId,
+      component: 'http',
+      endpoint: `${req.method} ${req.originalUrl}`,
+      status,
+      durationMs,
+      ip: req.ip,
+    };
+    const message = `${req.method} ${req.originalUrl} ${status} ${durationMs}ms`;
+
+    if (status >= 500) log.error(message, context);
+    else if (status >= 400) log.warn(message, context);
+    else log.info(message, context);
   });
 
   next();

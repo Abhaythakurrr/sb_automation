@@ -3,8 +3,10 @@ import { StoneBranchService } from '../services/stoneBranchService';
 import { AuthRequest } from '../middleware/session';
 import { saveJob, removeJob, listPendingJobs, PersistedJob } from '../utils/jobPersistence';
 import { auditLog } from '../middleware/auditLogger';
+import { createModuleLogger } from '../config/logger';
 
 const router = Router();
+const log = createModuleLogger('agentControl');
 
 const svc = (req: AuthRequest) =>
   new StoneBranchService(
@@ -18,7 +20,7 @@ const activeTimers = new Map<string, NodeJS.Timeout>();
 // ── Execute a scheduled job ───────────────────────────────────────────────────
 async function executeJob(job: PersistedJob): Promise<void> {
   const target = job.target || 'agent';
-  console.log(`[SCHEDULE] Executing ${job.action} on ${job.agents.length} ${target}(s) — Job: ${job.jobId}`);
+  log.info(`Executing scheduled ${job.action} on ${job.agents.length} ${target}(s)`, { jobId: job.jobId });
   try {
     const service = new StoneBranchService(job.token, job.baseUrl);
     if (target === 'cluster') {
@@ -28,9 +30,9 @@ async function executeJob(job: PersistedJob): Promise<void> {
       if (job.action === 'suspend') await service.suspendAgents(job.agents);
       else                          await service.resumeAgents(job.agents);
     }
-    console.log(`[SCHEDULE] Job ${job.jobId} completed successfully`);
+    log.info(`Scheduled job completed`, { jobId: job.jobId });
   } catch (e: any) {
-    console.error(`[SCHEDULE] Job ${job.jobId} failed:`, e.message);
+    log.error(`Scheduled job failed`, { jobId: job.jobId, error: e });
   } finally {
     removeJob(job.jobId);
     activeTimers.delete(job.jobId);
@@ -41,15 +43,15 @@ async function executeJob(job: PersistedJob): Promise<void> {
 function scheduleJob(job: PersistedJob): void {
   const delay = new Date(job.scheduledAt).getTime() - Date.now();
   if (delay <= 0) {
-    // Scheduled time has passed — DO NOT execute.
-    // Admin may have already handled it manually. Executing now could affect server uptime.
-    console.warn(`[SCHEDULE] Job ${job.jobId} is overdue (was due ${job.scheduledAt}) — SKIPPED. Remove manually if needed.`);
+    // Scheduled time has passed — do NOT execute. An operator may already have
+    // handled it manually, and firing a stale suspend/resume could disrupt uptime.
+    log.warn(`Scheduled job is overdue — skipped`, { jobId: job.jobId, scheduledAt: job.scheduledAt });
     removeJob(job.jobId);
     return;
   }
   const timer = setTimeout(() => executeJob(job), delay);
   activeTimers.set(job.jobId, timer);
-  console.log(`[SCHEDULE] Job ${job.jobId} scheduled in ${Math.round(delay / 1000)}s (${job.scheduledAt})`);
+  log.info(`Scheduled job registered`, { jobId: job.jobId, delaySeconds: Math.round(delay / 1000), scheduledAt: job.scheduledAt });
 }
 
 // ── Restore persisted jobs on startup ─────────────────────────────────────────
@@ -60,19 +62,19 @@ export function restoreScheduledJobs(): void {
   const overdue = all.filter(j => new Date(j.scheduledAt).getTime() <= now);
 
   if (overdue.length > 0) {
-    console.warn(`[SCHEDULE] ${overdue.length} overdue job(s) found — SKIPPED (may have been handled manually):`);
-    overdue.forEach(j => {
-      console.warn(`  - ${j.jobId}: ${j.action} on [${j.agents.join(', ')}] was due ${j.scheduledAt}`);
-      removeJob(j.jobId);
+    log.warn(`Overdue scheduled jobs found on startup — skipped`, {
+      count: overdue.length,
+      jobs: overdue.map(j => ({ jobId: j.jobId, action: j.action, agents: j.agents, scheduledAt: j.scheduledAt })),
     });
+    overdue.forEach(j => removeJob(j.jobId));
   }
 
   if (future.length === 0) {
-    console.log('[SCHEDULE] No pending future jobs to restore');
+    log.info('No pending future scheduled jobs to restore');
     return;
   }
 
-  console.log(`[SCHEDULE] Restoring ${future.length} future job(s) from disk`);
+  log.info(`Restoring future scheduled jobs from disk`, { count: future.length });
   future.forEach(job => scheduleJob(job));
 }
 

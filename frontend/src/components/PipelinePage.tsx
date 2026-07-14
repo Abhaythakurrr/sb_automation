@@ -598,7 +598,7 @@ export default function PipelinePage() {
 
   return (
     <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>
-      <GlobalHeader title="Job Creation" subtitle="BULK TASK + TRIGGER PIPELINE" sopHref="/SOP_Job_creation" />
+      <GlobalHeader title="Job Creation" subtitle="BULK TASK + TRIGGER PIPELINE" sopHref="/sop-job-creation" />
 
       <main className="pb-16 px-4 max-w-7xl mx-auto space-y-6 min-h-screen">
 

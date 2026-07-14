@@ -1,4 +1,7 @@
 import { AxiosInstance } from 'axios';
+import { createModuleLogger } from '../config/logger';
+
+const moduleLog = createModuleLogger('agentResolver');
 
 export interface ResolvedAgent {
   field: 'agent' | 'agentCluster';
@@ -67,7 +70,7 @@ export async function resolveAgent(
   client: AxiosInstance,
   logFn?: (msg: string) => void
 ): Promise<ResolvedAgent> {
-  const log = logFn ?? ((m: string) => console.log(m));
+  const log = logFn ?? ((m: string) => moduleLog.debug(m));
   const v = value?.trim() ?? '';
   if (!v) return { field: 'agentCluster', value: '' };
 

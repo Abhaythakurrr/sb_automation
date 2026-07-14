@@ -11,17 +11,18 @@ interface AlertRecord {
 }
 
 export default function MonitoringPage() {
-  const { connected, environment } = useConnectionStore();
+  const { connected, environment, sessionId } = useConnectionStore();
   const [running, setRunning] = useState(false);
   const [pollMin, setPollMin] = useState(5);
   const [monAgents, setMonAgents] = useState(true);
   const [monJobs, setMonJobs] = useState(true);
   const [alerts, setAlerts] = useState<AlertRecord[]>([]);
-  const [otherEnvRunning, setOtherEnvRunning] = useState(false);
+  const [otherSessionRunning, setOtherSessionRunning] = useState<string | null>(null);
   const [lastRun, setLastRun] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<any>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [filter, setFilter] = useState<'all' | 'agent_offline' | 'job_failure'>('all');
+  const [monitoringSessionId, setMonitoringSessionId] = useState<string | null>(null);
   const logsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight; }, [logs]);
@@ -44,8 +45,16 @@ export default function MonitoringPage() {
       setRunning(d?.running ?? false);
       setLastRun(d?.lastRunAt ?? null);
       setLastResult(d?.lastResult ?? null);
-      // True when a monitor is running but for a DIFFERENT environment than the one connected.
-      setOtherEnvRunning(!!d?.runningAnyEnv && !d?.matchesConnectedEnv);
+      
+      // Check if monitoring is running for a DIFFERENT session
+      if (d?.config) {
+        // We don't get the sessionId in the response config, but we can infer
+        // if running=true and we're not the owner, show a warning
+        setOtherSessionRunning(d.runningAnyEnv && !d.running ? 'another' : null);
+      } else {
+        setOtherSessionRunning(null);
+      }
+      
       if (d?.config) { setPollMin(Math.round((d.config.pollIntervalMs || 300000) / 60000)); setMonAgents(d.config.monitorAgents ?? true); setMonJobs(d.config.monitorJobs ?? true); }
     } catch {}
   };
@@ -78,16 +87,18 @@ export default function MonitoringPage() {
 
       <main className="max-w-6xl mx-auto px-6 pb-24 space-y-6">
 
-        {otherEnvRunning && (
+        {/* Session ownership warning */}
+        {otherSessionRunning && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="rounded-lg px-4 py-2.5 flex items-center gap-2 text-[11px]"
             style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#fbbf24' }}>
             <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
             </svg>
-            Monitoring is currently running for a <b>different environment</b>. Click <b>Start</b> to monitor the environment you are connected to. Stats and alert history below are scoped to your connected environment.
+            Monitoring is currently running in <b>another session</b>. Each user must start monitoring with their own session. Click <b>Stop</b> to end the current session's monitoring or <b>Start</b> to begin monitoring with your own session.
           </motion.div>
         )}
+        
         {/* Control Bar */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-4">
           <div className="flex flex-wrap items-center gap-3">

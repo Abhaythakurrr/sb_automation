@@ -1,19 +1,17 @@
 import { Router, Request, Response } from 'express';
 import axios from 'axios';
+import { createModuleLogger } from '../config/logger';
 
 const router = Router();
+const log = createModuleLogger('jobDoc');
 
-// POWER_AUTOMATE_URL - MUST be set via environment variable
+// Destination for pushing job documentation rows. Configured per environment;
+// pushes fail fast (with a logged warning) when it is not set.
 const POWER_AUTOMATE_URL = process.env.POWER_AUTOMATE_URL;
 if (!POWER_AUTOMATE_URL) {
-  console.warn('[JOBDOC] WARNING: POWER_AUTOMATE_URL environment variable not set. Job doc push will fail.');
+  log.warn('POWER_AUTOMATE_URL is not set — job doc push will fail until it is configured');
 }
 
-// ── FIX 1 COMPLETE: Removed hardcoded Power Automate URL
-// Now uses process.env.POWER_AUTOMATE_URL only
-// This change preserves all existing functionality
-// Risk: None - environment variable provides the same endpoint
-// Regression possibility: None - behavior identical when env var is set
 router.post('/push', async (req: Request, res: Response): Promise<void> => {
   const { rows } = req.body;
 

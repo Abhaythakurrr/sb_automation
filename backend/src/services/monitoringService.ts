@@ -1,14 +1,24 @@
 /**
- * Stonebranch Monitoring Service
- * Polls agents and task instances, sends Teams alerts on changes.
- * Parses ServiceNow incident numbers from operationalMemo field.
+ * Stonebranch Monitoring Service.
+ * Polls agents and task instances on a configurable interval, builds MS Teams
+ * Adaptive Card alerts on state changes, and parses ServiceNow incident numbers
+ * from the UAC `operationalMemo` field to include clickable deep-links in alerts.
  */
 
 import axios from 'axios';
 import fs    from 'fs';
 import path  from 'path';
+import { createModuleLogger } from '../config/logger';
+
+const log = createModuleLogger('monitoringService');
+
+// ServiceNow instances differ between production and non-production UAC
+// environments. Both are configurable; the defaults preserve existing behaviour.
+const SERVICENOW_NONPROD_HOST = process.env.SERVICENOW_NONPROD_HOST || 'adientdev.service-now.com';
+const SERVICENOW_PROD_HOST = process.env.SERVICENOW_PROD_HOST || 'adientprod.service-now.com';
 
 export interface MonitorConfig {
+  sessionId:      string;
   sbBaseUrl:      string;
   sbToken:        string;
   teamsWebhookUrl:string;
@@ -33,20 +43,76 @@ export interface AlertRecord {
   teamsSent:       boolean;
 }
 
-const STATE_FILE   = path.join(process.cwd(), 'monitor_state.json');
-const HISTORY_FILE = path.join(process.cwd(), 'alert_history.json');
+// Config, state and alert history are all scoped per session for multi-user isolation.
+const CONFIG_DIR     = path.join(process.cwd(), 'monitor_configs');
+const STATE_DIR      = path.join(process.cwd(), 'monitor_states');
+const HISTORY_DIR    = path.join(process.cwd(), 'monitor_history');
 
-// ── FIX 2 COMPLETE: Removed hardcoded Teams webhook
-// Now uses process.env.TEAMS_WEBHOOK_URL only
-// This change preserves all existing functionality
-// Risk: None - environment variable provides the same webhook
-// Regression possibility: None - behavior identical when env var is set
+// Ensure directories exist
+[CONFIG_DIR, STATE_DIR, HISTORY_DIR].forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
 
-// Resolve the effective webhook: explicit config → env override → no hardcoded default
+// Global Teams-alert deduplication. When several users run monitoring at once
+// they may observe the same offline agent or failed job; a single shared store
+// of already-sent alert IDs guarantees each alert reaches Teams only once, while
+// per-session state/history are kept separately for each user's UI.
+const SENT_ALERTS_FILE = path.join(process.cwd(), 'monitor_sent_alerts.json');
+
+interface SentAlertRecord {
+  alertId:    string;
+  sentAt:     string;
+  teamsWebhook: string;
+}
+
+function loadSentAlerts(): Record<string, SentAlertRecord> {
+  try {
+    if (fs.existsSync(SENT_ALERTS_FILE)) {
+      return JSON.parse(fs.readFileSync(SENT_ALERTS_FILE, 'utf-8'));
+    }
+  } catch { /* ignore */ }
+  return {};
+}
+
+function saveSentAlerts(sent: Record<string, SentAlertRecord>): void {
+  fs.writeFileSync(SENT_ALERTS_FILE, JSON.stringify(sent, null, 2));
+}
+
+function markAlertSent(alertId: string, webhook: string): void {
+  const sent = loadSentAlerts();
+  sent[alertId] = {
+    alertId,
+    sentAt: new Date().toISOString(),
+    teamsWebhook: webhook,
+  };
+  saveSentAlerts(sent);
+  log.debug('Alert marked as sent to Teams', { alertId });
+}
+
+function isAlertSent(alertId: string): boolean {
+  const sent = loadSentAlerts();
+  return !!sent[alertId];
+}
+
+function getConfigFile(sessionId: string): string {
+  return path.join(CONFIG_DIR, `monitor_config_${sessionId}.json`);
+}
+
+function getStateFile(sessionId: string): string {
+  return path.join(STATE_DIR, `monitor_state_${sessionId}.json`);
+}
+
+function getHistoryFile(sessionId: string): string {
+  return path.join(HISTORY_DIR, `alert_history_${sessionId}.json`);
+}
+
+// Resolve the effective Teams webhook: an explicit per-request value wins,
+// otherwise fall back to the environment. There is deliberately no hardcoded
+// default so alerts can never be sent to an unintended channel.
 export function resolveWebhook(configured?: string): string {
   const webhook = (configured && configured.trim()) || process.env.TEAMS_WEBHOOK_URL;
   if (!webhook) {
-    console.warn('[MONITOR] WARNING: No Teams webhook configured. Alerts will not be sent.');
+    log.warn('No Teams webhook configured — alerts will not be sent');
   }
   return webhook || '';
 }
@@ -56,30 +122,34 @@ interface AlertState {
   failedJobs:    Record<string, string>;
 }
 
-function loadState(): AlertState {
+function loadState(sessionId: string): AlertState {
   try {
-    if (fs.existsSync(STATE_FILE)) return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
+    const stateFile = getStateFile(sessionId);
+    if (fs.existsSync(stateFile)) return JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
   } catch { /* ignore */ }
   return { offlineAgents: {}, failedJobs: {} };
 }
 
-function saveState(state: AlertState): void {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+function saveState(sessionId: string, state: AlertState): void {
+  const stateFile = getStateFile(sessionId);
+  fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
 }
 
-export function loadAlertHistory(): AlertRecord[] {
+export function loadAlertHistory(sessionId: string): AlertRecord[] {
   try {
-    if (fs.existsSync(HISTORY_FILE)) return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
+    const historyFile = getHistoryFile(sessionId);
+    if (fs.existsSync(historyFile)) return JSON.parse(fs.readFileSync(historyFile, 'utf-8'));
   } catch { /* ignore */ }
   return [];
 }
 
-function appendAlert(alert: AlertRecord): void {
-  const history = loadAlertHistory();
+function appendAlert(sessionId: string, alert: AlertRecord): void {
+  const history = loadAlertHistory(sessionId);
   history.push(alert);
   // Keep last 200
   const trimmed = history.slice(-200);
-  fs.writeFileSync(HISTORY_FILE, JSON.stringify(trimmed, null, 2));
+  const historyFile = getHistoryFile(sessionId);
+  fs.writeFileSync(historyFile, JSON.stringify(trimmed, null, 2));
 }
 
 function parseIncidentNumbers(memo: string): string[] {
@@ -93,7 +163,7 @@ function serviceNowHost(baseUrl?: string): string {
   const url = (baseUrl || '').toLowerCase();
   const isNonProd = /\b(tst|test|dev|qa|uat|stg|stage|staging|nonprod|non-prod|sandbox)\b/.test(url)
     || /adienttst|adientdev|adientqa|adientuat/.test(url);
-  return isNonProd ? 'adientdev.service-now.com' : 'adientprod.service-now.com';
+  return isNonProd ? SERVICENOW_NONPROD_HOST : SERVICENOW_PROD_HOST;
 }
 
 function buildServiceNowLinks(incidentNumbers: string[], baseUrl?: string): string[] {
@@ -200,7 +270,7 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
   jobsFailed:    number;
   errors:        string[];
 }> {
-  const state  = loadState();
+  const state  = loadState(config.sessionId);
   const webhook = resolveWebhook(config.teamsWebhookUrl);
   const client = axios.create({
     baseURL: config.sbBaseUrl,
@@ -237,8 +307,9 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
           currentOffline.add(agent.name);
           if (!state.offlineAgents[agent.name]) {
             state.offlineAgents[agent.name] = new Date().toISOString();
+            const alertId = `agent-${agent.name}-${Date.now()}`;
             const alert: AlertRecord = {
-              id:              `agent-${agent.name}-${Date.now()}`,
+              id:              alertId,
               type:            'agent_offline',
               name:            agent.name,
               status:          agent.status,
@@ -251,15 +322,22 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
               serviceNowLinks: [],
               teamsSent:       false,
             };
-            try {
-              await sendTeamsCard(webhook, buildAgentOfflineCard(agent, config.environment));
-              alert.teamsSent = true;
-              agentAlerts++;
-              console.log(`[MONITOR] Agent offline alert sent: ${agent.name}`);
-            } catch (e: any) {
-              errors.push(`Teams send failed for agent ${agent.name}: ${e.message}`);
+            
+            // Check if this alert has already been sent to Teams (global dedup)
+            if (!isAlertSent(alertId)) {
+              try {
+                await sendTeamsCard(webhook, buildAgentOfflineCard(agent, config.environment));
+                alert.teamsSent = true;
+                markAlertSent(alertId, webhook); // Mark as sent globally
+                agentAlerts++;
+                log.info('Agent offline alert sent', { agent: agent.name, environment: config.environment });
+              } catch (e: any) {
+                errors.push(`Teams send failed for agent ${agent.name}: ${e.message}`);
+              }
+            } else {
+              log.debug('Agent offline alert suppressed (already sent)', { agent: agent.name });
             }
-            appendAlert(alert);
+            appendAlert(config.sessionId, alert);
           }
         }
       }
@@ -268,7 +346,7 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
       for (const name of Object.keys(state.offlineAgents)) {
         if (!currentOffline.has(name)) {
           delete state.offlineAgents[name];
-          console.log(`[MONITOR] Agent back online: ${name}`);
+          log.info('Agent back online', { agent: name });
         }
       }
       agentsOffline = currentOffline.size;
@@ -312,7 +390,7 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
           }
         } catch (e2: any) {
           const msg = typeof e2.response?.data === 'string' ? e2.response.data : e2.message;
-          console.warn('[MONITOR] taskinstance/list error:', msg);
+          log.warn('taskinstance/list query failed', { error: msg });
           errors.push(`Job monitoring query failed: ${msg}`);
         }
       }
@@ -330,8 +408,9 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
           const incidentNumbers = parseIncidentNumbers(memo);
           const serviceNowLinks = buildServiceNowLinks(incidentNumbers, config.sbBaseUrl);
 
+          const alertId = `job-${id}-${Date.now()}`;
           const alert: AlertRecord = {
-            id:              `job-${id}-${Date.now()}`,
+            id:              alertId,
             type:            'job_failure',
             name:            instance.name || instance.taskName || id,
             status:          instance.status,
@@ -345,19 +424,25 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
             teamsSent:       false,
           };
 
-          try {
-            await sendTeamsCard(
-              webhook,
-              buildJobFailureCard(instance, config.environment, incidentNumbers, serviceNowLinks)
-            );
-            alert.teamsSent = true;
-            jobAlerts++;
-            console.log(`[MONITOR] Job failure alert sent: ${alert.name}${incidentNumbers.length ? ` [${incidentNumbers.join(', ')}]` : ''}`);
-          } catch (e: any) {
-            errors.push(`Teams send failed for job ${alert.name}: ${e.message}`);
+          // Check if this alert has already been sent to Teams (global dedup)
+          if (!isAlertSent(alertId)) {
+            try {
+              await sendTeamsCard(
+                webhook,
+                buildJobFailureCard(instance, config.environment, incidentNumbers, serviceNowLinks)
+              );
+              alert.teamsSent = true;
+              markAlertSent(alertId, webhook); // Mark as sent globally
+              jobAlerts++;
+              log.info('Job failure alert sent', { job: alert.name, incidents: incidentNumbers, environment: config.environment });
+            } catch (e: any) {
+              errors.push(`Teams send failed for job ${alert.name}: ${e.message}`);
+            }
+          } else {
+            log.debug('Job failure alert suppressed (already sent)', { job: alert.name });
           }
 
-          appendAlert(alert);
+          appendAlert(config.sessionId, alert);
 
           // Update operational memo with alert timestamp
           if (instance.sysId) {
@@ -386,6 +471,6 @@ export async function runMonitoringCycle(config: MonitorConfig): Promise<{
     }
   }
 
-  saveState(state);
+  saveState(config.sessionId, state);
   return { agentAlerts, jobAlerts, agentsTotal, agentsOffline, jobsFailed, errors };
 }

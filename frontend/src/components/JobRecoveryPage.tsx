@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
 import { playClick, playSuccess, playError, playWhoosh } from '@/utils/soundEffects';
+import { useToast, ConfirmModal, type ConfirmOptions } from '@/components/ui/Toast';
+import { parseRecoveryFile } from '@/utils/recoveryPackage';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type RestorePhase = 'pending' | 'restoring' | 'done' | 'failed';
@@ -163,12 +165,13 @@ function RestoreCard({ job }: { job: RecoveryJob }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function JobRecoveryPage() {
   const { connected } = useConnectionStore();
+  const toast = useToast();
 
   // Server-persisted backups (loaded on mount)
   const [serverJobs, setServerJobs] = useState<RecoveryJob[]>([]);
   const [loadingServer, setLoadingServer] = useState(false);
 
-  // Jobs queued for restore (from server list OR from uploaded Excel)
+  // Jobs queued for restore (from server list OR from uploaded file)
   const [restoreQueue, setRestoreQueue] = useState<RecoveryJob[]>([]);
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState<{ done: number; failed: number; total: number } | null>(null);
@@ -177,6 +180,9 @@ export default function JobRecoveryPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Clear-all confirmation
+  const [clearConfirm, setClearConfirm] = useState<ConfirmOptions | null>(null);
 
   // ── Load server backups ──────────────────────────────────────────────────
   const loadServerBackups = useCallback(async () => {
@@ -225,42 +231,48 @@ export default function JobRecoveryPage() {
     setRestoreQueue(prev => prev.filter(r => r.taskName !== taskName));
   };
 
-  // ── Upload Excel and auto-queue matched jobs ─────────────────────────────
+  // ── Upload recovery package and auto-queue jobs ─────────────────────────────
   const handleFileUpload = async (file: File) => {
     if (!file) return;
     setUploading(true);
     setUploadMsg('');
     try {
-      const res = await globalApi.uploadFile(file);
-      const rows: any[] = res.data?.data?.rows || [];
-      if (!rows.length) { setUploadMsg('No rows found in the file.'); setUploading(false); return; }
-
-      // Match uploaded rows to server backups by task name
-      const matched: RecoveryJob[] = [];
-      const unmatched: string[] = [];
-
-      for (const row of rows) {
-        const name = (row.task_name || row['Job Name'] || row['Task Name'] || '').trim();
-        if (!name) continue;
-        const serverMatch = serverJobs.find(sj => sj.taskName.toLowerCase() === name.toLowerCase());
-        if (serverMatch) {
-          if (!restoreQueue.find(r => r.taskName === serverMatch.taskName)) {
-            matched.push({ ...serverMatch, phase: 'pending', message: '' });
-          }
-        } else {
-          unmatched.push(name);
-        }
+      // Parse the recovery package directly from the uploaded file
+      const result = await parseRecoveryFile(file);
+      
+      if (!result.ok) {
+        setUploadMsg(`Parse error: ${result.message}`);
+        setUploading(false);
+        return;
       }
 
-      if (matched.length) {
-        setRestoreQueue(prev => [...prev, ...matched]);
+      const recoveryPackage = result.pkg;
+      
+      if (!recoveryPackage.jobs.length) {
+        setUploadMsg('No jobs found in recovery package.');
+        setUploading(false);
+        return;
+      }
+
+      // Convert recovery package jobs to RecoveryJob format and queue them
+      const toQueue: RecoveryJob[] = recoveryPackage.jobs
+        .filter((job: any) => !restoreQueue.find(r => r.taskName === job.taskName))
+        .map((job: any) => ({
+          taskName: job.taskName,
+          task: job.task,
+          triggers: job.triggers,
+          savedAt: job.savedAt,
+          phase: 'pending' as RestorePhase,
+          message: ''
+        }));
+
+      if (toQueue.length > 0) {
+        setRestoreQueue(prev => [...prev, ...toQueue]);
         setSummary(null);
+        setUploadMsg(`${toQueue.length} job(s) queued from recovery package (v${recoveryPackage.formatVersion})`);
+      } else {
+        setUploadMsg('All jobs from recovery package are already queued.');
       }
-
-      const parts = [];
-      if (matched.length) parts.push(`${matched.length} job(s) queued`);
-      if (unmatched.length) parts.push(`${unmatched.length} not found in server backups`);
-      setUploadMsg(parts.join(' · '));
     } catch (err: any) {
       setUploadMsg(`Upload failed: ${err.message}`);
     }
@@ -380,10 +392,12 @@ export default function JobRecoveryPage() {
               )}
               {serverJobs.length > 0 && (
                 <button
-                  onClick={async () => {
-                    if (!confirm('Clear all server backups for this environment? This cannot be undone.')) return;
-                    try { await globalApi.clearRecovery(); setServerJobs([]); } catch (err: any) { alert('Clear failed: ' + err.message); }
-                  }}
+                  onClick={() => setClearConfirm({
+                    title:        'Clear All Server Backups?',
+                    message:      'This removes all server-side backups for this environment and cannot be undone.',
+                    confirmLabel: 'Clear All',
+                    danger:       true,
+                  })}
                   className="px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all"
                   style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
                   Clear All
@@ -449,7 +463,7 @@ export default function JobRecoveryPage() {
           )}
         </motion.div>
 
-        {/* ── Section 2: Upload Excel Backup ── */}
+        {/* ── Section 2: Upload Recovery Package ── */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}
           className="glass-card p-6 relative group">
           <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"
@@ -464,9 +478,9 @@ export default function JobRecoveryPage() {
               </svg>
             </div>
             <div>
-              <h2 className="text-sm font-bold text-slate-200">Upload Backup File</h2>
+              <h2 className="text-sm font-bold text-slate-200">Upload Recovery Package</h2>
               <p className="text-[9px] font-mono text-slate-600 mt-0.5">
-                Upload the Excel backup downloaded during deletion — jobs will be matched to server backups and queued
+                Upload a .json recovery package — all jobs will be queued for restoration (session-independent)
               </p>
             </div>
           </div>
@@ -481,7 +495,7 @@ export default function JobRecoveryPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".xlsx,.ods,.csv"
+              accept=".json"
               className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }}
             />
@@ -497,9 +511,9 @@ export default function JobRecoveryPage() {
             )}
             <div className="text-center">
               <p className="text-xs font-medium text-slate-400">
-                {uploading ? 'Parsing file…' : 'Click to upload or drag & drop'}
+                {uploading ? 'Parsing recovery package…' : 'Click to upload or drag & drop'}
               </p>
-              <p className="text-[10px] text-slate-600 mt-0.5">.xlsx  ·  .ods  ·  .csv</p>
+              <p className="text-[10px] text-slate-600 mt-0.5">.json recovery package</p>
             </div>
           </label>
 
@@ -659,6 +673,21 @@ export default function JobRecoveryPage() {
           <span className="neon-text-gold">DESIGNED AND ENGINEERED BY ABHAY THAKUR</span>
         </p>
       </main>
+
+      <ConfirmModal
+        options={clearConfirm}
+        onConfirm={async () => {
+          setClearConfirm(null);
+          try {
+            await globalApi.clearRecovery();
+            setServerJobs([]);
+            toast.success('All server backups cleared.');
+          } catch (err: any) {
+            toast.error('Clear failed: ' + err.message);
+          }
+        }}
+        onCancel={() => setClearConfirm(null)}
+      />
     </div>
   );
 }

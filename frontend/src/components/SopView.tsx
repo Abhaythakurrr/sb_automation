@@ -4,6 +4,10 @@ import { motion } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import SopMockup from '@/components/SopMockups';
 import type { Sop, SopSection, CalloutKind } from '@/data/sopContent';
+import { createLogger } from '@/utils/logger';
+import { useToast } from '@/components/ui/Toast';
+
+const log = createLogger('SopView');
 
 const CALLOUT_THEME: Record<CalloutKind, { bg: string; border: string; text: string; label: string; icon: string }> = {
   info:    { bg: 'rgba(59,130,246,0.08)',  border: 'rgba(59,130,246,0.3)',  text: '#93c5fd', label: 'NOTE',      icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
@@ -128,6 +132,7 @@ function Section({ section, accent }: { section: SopSection; accent: string }) {
 
 export default function SopView({ sop }: { sop: Sop }) {
   const [downloading, setDownloading] = useState(false);
+  const toast = useToast();
   const accent = sop.accent;
 
   const handleDownload = async () => {
@@ -136,9 +141,9 @@ export default function SopView({ sop }: { sop: Sop }) {
       const { generateSopDocx } = await import('@/utils/sopDocx');
       await generateSopDocx(sop);
     } catch (e: any) {
-      console.error('DOCX export failed', e);
+      log.error('DOCX export failed', e);
       const msg = e?.message || e?.toString?.() || 'Unknown error';
-      alert('Could not generate the DOCX:\n\n' + msg + '\n\n(Open the browser console for the full stack trace.)');
+      toast.error('Could not generate the DOCX: ' + msg);
     } finally {
       setDownloading(false);
     }

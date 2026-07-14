@@ -1,4 +1,4 @@
-/** Job Deletion Route — dependency check, trigger cleanup, and safe task deletion */
+/** Job Deletion — safe dependency-aware task removal: inspects trigger links, workflow membership, and active instances before deleting. */
 import { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/session';
 import axios from 'axios';

@@ -1,9 +1,13 @@
 /**
- * Stonebranch Payload Mapper
- * Builds API-compliant task and trigger payloads from Excel rows.
- * Field names and values match exactly what UAC stores — verified against prod jobs.
+ * Stonebranch Payload Mapper.
+ * Builds API-compliant task and trigger payloads from parsed spreadsheet rows.
+ * Every field name and value is validated against UAC's OpenAPI schema so that
+ * production job creation does not silently discard or misname a field.
  */
 import { buildScheduleFields } from './triggerSchedule';
+import { createModuleLogger } from '../config/logger';
+
+const log = createModuleLogger('payloadMapper');
 
 // ── Allowed fields (OpenAPI schema) ──────────────────────────────────────────
 
@@ -389,16 +393,31 @@ export function buildTriggerPayload(
   }
 
   // ── First run date ────────────────────────────────────────────────────────
-  if (row.first_run_date) {
-    base.intervalStartingDate = row.first_run_date;
+  // IMPORTANT: Only set skipBeforeDate when first_run_date is provided AND valid
+  // UAC validates skipBeforeDate against the schedule frequency, so if no first
+  // run date is specified, we should not set any skip-related fields at all.
+  // 
+  // Also filter out invalid date strings that might be in the Excel:
+  // - "Scheduled Frequency = Daily" (copy/paste error)
+  // - Other non-date text strings
+  const firstRunDate = row.first_run_date?.trim() || '';
+  const isValidDate = firstRunDate && 
+    !firstRunDate.toLowerCase().includes('scheduled') &&
+    !firstRunDate.toLowerCase().includes('frequency') &&
+    !firstRunDate.toLowerCase().includes('daily') &&
+    !firstRunDate.toLowerCase().includes('weekly') &&
+    !firstRunDate.toLowerCase().includes('monthly') &&
+    firstRunDate.length > 0;
+  
+  if (isValidDate) {
+    base.intervalStartingDate = firstRunDate;
     // skipBeforeDate + skipRestriction = "Before" ensures trigger doesn't fire
     // before the first run date — matches how UAC creates jobs manually
     base.skipRestriction = 'Before';
-    base.skipBeforeDate  = row.first_run_date;
-  } else {
-    base.skipCondition   = 'None';
-    base.skipRestriction = 'None';
+    base.skipBeforeDate  = firstRunDate;
   }
+  // When no first run date: don't set any skip fields — trigger can fire immediately
+  // based on its schedule (no need to set skipCondition/skipRestriction to 'None')
 
   // ── Description = job description ─────────────────────────────────────────
   if (row.description) {
@@ -462,9 +481,9 @@ export function buildTriggerPayload(
         base.time = fallbackTime;
       }
     } else {
-      // No time available at all — switch to Interval-less style to avoid API error
-      // This means the trigger will need manual time configuration in UAC
-      console.warn(`[TRIGGER] ${base.name}: timeStyle=Absolute but no time found — removing timeStyle`);
+      // No time available at all — drop timeStyle to avoid a UAC validation
+      // error. The trigger will then need its time configured manually in UAC.
+      log.warn('Absolute trigger has no time — removing timeStyle', { trigger: base.name });
       delete base.timeStyle;
     }
   }
@@ -472,7 +491,7 @@ export function buildTriggerPayload(
   // ── SAFETY: Interval triggers must have timeInterval ────────────────────────
   // If somehow we have timeStyle=Interval but no timeInterval, set a sensible default
   if (base.timeStyle === 'Interval' && !base.timeInterval) {
-    console.warn(`[TRIGGER] ${base.name}: timeStyle=Interval but no timeInterval — defaulting to 60 Minutes`);
+    log.warn('Interval trigger has no timeInterval — defaulting to 60 Minutes', { trigger: base.name });
     base.timeInterval = 60;
     base.timeIntervalUnits = 'Minutes';
   }
@@ -505,7 +524,7 @@ function filterPayload(
   });
 
   if (removed.length > 0) {
-    console.warn(`[PAYLOAD] ${label} removed: ${removed.join(', ')}`);
+    log.debug(`${label} payload: dropped read-only/unknown fields`, { removed });
   }
   return clean;
 }

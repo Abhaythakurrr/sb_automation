@@ -9,8 +9,10 @@ import { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/session';
 import axios from 'axios';
 import { auditLog } from '../middleware/auditLogger';
+import { createModuleLogger } from '../config/logger';
 
 const router = Router();
+const log = createModuleLogger('adhoc');
 
 function sbClient(req: AuthRequest) {
   return axios.create({
@@ -60,11 +62,11 @@ router.get('/search', async (req: AuthRequest, res: Response, next: NextFunction
         const r = await client.post('/resources/task/list', { name: wild });
         const arr = asArray(r.data, 'task', 'tasks');
         if (arr.length) return arr;
-      } catch (e: any) { console.warn('[adhoc] task/list failed:', e.response?.status, e.response?.data || e.message); }
+      } catch (e: any) { log.warn('task/list lookup failed', { status: e.response?.status, error: e.response?.data || e.message }); }
       try {
         const r = await client.get('/resources/task/listadv', { params: { taskname: wild } });
         return asArray(r.data, 'task', 'tasks');
-      } catch (e: any) { console.warn('[adhoc] task/listadv failed:', e.response?.status, e.response?.data || e.message); return []; }
+      } catch (e: any) { log.warn('task/listadv lookup failed', { status: e.response?.status, error: e.response?.data || e.message }); return []; }
     };
 
     // Triggers — POST /resources/trigger/list (name supports wildcards).
@@ -73,11 +75,11 @@ router.get('/search', async (req: AuthRequest, res: Response, next: NextFunction
         const r = await client.post('/resources/trigger/list', { name: wild });
         const arr = asArray(r.data, 'trigger', 'triggers');
         if (arr.length) return arr;
-      } catch (e: any) { console.warn('[adhoc] trigger/list failed:', e.response?.status, e.response?.data || e.message); }
+      } catch (e: any) { log.warn('trigger/list lookup failed', { status: e.response?.status, error: e.response?.data || e.message }); }
       try {
         const r = await client.get('/resources/trigger/listadv', { params: { triggername: wild } });
         return asArray(r.data, 'trigger', 'triggers');
-      } catch (e: any) { console.warn('[adhoc] trigger/listadv failed:', e.response?.status, e.response?.data || e.message); return []; }
+      } catch (e: any) { log.warn('trigger/listadv lookup failed', { status: e.response?.status, error: e.response?.data || e.message }); return []; }
     };
 
     const [taskList, trigList] = await Promise.all([fetchTasks(), fetchTriggers()]);

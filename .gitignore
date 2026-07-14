@@ -14,16 +14,16 @@ build/
 .next/
 **/.next/
 
-# Environment files — NEVER commit secrets or env templates
+
 .env
 .env.*
-.env.example
-.env.production.example
 .env.local
 .env.development
 .env.production
 **/.env
 **/.env.*
+!.env.example
+!**/.env.example
 
 # Uploads — user files, not source code
 uploads/
@@ -94,5 +94,4 @@ analytics_cache.json
 themes/
 **/themes/
 
-# Self-Service Telegram bot — PRIVATE feature, do not push
 SELF_SERVICE/

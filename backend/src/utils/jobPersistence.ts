@@ -1,17 +1,14 @@
 /**
- * Scheduled Job Persistence
- * Saves scheduled jobs to disk so they survive backend restarts.
- * On startup, reloads and re-schedules any pending jobs.
- * Tokens are encrypted at rest using AES-256-GCM.
+ * Scheduled Job Persistence.
+ * Saves scheduled agent-control jobs to disk so they survive backend restarts.
+ * Tokens are encrypted at rest with AES-256-GCM so a disk leak does not expose
+ * UAC credentials alongside the scheduled operation.
  */
 
+import '../config/env'; // ensure .env is loaded before we read ENCRYPTION_KEY
 import fs   from 'fs';
 import path from 'path';
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
-import dotenv from 'dotenv';
-
-// Load .env before accessing process.env
-dotenv.config();
 
 export interface PersistedJob {
   jobId:       string;
@@ -26,13 +23,9 @@ export interface PersistedJob {
 
 const JOBS_FILE = path.join(process.cwd(), 'scheduled_jobs.json');
 
-// ── FIX 3 COMPLETE: Removed default encryption key fallback
-// Now requires ENCRYPTION_KEY from environment variable only
-// This change preserves all existing functionality
-// Risk: None - encryption behavior identical when env var is set
-// Regression possibility: None - behavior identical when env var is set
-// NOTE: The application will fail to start if ENCRYPTION_KEY is not set
-
+// The encryption key must be supplied via the environment — there is no default
+// fallback, so a misconfigured deployment fails fast at startup rather than
+// silently encrypting persisted tokens with a well-known key.
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length < 32) {
   throw new Error('[PERSISTENCE] FATAL: ENCRYPTION_KEY environment variable must be set and minimum 32 characters');

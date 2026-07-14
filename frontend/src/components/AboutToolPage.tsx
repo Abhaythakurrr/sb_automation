@@ -3,6 +3,10 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import { ABOUT_TOOL_DOC, type AboutSection } from '@/data/aboutToolContent';
+import { createLogger } from '@/utils/logger';
+import { useToast } from '@/components/ui/Toast';
+
+const log = createLogger('AboutToolPage');
 
 function FlowDiagram({ diagram }: { diagram: NonNullable<AboutSection['diagram']> }) {
   if (!diagram.nodes || !diagram.edges) return null;
@@ -177,6 +181,7 @@ function Section({ section }: { section: AboutSection }) {
 
 export default function AboutToolPage() {
   const [downloading, setDownloading] = useState(false);
+  const toast = useToast();
 
   const handleDownload = async () => {
     setDownloading(true);
@@ -184,9 +189,9 @@ export default function AboutToolPage() {
       const { generateAboutToolDocx } = await import('@/utils/aboutToolDocx');
       await generateAboutToolDocx(ABOUT_TOOL_DOC);
     } catch (e: any) {
-      console.error('DOCX export failed', e);
+      log.error('DOCX export failed', e);
       const msg = e?.message || e?.toString?.() || 'Unknown error';
-      alert('Could not generate the DOCX:\n\n' + msg + '\n\n(Open console for full error.)');
+      toast.error('Could not generate the DOCX: ' + msg);
     } finally {
       setDownloading(false);
     }

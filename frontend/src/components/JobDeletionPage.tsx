@@ -4,7 +4,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
 import { playClick, playDelete, playWarning, playSuccess, playError, playWhoosh } from '@/utils/soundEffects';
+import { createLogger } from '@/utils/logger';
+import { useToast, ConfirmModal, type ConfirmOptions } from '@/components/ui/Toast';
+import { downloadRecoveryPackage, parseRecoveryFile } from '@/utils/recoveryPackage';
 import * as XLSX from 'xlsx';
+
+const log = createLogger('JobDeletionPage');
 
 type StepStatus = 'checking' | 'ok' | 'warn' | 'error';
 interface Step { label: string; status: StepStatus; detail?: string; ts: string; }
@@ -196,6 +201,7 @@ function JobCard({ job, onForceFinish, onSkip }: { job: JobState; onForceFinish:
 
 export default function JobDeletionPage() {
   const { connected } = useConnectionStore();
+  const toast = useToast();
   const [input, setInput] = useState('');
   const [jobs, setJobs] = useState<JobState[]>([]);
   const [running, setRunning] = useState(false);
@@ -206,6 +212,9 @@ export default function JobDeletionPage() {
   const [backupDone, setBackupDone] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmText, setConfirmText] = useState('');
+  // For the clear-recovery confirmation modal
+  const [clearConfirm, setClearConfirm] = useState<ConfirmOptions | null>(null);
+  const [clearConfirmAction, setClearConfirmAction] = useState<(() => void) | null>(null);
 
   const updateJob = useCallback((name: string, patch: Partial<JobState>) => {
     setJobs(prev => prev.map(j => j.name === name ? { ...j, ...patch } : j));
@@ -292,15 +301,24 @@ export default function JobDeletionPage() {
       try {
         const names = jobs.map(j => j.name);
         const res = await globalApi.backupJobs(names);
-        const backups = res.data?.data?.backups || [];
+        const backups      = res.data?.data?.backups      || [];
         const templateRows = res.data?.data?.templateRows || [];
         setBackupData(backups);
         setBackupDone(true);
 
-        // Download backup as job creation template format (same as upload template)
-        const wb = XLSX.utils.book_new();
+        const baseUrl = (globalApi as any).http?.defaults?.baseURL ?? '';
 
-        // Sheet 1: Job creation template format — can be uploaded to recreate jobs
+        // ── Primary download: self-contained JSON recovery package ────────────
+        // This file embeds the full UAC task + trigger objects so it can be
+        // uploaded to restore jobs completely independently of server state,
+        // session, or browser memory.  It works after logout, server restart,
+        // browser refresh, or session expiration.
+        downloadRecoveryPackage(backups, baseUrl);
+
+        // ── Secondary download: job-creation Excel template ───────────────────
+        // Kept for teams that want to re-create jobs through the Pipeline
+        // instead of using the one-click restore.
+        const wb  = XLSX.utils.book_new();
         const ws1 = XLSX.utils.json_to_sheet(templateRows);
         ws1['!cols'] = [
           { wch: 40 }, { wch: 14 }, { wch: 35 }, { wch: 100 }, { wch: 18 },
@@ -310,21 +328,19 @@ export default function JobDeletionPage() {
         ];
         XLSX.utils.book_append_sheet(wb, ws1, 'Job_Creation_Template');
 
-        // Sheet 2: Raw backup data (for manual reference)
         const rawRows = backups.map((b: any) => ({
           'Job Name': b.taskName,
-          'Type': b.task?.type || '',
-          'Agent': b.task?.agentCluster || b.task?.agent || '',
-          'Command': b.task?.command || '',
+          'Type':     b.task?.type                              || '',
+          'Agent':    b.task?.agentCluster || b.task?.agent     || '',
+          'Command':  b.task?.command                           || '',
           'Triggers': b.triggers?.map((t: any) => t.name).join(', ') || '',
-          'Status': b.error ? 'FETCH ERROR' : 'BACKED UP',
+          'Status':   b.error ? 'FETCH ERROR' : 'BACKED UP',
         }));
         const ws2 = XLSX.utils.json_to_sheet(rawRows);
         XLSX.utils.book_append_sheet(wb, ws2, 'Backup_Summary');
-
-        XLSX.writeFile(wb, `backup_${new Date().toISOString().slice(0, 10)}_${names.length}jobs.xlsx`);
+        XLSX.writeFile(wb, `template_${new Date().toISOString().slice(0, 10)}_${names.length}jobs.xlsx`);
       } catch (e: any) {
-        console.warn('Backup failed:', e.message);
+        log.warn('Backup failed', e.message);
       }
       setBackingUp(false);
     }
@@ -374,7 +390,7 @@ export default function JobDeletionPage() {
           style={{ backgroundImage: 'linear-gradient(rgba(239,68,68,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(239,68,68,0.4) 1px, transparent 1px)', backgroundSize: '72px 72px' }} />
       </div>
 
-      <GlobalHeader title="Job Deletion" subtitle="SAFE TRIGGER + TASK REMOVAL" sopHref="/SOP_Job_deletion" />
+      <GlobalHeader title="Job Deletion" subtitle="SAFE TRIGGER + TASK REMOVAL" sopHref="/sop-job-deletion" />
 
       <main className="max-w-4xl mx-auto px-6 pb-24 space-y-6 relative z-10">
 
@@ -529,9 +545,23 @@ export default function JobDeletionPage() {
               <div className="ml-auto flex items-center gap-2">
                 {/* Clear all recovery (manual cleanup) */}
                 <button
-                  onClick={async () => {
-                    if (!confirm('Clear all recoverable jobs for this environment? This cannot be undone.')) return;
-                    try { await globalApi.clearRecovery(); setBackupData([]); } catch (err: any) { alert('Clear failed: ' + err.message); }
+                  onClick={() => {
+                    setClearConfirm({
+                      title:        'Clear All Recoverable Jobs?',
+                      message:      'This removes all server-side backups for this environment. It cannot be undone.',
+                      confirmLabel: 'Clear All',
+                      danger:       true,
+                    });
+                    setClearConfirmAction(() => async () => {
+                      setClearConfirm(null);
+                      try {
+                        await globalApi.clearRecovery();
+                        setBackupData([]);
+                        toast.success('All recovery backups cleared.');
+                      } catch (err: any) {
+                        toast.error('Clear failed: ' + err.message);
+                      }
+                    });
                   }}
                   className="px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all"
                   style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}>
@@ -544,28 +574,49 @@ export default function JobDeletionPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 11l3-3m0 0l3 3m-3-3v12"/>
                   </svg>
                   Upload to Restore
-                  <input type="file" accept=".xlsx,.ods,.csv" className="hidden"
+                  <input type="file" accept=".json" className="hidden"
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
-                      try {
-                        // Parse Excel and send to job creation pipeline
-                        const formData = new FormData();
-                        formData.append('file', file);
-                        const res = await globalApi.uploadFile(file);
-                        const parsed = res.data?.data?.rows || [];
-                        // Restore each job via the recover endpoint
-                        for (const row of parsed) {
-                          const match = backupData.find((b: any) => b.taskName === row.task_name);
-                          if (match?.task) {
-                            await globalApi.recoverJob(match.task, match.triggers);
-                          }
-                        }
-                        alert(`Restored ${parsed.length} job(s) from uploaded file.`);
-                      } catch (err: any) {
-                        alert('Restore failed: ' + err.message);
-                      }
                       e.target.value = '';
+
+                      const result = await parseRecoveryFile(file);
+                      if (!result.ok) {
+                        toast.error(result.message);
+                        return;
+                      }
+
+                      if (result.warnings.length > 0) {
+                        result.warnings.forEach(w => toast.warn(w));
+                      }
+
+                      const validJobs = result.pkg.jobs.filter(j => j.taskName && j.task);
+                      if (!validJobs.length) {
+                        toast.error('No valid jobs found in the recovery package.');
+                        return;
+                      }
+
+                      let restored = 0;
+                      let failed   = 0;
+                      for (const job of validJobs) {
+                        try {
+                          await globalApi.recoverJob(job.task, job.triggers ?? []);
+                          // Drop from server recovery store if it exists there too.
+                          try { await globalApi.removeRecovery(job.taskName); } catch { /* best effort */ }
+                          restored++;
+                        } catch (err: any) {
+                          log.error(`Restore failed for ${job.taskName}`, err);
+                          failed++;
+                        }
+                      }
+
+                      if (restored > 0) {
+                        toast.success(`Restored ${restored} job(s)${failed > 0 ? ` · ${failed} failed` : ''} from recovery package.`);
+                        // Refresh the in-page recovery list to reflect what was just restored.
+                        loadRecovery();
+                      } else {
+                        toast.error(`All ${failed} restore attempt(s) failed. Check the application log.`);
+                      }
                     }}
                   />
                 </label>
@@ -589,8 +640,9 @@ export default function JobDeletionPage() {
                       try {
                         await globalApi.recoverJob(b.task, b.triggers);
                         setBackupData(prev => prev.filter((x: any) => x.taskName !== b.taskName));
+                        toast.success(`Recovered: ${b.taskName}`);
                       } catch (err: any) {
-                        alert('Recovery failed: ' + err.message);
+                        toast.error('Recovery failed: ' + err.message);
                       }
                     }}
                     className="px-2.5 py-1 rounded text-[9px] font-bold shrink-0 transition-all hover:scale-105"
@@ -604,7 +656,7 @@ export default function JobDeletionPage() {
                         await globalApi.removeRecovery(b.taskName);
                         setBackupData(prev => prev.filter((x: any) => x.taskName !== b.taskName));
                       } catch (err: any) {
-                        alert('Remove failed: ' + err.message);
+                        toast.error('Remove failed: ' + err.message);
                       }
                     }}
                     className="px-2 py-1 rounded text-[9px] font-bold shrink-0 transition-all hover:scale-105"
@@ -629,6 +681,13 @@ export default function JobDeletionPage() {
         <footer className="section-line mt-10" />
         <p className="text-center text-[9px] font-mono py-4"><span className="neon-text-gold">DESIGNED AND ENGINEERED BY ABHAY THAKUR</span></p>
       </main>
+
+      {/* ══ CLEAR RECOVERY CONFIRMATION MODAL ══ */}
+      <ConfirmModal
+        options={clearConfirm}
+        onConfirm={() => { if (clearConfirmAction) clearConfirmAction(); }}
+        onCancel={() => { setClearConfirm(null); setClearConfirmAction(null); }}
+      />
 
       {/* ══ DELETION CONFIRMATION MODAL ══ */}
       <AnimatePresence>

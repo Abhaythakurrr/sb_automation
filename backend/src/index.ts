@@ -1,7 +1,6 @@
-// CRITICAL: Load .env FIRST before any other imports
-// This ensures environment variables are available when modules initialize
-import dotenv from 'dotenv';
-dotenv.config(); // Will load from backend/.env
+// Load environment before anything else so configuration is available while
+// the modules below initialise (see config/env for the load order).
+import './config/env';
 
 import express from 'express';
 import cors from 'cors';
@@ -21,18 +20,19 @@ import { scheduleAIRouter } from './routes/scheduleAI';
 import { errorHandler } from './middleware/errorHandler';
 import { sessionMiddleware } from './middleware/session';
 import { requestLogger } from './middleware/requestLogger';
+import { createModuleLogger, logLifecycle, getLoggingConfig } from './config/logger';
 
-// Validate required environment variables at startup
-const requiredEnvVars = ['BACKEND_PORT'];
-const missingVars = requiredEnvVars.filter(v => !process.env[v]);
-if (missingVars.length > 0) {
-  console.warn(`[CONFIG] Missing optional env vars: ${missingVars.join(', ')} — using defaults`);
-}
-// Log startup config (never log tokens)
-console.log(`[CONFIG] Environment: ${process.env.NODE_ENV || 'development'}`);
-console.log(`[CONFIG] Port: ${process.env.BACKEND_PORT || 3001}`);
-console.log(`[CONFIG] Base URL configured: ${!!process.env.BASE_URL}`);
-console.log(`[CONFIG] Teams webhook configured: ${!!process.env.TEAMS_WEBHOOK_URL}`);
+const log = createModuleLogger('server');
+
+// Surface the effective configuration at boot (never the secret values
+// themselves — only whether they are present).
+logLifecycle('Backend starting', {
+  environment: process.env.NODE_ENV || 'development',
+  port: process.env.BACKEND_PORT || 3001,
+  baseUrlConfigured: !!process.env.BASE_URL,
+  teamsWebhookConfigured: !!process.env.TEAMS_WEBHOOK_URL,
+  logging: getLoggingConfig(),
+});
 
 const app = express();
 const PORT = process.env.BACKEND_PORT || 3001;
@@ -57,11 +57,14 @@ const allowedOrigins = (process.env.CORS_ORIGINS ||
   'http://localhost:3000,http://127.0.0.1:3000')
   .split(',').map(o => o.trim()).filter(Boolean);
 
+logLifecycle('CORS allow-list configured', { allowedOrigins });
+
 app.use(cors({
   origin: (origin, cb) => {
     // Allow same-origin / server-to-server / curl (no Origin header).
     if (!origin) return cb(null, true);
     if (allowedOrigins.includes(origin)) return cb(null, true);
+    log.warn('Blocked request from disallowed CORS origin', { origin, component: 'security' });
     return cb(new Error('Not allowed by CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -100,7 +103,8 @@ const uploadLimiter = rateLimit({
 });
 app.use('/api/upload', uploadLimiter);
 
-// Strict rate limit for auth endpoint — prevent brute force
+// Strict rate limit for the connect endpoint — throttles brute-force attempts
+// against token validation (10 attempts per 15 minutes per IP).
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
@@ -114,7 +118,7 @@ app.use('/api/stonebranch/connect', authLimiter);
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
-  console.log(`Created uploads directory: ${uploadDir}`);
+  logLifecycle('Created uploads directory', { uploadDir });
 }
 
 // Middleware
@@ -136,11 +140,6 @@ app.use('/api/search',      sessionMiddleware, searchRouter);
 app.use('/api/adhoc',       sessionMiddleware, adhocRouter);
 app.use('/api/schedule-ai', scheduleAIRouter); // Public - no session required
 
-// ── FIX 6 COMPLETE: Added stricter rate limiting for authentication endpoint
-// Prevents brute force attacks on the /api/stonebranch/connect endpoint
-// Uses a separate, stricter rate limiter (10 attempts per 15 minutes)
-app.use('/api/stonebranch/connect', authLimiter);
-
 // Health check
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -149,9 +148,22 @@ app.get('/health', (_req, res) => {
 // Error handling
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`Backend server running on port ${PORT}`);
-  // Restore any scheduled jobs that were persisted before restart
+const server = app.listen(PORT, () => {
+  logLifecycle(`Backend server listening on port ${PORT}`, { port: PORT });
+  // Restore any scheduled agent jobs that were persisted before a restart.
   restoreScheduledJobs();
+  // Monitoring is intentionally not auto-restored: it needs a live user token.
   restoreMonitoring();
 });
+
+// ── Graceful shutdown ───────────────────────────────────────────────────────
+// PM2 and container orchestrators signal termination with SIGTERM/SIGINT.
+// Record the shutdown, stop accepting new connections, then exit.
+function shutdown(signal: string): void {
+  logLifecycle(`Received ${signal} — shutting down`, { signal });
+  server.close(() => process.exit(0));
+  // Safety net if connections do not drain promptly.
+  setTimeout(() => process.exit(0), 5000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
