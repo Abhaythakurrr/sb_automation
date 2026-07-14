@@ -216,7 +216,15 @@ function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: (id: string) =
 // ── Container (portal-style fixed overlay) ────────────────────────────────────
 
 function ToastContainer({ toasts, dismiss }: { toasts: ToastItem[]; dismiss: (id: string) => void }) {
-  if (typeof window === 'undefined') return null;
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Don't render on server to avoid hydration mismatch
+  if (!mounted) return null;
+
   return (
     <div
       className="fixed top-4 right-4 z-[200] flex flex-col gap-2.5 pointer-events-none"
