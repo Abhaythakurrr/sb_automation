@@ -342,6 +342,7 @@ function parseNaturalInterval(text: string): Partial<TriggerScheduleFields> | nu
   // Optional day pattern
   if (/\bweekdays?\b|\bbusiness\s*days?\b|\bmon\s*-\s*fri\b/.test(lower)) {
     result.mon = true; result.tue = true; result.wed = true; result.thu = true; result.fri = true;
+    delete result.simpleDateType;
   } else {
     const found: string[] = [];
     for (const [name, short] of Object.entries(DAY_MAP)) {
@@ -349,7 +350,10 @@ function parseNaturalInterval(text: string): Partial<TriggerScheduleFields> | nu
         found.push(short);
       }
     }
-    if (found.length > 0) found.forEach(d => { (result as any)[d] = true; });
+    if (found.length > 0) {
+      found.forEach(d => { (result as any)[d] = true; });
+      delete result.simpleDateType;
+    }
   }
 
   return result;
@@ -437,12 +441,14 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
     if (freqType === 'WEEKLY') {
       // Extract days: byday=Mon,Wed,Fri
       const byDay = frequency.match(/byday=([^;]+)/i)?.[1] || '';
-      const result: Partial<TriggerScheduleFields> = { dayStyle: 'Simple', simpleDateType: 'Daily' };
       const days = byDay.split(',').map(d => DAY_MAP[d.trim().toLowerCase()]).filter(Boolean);
       if (days.length > 0) {
+        const result: Partial<TriggerScheduleFields> = { dayStyle: 'Simple' };
         days.forEach(d => { (result as any)[d] = true; });
+        return result;
       }
-      return result;
+      // No specific days — fall back to Daily
+      return { dayStyle: 'Simple', simpleDateType: 'Daily' };
     }
 
     // FREQ=INTERVAL;interval=15 — interval jobs with optional start/end and day pattern
@@ -492,14 +498,17 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
         } else if (byDay === 'weekdays' || byDay === 'mon-fri' || byDay === 'mon,tue,wed,thu,fri') {
           result.mon = true; result.tue = true; result.wed = true;
           result.thu = true; result.fri = true;
+          delete result.simpleDateType;
         } else if (byDay === 'business days' || byDay === 'businessdays') {
           result.mon = true; result.tue = true; result.wed = true;
           result.thu = true; result.fri = true;
+          delete result.simpleDateType;
         } else {
           // Individual days: "Mon,Wed,Fri" or single day "Monday"
           const days = byDay.split(',').map(d => DAY_MAP[d.trim()]).filter(Boolean);
           if (days.length > 0) {
             days.forEach(d => { (result as any)[d] = true; });
+            delete result.simpleDateType;
           }
         }
       }
@@ -536,7 +545,7 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
   // "Weekdays" / "Business Days" / "Mon-Fri"
   if (lower === 'weekdays' || lower === 'business days' || lower === 'businessdays' || lower === 'mon-fri') {
     return {
-      dayStyle: 'Simple', simpleDateType: 'Daily',
+      dayStyle: 'Simple',
       mon: true, tue: true, wed: true, thu: true, fri: true,
     };
   }
@@ -549,7 +558,7 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
   // Specific days: "Monday", "Mon,Wed,Fri", "Monday,Friday"
   const parts = lower.split(/[,\s]+/).map(p => DAY_MAP[p]).filter(Boolean);
   if (parts.length > 0) {
-    const result: Partial<TriggerScheduleFields> = { dayStyle: 'Simple', simpleDateType: 'Daily' };
+    const result: Partial<TriggerScheduleFields> = { dayStyle: 'Simple' };
     parts.forEach(d => { (result as any)[d] = true; });
     return result;
   }
@@ -619,11 +628,11 @@ export function buildScheduleFields(
     }
     if (lower.includes('weekday') || lower.includes('business day')) {
       result.dayStyle = 'Simple';
-      result.simpleDateType = 'Daily';
+      delete result.simpleDateType;
       result.mon = true; result.tue = true; result.wed = true; result.thu = true; result.fri = true;
     } else if (foundDays.length > 0 && !result.dateNouns) {
       result.dayStyle = 'Simple';
-      result.simpleDateType = 'Daily';
+      delete result.simpleDateType;
       foundDays.forEach(d => { (result as any)[d] = true; });
     }
   }

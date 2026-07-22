@@ -570,12 +570,19 @@ body {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   FOCUS RING
+   FOCUS RING & CURSOR
    ══════════════════════════════════════════════════════════════════════════════ */
 *:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px rgba(245,158,11,0.3);
   border-radius: 4px;
+}
+
+/* Visible text cursor on dark backgrounds */
+input,
+textarea,
+[contenteditable] {
+  caret-color: #fbbf24;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
