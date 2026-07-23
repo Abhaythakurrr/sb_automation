@@ -390,6 +390,17 @@ export function buildTriggerPayload(
 
     // Remove conflicting defaults
     if (base.dayStyle === 'Complex') delete base.simpleDateType;
+
+    // ── CRITICAL: If schedule returned specific day flags (Weekdays / Mon,Wed,Fri / etc.)
+    // but no simpleDateType, clear the 'Daily' default from base.
+    // The day flags (mon/tue/wed/thu/fri/sat/sun) already tell UAC which days to run.
+    // Leaving simpleDateType='Daily' alongside them causes UAC to ignore the day flags
+    // and run every day instead.
+    const hasSpecificDayFlags = schedFields.mon || schedFields.tue || schedFields.wed ||
+      schedFields.thu || schedFields.fri || schedFields.sat || schedFields.sun || schedFields.businessDays;
+    if (hasSpecificDayFlags && !schedFields.simpleDateType) {
+      delete base.simpleDateType;
+    }
   }
 
   // ── First run date ────────────────────────────────────────────────────────
