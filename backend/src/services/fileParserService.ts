@@ -120,14 +120,47 @@ export class FileParserService {
   private parseCSV(content: string): Record<string, any>[] {
     const lines = content.trim().split('\n');
     if (lines.length < 2) return [];
-    const headers = lines[0].split(',').map(h => h.trim());
+    const headers = this.parseCSVLine(lines[0]).map(h => h.trim());
+
     return lines.slice(1).map(line => {
-      const values = line.split(',').map(v => v.trim());
+      const values = this.parseCSVLine(line).map(v => v.trim());
       return headers.reduce((obj, header, index) => {
         obj[header] = values[index] ?? '';
         return obj;
       }, {} as Record<string, any>);
     });
+  }
+
+  private parseCSVLine(line: string): string[] {
+    const fields: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (i + 1 < line.length && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          current += ch;
+        }
+      } else {
+        if (ch === '"') {
+          inQuotes = true;
+        } else if (ch === ',') {
+          fields.push(current);
+          current = '';
+        } else {
+          current += ch;
+        }
+      }
+    }
+    fields.push(current);
+    return fields;
   }
 
   private parseSpreadsheet(filePath: string): Record<string, any>[] {

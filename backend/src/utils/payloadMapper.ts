@@ -5,6 +5,7 @@
  * production job creation does not silently discard or misname a field.
  */
 import { buildScheduleFields } from './triggerSchedule';
+import { verifySchedule, correctScheduleFields } from './scheduleVerifier';
 import { createModuleLogger } from '../config/logger';
 
 const log = createModuleLogger('payloadMapper');
@@ -347,13 +348,33 @@ export function buildTriggerPayload(
 
   // ── Schedule: use the triggerSchedule module ────────────────────────────────
   if (!rawRefTrigger) {
-    const schedFields = buildScheduleFields(
+    let schedFields = buildScheduleFields(
       row.schedule_string?.trim() || '',
       row.frequency_type?.trim() || '',
       row.start_time?.trim() || '',
       row.timezone?.trim() || '',
       row.end_time?.trim() || '',
     );
+
+    // ── ML Verifier: cross-validate against job description ─────────────────────
+    // Extract schedule intent from the description text and correct any
+    // mismatches in the parser output (e.g. Weekdays → business days flags).
+    if (row.description) {
+      const verification = verifySchedule(
+        row.description,
+        row.frequency_type?.trim() || '',
+        schedFields,
+      );
+      if (!verification.match && verification.corrections?.length) {
+        log.info('Schedule verifier corrected parser output', {
+          trigger: base.name,
+          corrections: verification.corrections,
+          description: row.description.slice(0, 80),
+          frequency: row.frequency_type?.trim(),
+        });
+        schedFields = correctScheduleFields(schedFields, verification);
+      }
+    }
 
     // Apply schedule fields to trigger payload
     if (schedFields.timeStyle)         base.timeStyle = schedFields.timeStyle;
@@ -396,10 +417,12 @@ export function buildTriggerPayload(
     // The day flags (mon/tue/wed/thu/fri/sat/sun) already tell UAC which days to run.
     // Leaving simpleDateType='Daily' alongside them causes UAC to ignore the day flags
     // and run every day instead.
+    // If schedFields set specific day flags but no simpleDateType, set it to 'Specific Days'.
+    // This tells UAC the trigger uses individual day flags rather than Daily/Business Days.
     const hasSpecificDayFlags = schedFields.mon || schedFields.tue || schedFields.wed ||
       schedFields.thu || schedFields.fri || schedFields.sat || schedFields.sun || schedFields.businessDays;
     if (hasSpecificDayFlags && !schedFields.simpleDateType) {
-      delete base.simpleDateType;
+      base.simpleDateType = 'Specific Days';
     }
   }
 

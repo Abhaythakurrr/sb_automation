@@ -149,10 +149,10 @@ const SCHEDULE_PATTERNS: SchedulePattern[] = [
     confidence: 0.93,
     recommendation: {
       starttime: '00:00',
-      frequency: 'FREQ=WEEKLY;byday=Mon,Tue,Wed,Thu,Fri',
+      frequency: 'Weekdays',
       timezone: 'America/New_York',
     },
-    humanReadable: 'Weekdays (Mon-Fri)',
+    humanReadable: 'Business Days (Mon-Fri)',
     category: 'weekly',
   },
   {

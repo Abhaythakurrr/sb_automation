@@ -106,6 +106,9 @@ function toHHMM(raw: string): string {
   let m: number;
   if (/^\d{1,2}:\d{2}$/.test(s)) {
     [h, m] = s.split(':').map(Number);
+  } else if (/^\d{1,2}:\d{2}:\d{2}$/.test(s)) {
+    // HH:MM:SS with optional seconds — discard seconds
+    [h, m] = s.split(':').map(Number);
   } else if (/^\d{4}$/.test(s)) {
     h = parseInt(s.slice(0, 2), 10);
     m = parseInt(s.slice(2, 4), 10);
@@ -275,7 +278,7 @@ function parseTimeInput(starttime: string): Partial<TriggerScheduleFields> {
   // Bare time value (no AT prefix): "0730", "07:30", "07.30", "7:30 AM", "7 pm", "21:00 EST"
   if (!result.time && !result.timeStyle) {
     // Try to extract time from start of string, ignoring timezone suffix
-    const bareTimeMatch = starttime.match(/^(\d{1,2}(?:[:.\u00b7]\d{2})?(?:\s*[ap]\.?m\.?)?)/i);
+    const bareTimeMatch = starttime.match(/^(\d{1,2}(?:[:.\u00b7]\d{2}){0,2}(?:\s*[ap]\.?m\.?)?)/i);
     if (bareTimeMatch) {
       const t = toHHMM(bareTimeMatch[1]);
       if (/^\d{2}:\d{2}$/.test(t)) {
@@ -341,8 +344,7 @@ function parseNaturalInterval(text: string): Partial<TriggerScheduleFields> | nu
 
   // Optional day pattern
   if (/\bweekdays?\b|\bbusiness\s*days?\b|\bmon\s*-\s*fri\b/.test(lower)) {
-    result.mon = true; result.tue = true; result.wed = true; result.thu = true; result.fri = true;
-    delete result.simpleDateType;
+    result.simpleDateType = 'Business Days';
   } else {
     const found: string[] = [];
     for (const [name, short] of Object.entries(DAY_MAP)) {
@@ -352,7 +354,7 @@ function parseNaturalInterval(text: string): Partial<TriggerScheduleFields> | nu
     }
     if (found.length > 0) {
       found.forEach(d => { (result as any)[d] = true; });
-      delete result.simpleDateType;
+      result.simpleDateType = 'Specific Days';
     }
   }
 
@@ -495,20 +497,14 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
         const byDay = byDayMatch[1].trim().toLowerCase();
         if (byDay === 'daily' || byDay === 'everyday') {
           // All days — default (dayStyle=Simple, simpleDateType=Daily, no day flags)
-        } else if (byDay === 'weekdays' || byDay === 'mon-fri' || byDay === 'mon,tue,wed,thu,fri') {
-          result.mon = true; result.tue = true; result.wed = true;
-          result.thu = true; result.fri = true;
-          delete result.simpleDateType;
-        } else if (byDay === 'business days' || byDay === 'businessdays') {
-          result.mon = true; result.tue = true; result.wed = true;
-          result.thu = true; result.fri = true;
-          delete result.simpleDateType;
+        } else if (byDay === 'weekdays' || byDay === 'mon-fri' || byDay === 'mon,tue,wed,thu,fri' || byDay === 'business days' || byDay === 'businessdays') {
+          result.simpleDateType = 'Business Days';
         } else {
           // Individual days: "Mon,Wed,Fri" or single day "Monday"
           const days = byDay.split(',').map(d => DAY_MAP[d.trim()]).filter(Boolean);
           if (days.length > 0) {
             days.forEach(d => { (result as any)[d] = true; });
-            delete result.simpleDateType;
+            result.simpleDateType = 'Specific Days';
           }
         }
       }
@@ -546,7 +542,7 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
   if (lower === 'weekdays' || lower === 'business days' || lower === 'businessdays' || lower === 'mon-fri') {
     return {
       dayStyle: 'Simple',
-      mon: true, tue: true, wed: true, thu: true, fri: true,
+      simpleDateType: 'Business Days',
     };
   }
 
@@ -558,7 +554,7 @@ function parseFrequencyInput(frequency: string): Partial<TriggerScheduleFields> 
   // Specific days: "Monday", "Mon,Wed,Fri", "Monday,Friday"
   const parts = lower.split(/[,\s]+/).map(p => DAY_MAP[p]).filter(Boolean);
   if (parts.length > 0) {
-    const result: Partial<TriggerScheduleFields> = { dayStyle: 'Simple' };
+    const result: Partial<TriggerScheduleFields> = { dayStyle: 'Simple', simpleDateType: 'Specific Days' };
     parts.forEach(d => { (result as any)[d] = true; });
     return result;
   }
@@ -628,11 +624,10 @@ export function buildScheduleFields(
     }
     if (lower.includes('weekday') || lower.includes('business day')) {
       result.dayStyle = 'Simple';
-      delete result.simpleDateType;
-      result.mon = true; result.tue = true; result.wed = true; result.thu = true; result.fri = true;
+      result.simpleDateType = 'Business Days';
     } else if (foundDays.length > 0 && !result.dateNouns) {
       result.dayStyle = 'Simple';
-      delete result.simpleDateType;
+      result.simpleDateType = 'Specific Days';
       foundDays.forEach(d => { (result as any)[d] = true; });
     }
   }

@@ -333,12 +333,19 @@ router.post('/preview', async (req: AuthRequest, res: Response): Promise<void> =
       const dayNames: Record<string, string> = { mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri',sat:'Sat',sun:'Sun' };
       if (days.length > 0 && days.length < 7) schedSummary += ` on ${days.map(d => dayNames[d]).join(', ')}`;
     } else {
-      schedSummary = 'Daily';
-      if (triggerPayload.time) schedSummary += ` at ${triggerPayload.time}`;
-      // Day pattern
-      const days = ['mon','tue','wed','thu','fri','sat','sun'].filter(d => triggerPayload[d]);
+      // Determine schedule type from simpleDateType or day flags
       const dayNames: Record<string, string> = { mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri',sat:'Sat',sun:'Sun' };
-      if (days.length > 0 && days.length < 7) schedSummary += ` on ${days.map(d => dayNames[d]).join(', ')}`;
+      const days = ['mon','tue','wed','thu','fri','sat','sun'].filter(d => triggerPayload[d]);
+
+      if (triggerPayload.simpleDateType === 'Business Days') {
+        schedSummary = 'Business Days';
+      } else if (days.length > 0 && days.length < 7) {
+        schedSummary = days.map(d => dayNames[d]).join(', ');
+      } else {
+        schedSummary = 'Daily';
+      }
+
+      if (triggerPayload.time) schedSummary += ` at ${triggerPayload.time}`;
     }
     if (triggerPayload.timeZone) schedSummary += ` (${triggerPayload.timeZone})`;
 
