@@ -31,6 +31,10 @@ uploads/
 
 # Logs — never commit
 *.log
+# Rotated logs are gzipped, so *.log does not match them.
+*.log.gz
+logs/
+**/logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -62,15 +66,29 @@ openapi.json
 *.ods
 *.csv
 
-# State files — contain sensitive data, never commit
+# State files — contain sensitive data, never commit.
+#
+# These are written at runtime with a per-session suffix, e.g.
+# monitor_config_<uuid>.json, so the patterns must be prefix globs. A bare
+# `monitor_config.json` does NOT match the file the app actually writes — and
+# those files contain a live UAC token and the Teams webhook URL.
 scheduled_jobs.json
 **/scheduled_jobs.json
-monitor_state.json
-**/monitor_state.json
-alert_history.json
-**/alert_history.json
-monitor_config.json
-**/monitor_config.json
+monitor_state*.json
+**/monitor_state*.json
+alert_history*.json
+**/alert_history*.json
+monitor_config*.json
+**/monitor_config*.json
+monitor_sent_alerts.json
+**/monitor_sent_alerts.json
+# Directories the runtime state lives in.
+monitor_configs/
+**/monitor_configs/
+monitor_states/
+**/monitor_states/
+monitor_history/
+**/monitor_history/
 creation_log.json
 recovery_store.json
 **/recovery_store.json
