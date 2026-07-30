@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { globalApi } from '@/store/useConnectionStore';
 import * as XLSX from 'xlsx';
+import { ExplainError } from '@/components/copilot';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface StreamStep {
@@ -217,7 +218,12 @@ export default function ExecutionDashboard({
                   <span className="text-slate-600">{s.name}</span>
                   <span className="text-slate-700 mx-1">/</span>
                   {s.step}
+                  {s.message && <span className="text-slate-600 ml-1">— {s.message}</span>}
                 </span>
+                {/* Failures get a one-click explanation grounded in this app's behaviour */}
+                {s.status === 'error' && s.message && (
+                  <ExplainError message={s.message} label="explain" />
+                )}
               </motion.div>
             ))}
           </div>

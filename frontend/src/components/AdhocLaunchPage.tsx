@@ -3,6 +3,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
+import { useCopilotPageContext } from '@/hooks/useCopilotPageContext';
 import { useToast } from '@/components/ui/Toast';
 
 type Kind = 'task' | 'workflow' | 'trigger';
@@ -145,6 +146,17 @@ export default function AdhocLaunchPage() {
 
   const activeCount = instances.filter(i => !i.terminal).length;
   const doneCount = instances.length - activeCount;
+
+  // ── AI Operations Copilot context ───────────────────────────────────────────
+  useCopilotPageContext('adhoc-launch', {
+    step: activeCount > 0 ? 'monitoring instances' : results.length ? 'search results' : 'searching',
+    focus: instances.find(i => !i.terminal)?.name,
+    detail: {
+      searchResults: results.length,
+      activeInstances: activeCount,
+      finishedInstances: doneCount,
+    },
+  });
 
   return (
     <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>

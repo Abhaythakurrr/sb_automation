@@ -311,4 +311,68 @@ export class ApiClient {
   async updateTrigger(payload: any): Promise<any> {
     return this.http.put('/api/search/trigger', payload);
   }
+
+  // ── AI Operations Copilot (Beta) ───────────────────────────────────────────
+  // Health is public — the dock needs it before the user has connected.
+  async copilotHealth(): Promise<any> {
+    return axios.get(`${BACKEND}/api/copilot/health`, { timeout: 8000 });
+  }
+
+  /**
+   * Shares the current page and session state so the Copilot is context- and
+   * upload-aware without being asked. Safe to call on every meaningful change.
+   */
+  async copilotContext(body: {
+    context?: { page: string; step?: string; focus?: string; detail?: Record<string, unknown> };
+    upload?: { filename: string; rows: any[] } | null;
+    payloads?: { name: string; task: any; trigger: any; summary?: string }[];
+    executions?: { name: string; type: 'task' | 'trigger'; status: 'pending' | 'success' | 'failed'; message?: string; at?: string }[];
+    reset?: boolean;
+  }): Promise<any> {
+    return this.http.post('/api/copilot/context', body);
+  }
+
+  async copilotAsk(question: string, context?: { page: string; step?: string; focus?: string }): Promise<any> {
+    return this.http.post('/api/copilot/ask', { question, context }, { timeout: 60000 });
+  }
+
+  async copilotSuggestions(page: string): Promise<any> {
+    return this.http.get('/api/copilot/suggestions', { params: { page } });
+  }
+
+  async copilotAnalyze(rows?: any[]): Promise<any> {
+    return this.http.post('/api/copilot/analyze', rows ? { rows } : {});
+  }
+
+  async copilotExplain(body: {
+    subject: 'field' | 'payload' | 'error' | 'finding' | 'destination' | 'schedule';
+    name?: string;
+    scope?: 'input' | 'task' | 'trigger';
+    error?: string;
+    payload?: { name?: string; task?: any; trigger?: any };
+    finding?: any;
+    destination?: 'task' | 'trigger' | 'enable';
+  }): Promise<any> {
+    return this.http.post('/api/copilot/explain', body);
+  }
+
+  async copilotSchedule(input: string, timezone?: string): Promise<any> {
+    return this.http.post('/api/copilot/schedule', { input, timezone });
+  }
+
+  async copilotWizard(action: string, answer?: string): Promise<any> {
+    return this.http.post('/api/copilot/wizard', { action, answer });
+  }
+
+  async copilotImpact(operation: 'create' | 'delete', opts: { taskName?: string; rows?: any[] } = {}): Promise<any> {
+    return this.http.post('/api/copilot/impact', { operation, ...opts });
+  }
+
+  async copilotMemory(): Promise<any> {
+    return this.http.get('/api/copilot/memory');
+  }
+
+  async copilotClearMemory(): Promise<any> {
+    return this.http.delete('/api/copilot/memory');
+  }
 }

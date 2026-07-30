@@ -3,6 +3,8 @@ import { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
+import { useCopilotPageContext } from '@/hooks/useCopilotPageContext';
+import { ExplainError } from '@/components/copilot';
 import { playClick, playSuccess, playError, playWhoosh, playTick } from '@/utils/soundEffects';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -236,6 +238,21 @@ export default function SearchEditPage() {
 
   const changedFields = data ? Object.keys(editData).filter(k => !READ_ONLY_FIELDS.has(k) && JSON.stringify(editData[k]) !== JSON.stringify(data[k])) : [];
 
+  // ── AI Operations Copilot context ───────────────────────────────────────────
+  // Naming the record in focus means "what does this field mean?" resolves
+  // against the object actually on screen.
+  useCopilotPageContext('search', {
+    step: mode === 'edit' ? 'editing' : data ? 'viewing' : 'searching',
+    focus: data?.name || undefined,
+    detail: {
+      searchType,
+      found: !!data,
+      unsavedChanges: changedFields.length,
+      changedFields: changedFields.slice(0, 10),
+      lastError: error || undefined,
+    },
+  });
+
   return (
     <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>
       {/* Ambient */}
@@ -344,7 +361,9 @@ export default function SearchEditPage() {
               <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span className="text-xs text-red-400">{error}</span>
+              <span className="text-xs text-red-400 flex-1">{error}</span>
+              {/* One-click explanation, grounded in this application's behaviour */}
+              <ExplainError message={error} />
             </motion.div>
           )}
         </AnimatePresence>

@@ -17,6 +17,7 @@ import { jobDocRouter } from './routes/jobDoc';
 import { searchRouter } from './routes/search';
 import { adhocRouter } from './routes/adhoc';
 import { scheduleAIRouter } from './routes/scheduleAI';
+import { copilotRouter } from './routes/copilot';
 import { errorHandler } from './middleware/errorHandler';
 import { sessionMiddleware } from './middleware/session';
 import { requestLogger } from './middleware/requestLogger';
@@ -103,6 +104,17 @@ const uploadLimiter = rateLimit({
 });
 app.use('/api/upload', uploadLimiter);
 
+// Copilot limiter — a model-backed answer is comparatively expensive, and the
+// UI only ever asks on an explicit user action.
+const copilotLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Copilot rate limit exceeded, please slow down' },
+});
+app.use('/api/copilot/ask', copilotLimiter);
+
 // Strict rate limit for the connect endpoint — throttles brute-force attempts
 // against token validation (10 attempts per 15 minutes per IP).
 const authLimiter = rateLimit({
@@ -139,6 +151,9 @@ app.use('/api/jobdoc',      sessionMiddleware, jobDocRouter);
 app.use('/api/search',      sessionMiddleware, searchRouter);
 app.use('/api/adhoc',       sessionMiddleware, adhocRouter);
 app.use('/api/schedule-ai', scheduleAIRouter); // Public - no session required
+// Copilot applies sessionMiddleware internally so its /health probe stays
+// public — the UI checks it before the user has connected.
+app.use('/api/copilot',     copilotRouter);
 
 // Health check
 app.get('/health', (_req, res) => {

@@ -33,6 +33,23 @@ export const AUTOMATIONS: Automation[] = [
     route:       '/adhoc-launch',
   },
   {
+    id:          'ai-copilot',
+    title:       'AI Operations Copilot',
+    description: 'An assistant embedded on every page that knows this application — every feature, API, field, validation rule and scheduling option — and stays aware of your session: the file you uploaded, the payloads generated from it and the results you got. Open it from the Copilot button in the corner, or press Ctrl+K.',
+    icon:        'monitor',
+    status:      'beta',
+    category:    'Operations',
+    features:    [
+      'Knows every feature, API and field',
+      'Upload-aware validation before execution',
+      'Plain English to valid schedules',
+      'Explains any payload, field or error',
+      'Inline Assistant — one field at a time',
+      'Session memory, never asks twice',
+    ],
+    route:       '#copilot',
+  },
+  {
     id:          'job-creation',
     title:       'Job Creation',
     description: 'Automate Stonebranch task and time trigger creation from Excel, ODS, or CSV files. Supports ref_job inheritance, complex schedules, and bulk creation.',

@@ -10,6 +10,13 @@ import ExecutionDashboard from './ExecutionDashboard';
 import { JobRow as ChatJobRow } from '@/utils/jobDocParser';
 import { playClick, playSuccess, playError, playTick, playComplete, playWhoosh } from '@/utils/soundEffects';
 import * as XLSX from 'xlsx';
+import {
+  useCopilotPageContext,
+  useCopilotUpload,
+  useCopilotPayloads,
+  useCopilotExecutions,
+} from '@/hooks/useCopilotPageContext';
+import { CopilotPageId } from '@/types/copilot';
 
 // ─── tiny helpers ────────────────────────────────────────────────────────────
 const G = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
@@ -148,6 +155,9 @@ export default function PipelinePage() {
 
   // data
   const [rows, setRows]               = useState<JobRow[]>([]);
+  // Name of the loaded source, shared with the Copilot so it can refer to the
+  // file by name rather than asking what was uploaded.
+  const [sourceName, setSourceName]   = useState<string>('');
   const [compRows, setCompRows]         = useState<CompRow[]>([]);
   const [mergedTriggers, setMergedTriggers] = useState<any[]>([]);
   const [resolvedRefs, setResolvedRefs] = useState<Record<string, any>>({});
@@ -181,6 +191,7 @@ export default function PipelinePage() {
       const payload = res.data?.data;
       const parsed: JobRow[] = Array.isArray(payload?.rows) ? payload.rows : [];
       setRows(parsed);
+      setSourceName(file.name);
       setCompRows([]); setMergedTriggers([]); setRefResolved(false); setResults([]); setLogs([]); setPushDone(false);
       setStreamSteps([]); setStreamSummary(null); setTriggersEnabled(false); setEnablingTriggers(false); setProgress(0);
       if (abortRef.current) { abortRef.current(); abortRef.current = null; }
@@ -219,6 +230,7 @@ export default function PipelinePage() {
       end_time:          r.end_time ?? '',
     }));
     setRows(mapped);
+    setSourceName('Job Builder Chat');
     setCompRows([]); setMergedTriggers([]); setRefResolved(false); setResults([]); setLogs([]); setPushDone(false);
     setStreamSteps([]); setStreamSummary(null); setTriggersEnabled(false); setEnablingTriggers(false); setProgress(0);
     if (abortRef.current) { abortRef.current(); abortRef.current = null; }
@@ -596,6 +608,40 @@ export default function PipelinePage() {
     ...(streamSummary && !executing ? [4] : []),
   ];
 
+  // ── AI Operations Copilot context ───────────────────────────────────────────
+  // Report the sub-page matching the current stage, so the Copilot's guidance is
+  // about upload, preview, execution or validation specifically rather than
+  // "job creation" in general.
+  const copilotPage: CopilotPageId =
+    currentStep >= 3 ? 'execution'
+      : currentStep === 2 ? 'preview'
+        : hasData ? 'validation'
+          : 'upload';
+
+  useCopilotPageContext(copilotPage, {
+    step: PIPELINE_STEPS[currentStep]?.label,
+    detail: {
+      rowCount: rows.length,
+      source: sourceName || undefined,
+      refJobsResolved: refResolved,
+      executing,
+      created: streamSummary ? streamSummary.successful : undefined,
+      failed: streamSummary ? streamSummary.failed : undefined,
+      triggersEnabled,
+    },
+  });
+
+  // Upload awareness: the Copilot validates these rows server-side the moment
+  // it receives them, so findings are ready before the user thinks to ask.
+  useCopilotUpload(sourceName || null, rows.length ? rows : null);
+  useCopilotPayloads(previewData.length ? previewData : null);
+  useCopilotExecutions(results.length ? results.map(r => ({
+    name: r.name,
+    type: r.type,
+    status: r.status,
+    message: r.message,
+  })) : null);
+
   return (
     <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>
       <GlobalHeader title="Job Creation" subtitle="BULK TASK + TRIGGER PIPELINE" sopHref="/sop-job-creation" />
@@ -645,7 +691,10 @@ export default function PipelinePage() {
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                   <ParsedTable rows={rows} />
-                  <JsonPanel data={jsonView === 'task' ? taskJSON : triggerJSON} />
+                  <JsonPanel
+                    data={jsonView === 'task' ? taskJSON : triggerJSON}
+                    explainName={rows[0]?.task_name}
+                  />
                 </div>
 
                 {/* Schedule Summaries — plain English */}

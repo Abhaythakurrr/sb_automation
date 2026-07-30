@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useCopilotPageContext } from '@/hooks/useCopilotPageContext';
 
 interface FrequencyExample {
   id: string;
@@ -94,6 +95,14 @@ export default function TriggerGuidePage() {
 
   const selectedExample = FREQUENCY_TYPES.find(f => f.id === selectedFreq) || FREQUENCY_TYPES[0];
   const filteredTypes = FREQUENCY_TYPES.filter(f => f.category === activeCategory);
+
+  // ── AI Operations Copilot context ───────────────────────────────────────────
+  // On the scheduling reference, the Copilot's scheduling assistant is the most
+  // useful thing it can offer.
+  useCopilotPageContext('scheduling', {
+    step: activeCategory,
+    focus: selectedExample.title,
+  });
 
   const handleCopy = (text: string, type: 'excel' | 'chat') => {
     navigator.clipboard.writeText(text);

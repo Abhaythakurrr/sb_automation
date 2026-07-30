@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
+import { useCopilotPageContext } from '@/hooks/useCopilotPageContext';
 import { playClick, playSuccess, playError, playWhoosh } from '@/utils/soundEffects';
 import { useToast, ConfirmModal, type ConfirmOptions } from '@/components/ui/Toast';
 import { parseRecoveryFile } from '@/utils/recoveryPackage';
@@ -334,6 +335,18 @@ export default function JobRecoveryPage() {
   const pct = totalQueued ? Math.round(((doneCount + failedCount) / totalQueued) * 100) : 0;
 
   const canRun = connected && pendingCount > 0 && !running;
+
+  // ── AI Operations Copilot context ───────────────────────────────────────────
+  useCopilotPageContext('recovery', {
+    step: running ? 'restoring' : totalQueued ? 'queued' : 'awaiting selection',
+    detail: {
+      queued: totalQueued,
+      pending: pendingCount,
+      restored: doneCount,
+      failed: failedCount,
+      running,
+    },
+  });
 
   return (
     <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>

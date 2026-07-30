@@ -2,6 +2,7 @@
 import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { JobRow } from '@/types';
+import { ExplainPayload } from '@/components/copilot';
 
 // ── Drop Zone ────────────────────────────────────────────────────────────────
 export function DropZone({ onFile, hasData }: { onFile: (f: File) => void; hasData: boolean }) {
@@ -100,7 +101,12 @@ export function ParsedTable({ rows }: { rows: JobRow[] }) {
 }
 
 // ── JSON Panel ───────────────────────────────────────────────────────────────
-export function JsonPanel({ data, maxH = 'h-72' }: { data: any; maxH?: string }) {
+export function JsonPanel({
+  data,
+  maxH = 'h-72',
+  /** Job name, so the Copilot can explain this exact payload when asked. */
+  explainName,
+}: { data: any; maxH?: string; explainName?: string }) {
   const json = JSON.stringify(data, null, 2);
 
   // Syntax highlight
@@ -124,6 +130,9 @@ export function JsonPanel({ data, maxH = 'h-72' }: { data: any; maxH?: string })
           animate={{ opacity: [0.4, 1, 0.4] }}
           transition={{ duration: 2, repeat: Infinity }} />
         <span className="text-[10px] font-mono text-slate-500">JSON PAYLOAD</span>
+        <span className="flex-1" />
+        {/* Every generated payload is explainable field by field. */}
+        <ExplainPayload name={explainName} label="Explain" />
       </div>
       <div className="overflow-auto flex-1 p-4">
         <pre className="text-[11px] font-mono leading-relaxed"

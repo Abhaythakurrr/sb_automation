@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
+import { useCopilotPageContext } from '@/hooks/useCopilotPageContext';
 
 interface AlertRecord {
   id: string; type: 'agent_offline' | 'job_failure'; name: string; status?: string;
@@ -12,6 +13,7 @@ interface AlertRecord {
 
 export default function MonitoringPage() {
   const { connected, environment, sessionId } = useConnectionStore();
+  // Copilot context is registered near the bottom, once the live counts exist.
   const [running, setRunning] = useState(false);
   const [pollMin, setPollMin] = useState(5);
   const [monAgents, setMonAgents] = useState(true);
@@ -80,6 +82,24 @@ export default function MonitoringPage() {
   };
 
   const filteredAlerts = filter === 'all' ? alerts : alerts.filter(a => a.type === filter);
+
+  // ── AI Operations Copilot context ───────────────────────────────────────────
+  // Sharing the live counts lets the Copilot answer "why am I seeing this" with
+  // reference to the actual cycle rather than in the abstract.
+  useCopilotPageContext('monitoring', {
+    step: running ? 'monitoring active' : 'monitoring stopped',
+    detail: {
+      running,
+      pollIntervalMinutes: pollMin,
+      monitorAgents: monAgents,
+      monitorJobs: monJobs,
+      environment,
+      alertCount: alerts.length,
+      agentsOffline: lastResult?.agentsOffline,
+      jobsFailedToday: lastResult?.jobsFailed,
+      lastRun: lastRun || undefined,
+    },
+  });
 
   return (
     <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>

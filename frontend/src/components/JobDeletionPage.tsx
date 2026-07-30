@@ -3,6 +3,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
+import { useCopilotPageContext } from '@/hooks/useCopilotPageContext';
 import { playClick, playDelete, playWarning, playSuccess, playError, playWhoosh } from '@/utils/soundEffects';
 import { createLogger } from '@/utils/logger';
 import { useToast, ConfirmModal, type ConfirmOptions } from '@/components/ui/Toast';
@@ -372,6 +373,21 @@ export default function JobDeletionPage() {
   };
 
   const canRun = connected && jobs.length > 0 && !running && jobs.some(j => j.phase === 'idle');
+
+  // ── AI Operations Copilot context ───────────────────────────────────────────
+  // Reporting the job in focus lets the Copilot answer "what happens if I delete
+  // this?" about the actual job rather than in the abstract.
+  useCopilotPageContext('job-deletion', {
+    step: running ? 'deleting' : backupDone ? 'backed up' : jobs.length ? 'inspected' : 'awaiting selection',
+    focus: jobs.length === 1 ? jobs[0].name : undefined,
+    detail: {
+      queuedJobs: jobs.length,
+      jobNames: jobs.slice(0, 10).map(j => j.name),
+      backupEnabled,
+      backupTaken: backupDone,
+      running,
+    },
+  });
 
   return (
     <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>

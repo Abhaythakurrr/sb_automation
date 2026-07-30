@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GlobalHeader from '@/components/GlobalHeader';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
+import { useCopilotPageContext } from '@/hooks/useCopilotPageContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Agent {
@@ -657,6 +658,19 @@ export default function AgentControlPage() {
     border: '1px solid rgba(51,65,85,0.6)',
     colorScheme: 'dark',
   } as React.CSSProperties;
+
+  // ── AI Operations Copilot context ───────────────────────────────────────────
+  useCopilotPageContext('agent-control', {
+    step: timing === 'scheduled' ? 'scheduling an action' : 'immediate action',
+    detail: {
+      action,
+      timing,
+      agentsLoaded: agents.length,
+      clustersLoaded: clusters.length,
+      selectedAgents: selected.size,
+      selectedClusters: selectedClusters.size,
+    },
+  });
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (

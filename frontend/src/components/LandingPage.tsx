@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform, useSpring } from 'framer-motion';
 import { AUTOMATIONS, Automation } from '@/automations/registry';
 import { useConnectionStore, globalApi } from '@/store/useConnectionStore';
+import { useCopilotPageContext } from '@/hooks/useCopilotPageContext';
 import { useWorkspaceStore, AutomationId } from '@/store/useWorkspaceStore';
 import { playClick, playHover, playConnect, playDisconnect, playWhoosh } from '@/utils/soundEffects';
 
@@ -653,6 +654,11 @@ function SystemStats() {
 export default function LandingPage() {
   const { connected, environment, username } = useConnectionStore();
   const liveCount = AUTOMATIONS.filter(a => a.status === 'live').length;
+
+  // ── AI Operations Copilot context ───────────────────────────────────────────
+  useCopilotPageContext('home', {
+    detail: { connected, environment, liveAutomations: liveCount },
+  });
 
   return (
     <div className="min-h-screen relative scan-line" style={{ background: 'var(--bg-deep)' }}>
