@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enterprise Architecture Explorer — Stonebranch Batch Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #12121a;
+  --bg-tertiary: #1a1a28;
+  --bg-card: #1e1e30;
+  --bg-glass: rgba(30,30,48,0.75);
+  --bg-glass-hover: rgba(40,40,64,0.85);
+  --border: rgba(255,255,255,0.06);
+  --border-hover: rgba(255,255,255,0.12);
+  --text-primary: #e8e8f0;
+  --text-secondary: #9090a8;
+  --text-tertiary: #606078;
+  --accent-blue: #4a8cff;
+  --accent-green: #34d399;
+  --accent-purple: #a78bfa;
+  --accent-orange: #fb923c;
+  --accent-red: #f87171;
+  --accent-yellow: #fbbf24;
+  --accent-cyan: #22d3ee;
+  --shadow: 0 8px 32px rgba(0,0,0,0.5);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,0.6);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-xs: 4px;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--bg-primary); color:var(--text-primary); font-family:var(--font); font-size:14px; -webkit-font-smoothing:antialiased; }
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,0.2); }
+
+/* === TOP BAR === */
+.topbar {
+  position:fixed; top:0; left:0; right:0; height:56px; z-index:100;
+  background:var(--bg-glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border); display:flex; align-items:center; padding:0 20px; gap:16px;
+}
+.topbar-logo { display:flex; align-items:center; gap:10px; font-weight:700; font-size:15px; color:var(--text-primary); letter-spacing:-0.3px; }
+.topbar-logo svg { width:24px; height:24px; }
+.topbar-logo span { color:var(--text-secondary); font-weight:400; }
+.search-container { position:relative; flex:1; max-width:480px; }
+.search-container input {
+  width:100%; height:36px; background:var(--bg-secondary); border:1px solid var(--border);
+  border-radius:var(--radius-sm); padding:0 36px 0 14px; color:var(--text-primary);
+  font-size:13px; font-family:var(--font); outline:none; transition:var(--transition);
+}
+.search-container input:focus { border-color:var(--accent-blue); background:var(--bg-tertiary); }
+.search-container input::placeholder { color:var(--text-tertiary); }
+.search-icon { position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--text-tertiary); pointer-events:none; }
+.topbar-actions { display:flex; gap:8px; }
+.topbar-btn {
+  height:34px; padding:0 14px; border-radius:var(--radius-sm); border:1px solid var(--border);
+  background:transparent; color:var(--text-secondary); font-size:12px; font-family:var(--font);
+  cursor:pointer; transition:var(--transition); display:flex; align-items:center; gap:6px; white-space:nowrap;
+}
+.topbar-btn:hover { background:var(--bg-tertiary); color:var(--text-primary); border-color:var(--border-hover); }
+.topbar-btn.active { background:var(--accent-blue); color:#fff; border-color:var(--accent-blue); }
+.topbar-btn svg { width:14px; height:14px; }
+
+/* === STATUS BAR === */
+.statusbar {
+  position:fixed; bottom:0; left:0; right:0; height:32px; z-index:100;
+  background:var(--bg-glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  border-top:1px solid var(--border); display:flex; align-items:center; padding:0 16px; gap:20px;
+  font-size:11px; color:var(--text-tertiary);
+}
+.statusbar-item { display:flex; align-items:center; gap:6px; }
+.statusbar-dot { width:6px; height:6px; border-radius:50%; background:var(--accent-green); }
+.statusbar-right { margin-left:auto; display:flex; gap:16px; }
+
+/* === CANVAS === */
+.canvas-container {
+  position:fixed; top:56px; left:0; right:0; bottom:32px; overflow:hidden; cursor:grab;
+  background: var(--bg-primary);
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+.canvas-container.grabbing { cursor:grabbing; }
+.canvas {
+  position:absolute; top:0; left:0; transform-origin:0 0;
+  transition: transform 0.05s linear;
+}
+.canvas.no-transition { transition: none !important; }
+
+/* === NODE === */
+.node {
+  position:absolute; padding:12px 16px; border-radius:var(--radius);
+  background:var(--bg-glass); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  border:1px solid var(--border); cursor:pointer; transition:var(--transition);
+  min-width:140px; max-width:220px; user-select:none;
+}
+.node:hover { border-color:var(--border-hover); background:var(--bg-glass-hover); transform:translateY(-1px); box-shadow:var(--shadow); }
+.node.selected { border-color:var(--accent-blue); box-shadow:0 0 0 1px var(--accent-blue), var(--shadow); }
+.node.highlighted { border-color:var(--accent-yellow); box-shadow:0 0 0 1px var(--accent-yellow), var(--shadow); }
+.node.dimmed { opacity:0.25; }
+.node-header { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+.node-icon { width:20px; height:20px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; }
+.node-name { font-size:13px; font-weight:600; color:var(--text-primary); line-height:1.3; letter-spacing:-0.2px; }
+.node-type { font-size:10px; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.5px; font-weight:500; }
+.node-file { font-size:10px; color:var(--text-tertiary); margin-top:3px; font-family:'SF Mono', 'Fira Code', monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* Node type colors */
+.node-type-user .node-icon { background:rgba(52,211,153,0.2); color:var(--accent-green); }
+.node-type-user { border-color:rgba(52,211,153,0.2); }
+.node-type-frontend .node-icon { background:rgba(74,140,255,0.2); color:var(--accent-blue); }
+.node-type-frontend { border-color:rgba(74,140,255,0.15); }
+.node-type-backend .node-icon { background:rgba(34,211,238,0.2); color:var(--accent-cyan); }
+.node-type-backend { border-color:rgba(34,211,238,0.15); }
+.node-type-service .node-icon { background:rgba(167,139,250,0.2); color:var(--accent-purple); }
+.node-type-service { border-color:rgba(167,139,250,0.15); }
+.node-type-middleware .node-icon { background:rgba(251,191,36,0.2); color:var(--accent-yellow); }
+.node-type-middleware { border-color:rgba(251,191,36,0.15); }
+.node-type-uac .node-icon { background:rgba(167,139,250,0.2); color:var(--accent-purple); }
+.node-type-uac { border-color:rgba(167,139,250,0.2); }
+.node-type-external .node-icon { background:rgba(248,113,113,0.2); color:var(--accent-red); }
+.node-type-external { border-color:rgba(248,113,113,0.15); }
+.node-type-infra .node-icon { background:rgba(251,146,60,0.2); color:var(--accent-orange); }
+.node-type-infra { border-color:rgba(251,146,60,0.15); }
+.node-type-store .node-icon { background:rgba(74,140,255,0.2); color:var(--accent-blue); }
+.node-type-store { border-color:rgba(74,140,255,0.15); }
+.node-type-utility .node-icon { background:rgba(34,211,238,0.15); color:var(--accent-cyan); }
+.node-type-utility { border-color:rgba(34,211,238,0.12); }
+
+/* === SVG EDGES === */
+.edges-svg { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1; }
+.edge-path { fill:none; stroke-width:1.5; stroke:rgba(255,255,255,0.08); transition:stroke 0.3s, stroke-width 0.3s; }
+.edge-path:hover { stroke:rgba(255,255,255,0.2); stroke-width:2; }
+.edge-path.highlighted { stroke:var(--accent-blue); stroke-width:2; }
+.edge-path.dimmed { stroke:rgba(255,255,255,0.02); }
+.edge-label { font-size:9px; fill:var(--text-tertiary); font-family:var(--font); pointer-events:none; }
+
+/* === SIDEBAR === */
+.sidebar {
+  position:fixed; top:56px; right:0; bottom:32px; width:400px; z-index:90;
+  background:var(--bg-glass); backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
+  border-left:1px solid var(--border); transform:translateX(100%); transition:transform 0.35s cubic-bezier(0.4,0,0.2,1);
+  overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:16px;
+}
+.sidebar.open { transform:translateX(0); }
+.sidebar-close {
+  position:absolute; top:12px; right:12px; width:28px; height:28px; border-radius:6px;
+  background:transparent; border:none; color:var(--text-tertiary); cursor:pointer;
+  display:flex; align-items:center; justify-content:center; font-size:16px; transition:var(--transition);
+}
+.sidebar-close:hover { background:var(--bg-tertiary); color:var(--text-primary); }
+.sidebar-header { padding-bottom:12px; border-bottom:1px solid var(--border); }
+.sidebar-title { font-size:18px; font-weight:700; letter-spacing:-0.3px; }
+.sidebar-subtitle { font-size:12px; color:var(--text-tertiary); margin-top:2px; }
+.sidebar-section { }
+.sidebar-section-title { font-size:10px; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-tertiary); font-weight:600; margin-bottom:8px; }
+.sidebar-tag {
+  display:inline-flex; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:500;
+  background:var(--bg-tertiary); color:var(--text-secondary); border:1px solid var(--border);
+  margin:2px 4px 2px 0;
+}
+.sidebar-prop { display:flex; gap:8px; padding:6px 0; font-size:12px; }
+.sidebar-prop-key { color:var(--text-tertiary); min-width:80px; flex-shrink:0; }
+.sidebar-prop-val { color:var(--text-primary); font-family:'SF Mono','Fira Code',monospace; font-size:11px; word-break:break-all; }
+.sidebar-body-text { font-size:13px; color:var(--text-secondary); line-height:1.7; }
+.sidebar-monobox {
+  background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:10px 12px; font-family:'SF Mono','Fira Code',monospace; font-size:11px;
+  color:var(--text-secondary); line-height:1.5; white-space:pre-wrap;
+}
+
+/* === FILTER BAR === */
+.filterbar {
+  position:fixed; top:56px; left:0; right:0; height:0; z-index:80; overflow:hidden;
+  background:var(--bg-glass); backdrop-filter:blur(20px); border-bottom:1px solid var(--border);
+  transition:height 0.3s cubic-bezier(0.4,0,0.2,1);
+}
+.filterbar.open { height:44px; }
+.filterbar-inner { display:flex; align-items:center; gap:8px; padding:6px 20px; overflow-x:auto; }
+.filter-chip {
+  padding:4px 12px; border-radius:20px; border:1px solid var(--border); background:transparent;
+  color:var(--text-secondary); font-size:11px; font-family:var(--font); font-weight:500;
+  cursor:pointer; transition:var(--transition); white-space:nowrap;
+}
+.filter-chip:hover { background:var(--bg-tertiary); color:var(--text-primary); }
+.filter-chip.active { background:rgba(74,140,255,0.15); border-color:var(--accent-blue); color:var(--accent-blue); }
+
+/* === PRESENTATION MODE === */
+.presentation-overlay {
+  position:fixed; inset:0; z-index:200; background:var(--bg-primary);
+  display:none; flex-direction:column; align-items:center; justify-content:center;
+}
+.presentation-overlay.active { display:flex; }
+.presentation-canvas {
+  position:relative; width:90vw; height:80vh; overflow:hidden;
+}
+.presentation-step {
+  font-size:14px; color:var(--text-tertiary); margin-top:16px;
+}
+
+/* === TOOLTIP === */
+.tooltip {
+  position:fixed; z-index:150; padding:8px 12px; border-radius:var(--radius-sm);
+  background:var(--bg-card); border:1px solid var(--border); box-shadow:var(--shadow-lg);
+  font-size:11px; color:var(--text-secondary); pointer-events:none; max-width:240px;
+  display:none;
+}
+
+/* === ANIMATIONS === */
+@keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+@keyframes slideIn { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:translateX(0)} }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+.fade-in { animation:fadeIn 0.4s ease-out; }
+.slide-in { animation:slideIn 0.4s ease-out; }
+
+/* === LOADING === */
+.loading {
+  position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+  background:var(--bg-primary); z-index:999; flex-direction:column; gap:16px;
+}
+.loading-spinner { width:32px; height:32px; border:2px solid var(--border); border-top-color:var(--accent-blue); border-radius:50%; animation:spin 0.8s linear infinite; }
+@keyframes spin { to{transform:rotate(360deg)} }
+.loading-text { font-size:13px; color:var(--text-tertiary); }
+
+/* === RESPONSIVE === */
+@media (max-width:900px) {
+  .sidebar { width:100%; }
+  .topbar-logo span { display:none; }
+  .topbar-btn span { display:none; }
+  .search-container { max-width:none; }
+}
+
+/* Notification panel */
+.notif { position:fixed; bottom:48px; right:20px; z-index:200; padding:10px 16px; border-radius:var(--radius-sm); background:var(--bg-card); border:1px solid var(--border); box-shadow:var(--shadow-lg); font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:8px; animation:fadeIn 0.3s ease-out; }
+.notif strong { color:var(--text-primary); }
+
+/* Mini map */
+.minimap {
+  position:fixed; bottom:40px; right:16px; width:160px; height:100px; z-index:80;
+  background:var(--bg-glass); backdrop-filter:blur(12px); border:1px solid var(--border);
+  border-radius:var(--radius-sm); overflow:hidden; opacity:0.6; transition:var(--transition);
+  pointer-events:none;
+}
+.minimap:hover { opacity:1; }
+.minimap canvas { width:100%; height:100%; }
+</style>
+</head>
+<body>
+
+<div class="loading" id="loading">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Loading Architecture Explorer...</div>
+</div>
+
+<!-- Top Bar -->
+<div class="topbar">
+  <div class="topbar-logo">
+    <svg viewBox="0 0 24 24" fill="none"><rect x="2" y="2" width="20" height="20" rx="4" stroke="currentColor" stroke-width="1.5"/><path d="M7 7h10v10H7z" fill="currentColor" opacity="0.2"/><path d="M12 7v10M7 12h10" stroke="currentColor" stroke-width="1.5"/></svg>
+    Architecture Explorer
+    <span>· Stonebranch Batch Manager</span>
+  </div>
+  <div class="search-container">
+    <input type="text" id="searchInput" placeholder="Search architecture... PayloadMapper, Teams, Job Creation..." spellcheck="false">
+    <div class="search-icon">⌘K</div>
+  </div>
+  <div class="topbar-actions">
+    <button class="topbar-btn" id="filterToggle" onclick="toggleFilters()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M9 18h6"/></svg><span>Filters</span></button>
+    <button class="topbar-btn" onclick="fitView()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Fit View</span></button>
+    <button class="topbar-btn" onclick="togglePresentation()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h20v14H2zM8 21h8M12 17v4"/></svg><span>Present</span></button>
+    <button class="topbar-btn" onclick="resetView()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1018 0 9 9 0 00-18 0z"/><path d="M12 8v8M8 12h8"/></svg></button>
+  </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="filterbar" id="filterbar">
+  <div class="filterbar-inner" id="filterList"></div>
+</div>
+
+<!-- Canvas -->
+<div class="canvas-container" id="canvasContainer" oncontextmenu="return false">
+  <div class="canvas" id="canvas">
+    <svg class="edges-svg" id="edgesSvg"></svg>
+    <div id="nodesContainer"></div>
+  </div>
+</div>
+
+<!-- Sidebar -->
+<div class="sidebar" id="sidebar">
+  <button class="sidebar-close" onclick="closeSidebar()">✕</button>
+  <div id="sidebarContent"></div>
+</div>
+
+<!-- Status Bar -->
+<div class="statusbar">
+  <div class="statusbar-item"><div class="statusbar-dot"></div>Connected</div>
+  <div class="statusbar-item" id="statusNodes">0 nodes</div>
+  <div class="statusbar-item" id="statusEdges">0 connections</div>
+  <div class="statusbar-item">v2.0 · Enterprise Architecture Platform</div>
+  <div class="statusbar-right">
+    <div class="statusbar-item" id="statusZoom">100%</div>
+    <div class="statusbar-item" id="statusPos">0, 0</div>
+  </div>
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// ============================================================
+// ARCHITECTURE DATA MODEL
+// ============================================================
+const MODEL = {
+  nodes: [
+    // === USER LAYER (y: 120) ===
+    { id:'enterprise-ops', name:'Enterprise Operators', type:'user', layer:'user', file:'—', purpose:'Business users who submit batch jobs via the web UI', resp:'Submit job creation requests, monitor execution, receive notifications', functions:['Login','Upload spreadsheet','Execute batch','Monitor progress','Receive alerts'], deps:[], consumers:[], apis:[], envVars:[], x:120, y:50 },
+    { id:'batch-schedulers', name:'Batch Schedulers', type:'user', layer:'user', file:'—', purpose:'IT operators managing scheduled batch workloads', resp:'Schedule job execution, manage triggers, monitor agent health', functions:['Schedule jobs','Configure triggers','Monitor agents'], deps:[], consumers:[], apis:[], envVars:[], x:120, y:110 },
+    { id:'it-admins', name:'IT Administrators', type:'user', layer:'user', file:'—', purpose:'System administrators managing the application', resp:'Configure environment, deploy updates, manage security', functions:['Deploy','Configure','Monitor logs','Manage access'], deps:[], consumers:[], apis:[], envVars:[], x:120, y:170 },
+
+    // === WEB TIER (y: 280) ===
+    { id:'browser', name:'Browser', type:'frontend', layer:'web', file:'—', purpose:'User agent (Chrome/Edge) rendering the SPA', resp:'HTTPS connection, JavaScript execution, EventSource SSE', functions:['Render React SPA','HTTP requests via Axios','SSE EventSource connection'], deps:[], consumers:[], apis:['HTTPS :443'], envVars:[], x:400, y:230 },
+    { id:'nextjs-spa', name:'Next.js 14 SPA', type:'frontend', layer:'web', file:'frontend/', purpose:'React single-page application with App Router', resp:'Client-side routing, component rendering, state management', functions:['App Router','React rendering','Client state management'], deps:[], consumers:['browser'], apis:[], envVars:[], x:400, y:290 },
+    { id:'nginx', name:'Nginx Reverse Proxy', type:'infra', layer:'web', file:'helm/nginx.conf', purpose:'SSL termination, reverse proxy to backend/frontend', resp:'TLS 1.2/1.3, certbot SSL, proxy_buffering off for SSE', functions:['SSL termination','Proxy pass to :3001/:3000','SSE support'], deps:[], consumers:[], apis:[], envVars:[], x:400, y:350 },
+
+    // === APPLICATION TIER (y: 460) ===
+    { id:'express-server', name:'Express.js Server', type:'backend', layer:'app', file:'backend/src/index.ts', purpose:'Node 18 + Express HTTP server', resp:'Mounts middleware, routes, error handler, listens on :3001', functions:['Mount middleware chain','Register 10 routers','Start server'], deps:[], consumers:['nginx'], apis:['HTTP :3001'], envVars:['PORT'], x:760, y:420 },
+    { id:'helmet', name:'Helmet Security', type:'middleware', layer:'app', file:'backend/src/middleware/security.ts', purpose:'15 security headers (XSS, CSP, HSTS, X-Frame-Options)', resp:'Apply security headers to all responses', functions:['Set security headers'], deps:[], consumers:['express-server'], apis:[], envVars:[], x:760, y:480 },
+    { id:'cors', name:'CORS Middleware', type:'middleware', layer:'app', file:'backend/src/index.ts:20', purpose:'Cross-Origin Resource Sharing whitelist', resp:'Allow requests only from configured CORS_ORIGIN', functions:['Check origin','Set CORS headers'], deps:[], consumers:['helmet'], apis:[], envVars:['CORS_ORIGIN'], x:760, y:530 },
+    { id:'json-parser', name:'JSON Body Parser', type:'middleware', layer:'app', file:'backend/src/index.ts:22', purpose:'Parse JSON request bodies (10MB limit)', resp:'Parse application/json bodies into req.body', functions:['Parse JSON','Enforce size limit'], deps:[], consumers:['cors'], apis:[], envVars:['MAX_FILE_SIZE'], x:760, y:580 },
+    { id:'session-middleware', name:'Session Middleware', type:'middleware', layer:'app', file:'backend/src/middleware/session.ts', purpose:'Cookie-based session management with UUIDv4', resp:'Create/validate sessions, store in Map, Set-Cookie', functions:['Create session','Validate cookie','Cleanup expired sessions','Monitor idle/absolute timeout'], deps:[], consumers:['json-parser'], apis:[], envVars:['SESSION_IDLE_TIMEOUT','SESSION_ABSOLUTE_TIMEOUT'], x:760, y:630 },
+
+    // === API LAYER (y: 700) ===
+    { id:'routes-auth', name:'Auth Routes', type:'backend', layer:'api', file:'backend/src/routes/stonebranch.ts', purpose:'Login/logout/verify endpoints for Stonebranch UAC', resp:'Handle authentication lifecycle, proxy to UAC', functions:['connect()','disconnect()','check()','verify()'], deps:[], consumers:['session-middleware'], apis:['POST /api/stonebranch/connect','POST /api/stonebranch/disconnect','GET /api/stonebranch/check','GET /api/stonebranch/verify'], envVars:['UAC_URL','UAC_USERNAME','UAC_PASSWORD'], x:400, y:710 },
+    { id:'routes-execute', name:'Execute Routes', type:'backend', layer:'api', file:'backend/src/routes/execute.ts', purpose:'Batch job execution with SSE streaming', resp:'Validate batch, queue execution, stream progress via SSE', functions:['batchSchema.parse()','executionQueue.processStream()'], deps:[], consumers:['session-middleware'], apis:['POST /api/execute/batch (SSE)'], envVars:[], x:600, y:710 },
+    { id:'routes-delete', name:'Delete Routes', type:'backend', layer:'api', file:'backend/src/routes/delete.ts', purpose:'6-step job deletion with backup', resp:'Inspect dependencies, backup, force-finish, delete triggers, delete task, verify', functions:['inspect()','confirmDelete()','forceFinish()'], deps:[], consumers:['session-middleware'], apis:['POST /api/delete/inspect','POST /api/delete/confirm-delete','POST /api/delete/force-finish'], envVars:[], x:800, y:710 },
+    { id:'routes-recovery', name:'Recovery Routes', type:'backend', layer:'api', file:'backend/src/routes/recovery.ts', purpose:'Restore deleted jobs from recovery packages', resp:'Upload JSON package, validate version, restore single/bulk via SSE', functions:['upload()','restore()','restoreAll()'], deps:[], consumers:['session-middleware'], apis:['POST /api/delete/recovery/upload','POST /api/delete/recovery/restore','POST /api/delete/recovery/restore-all (SSE)'], envVars:['DATA_DIR'], x:1000, y:710 },
+    { id:'routes-monitor', name:'Monitor Routes', type:'backend', layer:'api', file:'backend/src/routes/monitor.ts', purpose:'SSE streaming for real-time monitoring', resp:'Register SSE client, poll UAC agents/jobs, push events', functions:['stream()','config()'], deps:[], consumers:['session-middleware'], apis:['GET /api/monitor/stream (SSE)','GET /api/monitor/config'], envVars:[], x:400, y:780 },
+    { id:'routes-adhoc', name:'Adhoc Routes', type:'backend', layer:'api', file:'backend/src/routes/adhoc.ts', purpose:'Ad-hoc task execution (search, launch, cancel, rerun)', resp:'Interact with UAC for immediate task operations', functions:['search','launch','launch-workflow','launch-trigger','cancel','rerun','hold','ff'], deps:[], consumers:['session-middleware'], apis:['POST /api/adhoc/search','POST /api/adhoc/launch','POST /api/adhoc/{action}'], envVars:[], x:600, y:780 },
+    { id:'routes-upload', name:'Upload Routes', type:'backend', layer:'api', file:'backend/src/routes/fileUpload.ts', purpose:'File upload for batch job XLSX/CSV', resp:'Multer parse, fileSecurity validate, fileParserService parse', functions:['upload()','fileSecurity.validateFile()','fileParserService.parseFile()'], deps:[], consumers:['session-middleware'], apis:['POST /api/upload (multipart)'], envVars:['UPLOAD_DIR','MAX_FILE_SIZE'], x:800, y:780 },
+    { id:'routes-jobdoc', name:'JobDoc Routes', type:'backend', layer:'api', file:'backend/src/routes/jobDoc.ts', purpose:'Push/update/delete SharePoint job documentation', resp:'Zod validate, POST webhook to Power Automate with 300ms throttle', functions:['push()','update()','delete()'], deps:[], consumers:['session-middleware'], apis:['POST /api/job-doc/push','POST /api/job-doc/update','POST /api/job-doc/delete'], envVars:['POWER_AUTOMATE_JOB_DOC_URL','POWER_AUTOMATE_UPDATE_JOB_DOC_URL','POWER_AUTOMATE_DELETE_JOB_DOC_URL'], x:1000, y:780 },
+
+    // === SERVICE LAYER (y: 880) ===
+    { id:'service-stonebranch', name:'StoneBranch Service', type:'service', layer:'service', file:'backend/src/services/stoneBranchService.ts', purpose:'UAC HTTP client for all Stonebranch interactions', resp:'XML login, create/delete/update tasks, manage triggers, query agents/jobs', functions:['connect()','createTask()','createTrigger()','deleteTask()','deleteTrigger()','searchTasks()','getTaskDependencies()','getTaskInstances()','getAgentStatus()','getRunningJobs()','updateTaskField()','forceFinish()'], deps:['uac-client'], consumers:['routes-auth','routes-execute','routes-delete','routes-recovery','routes-monitor','routes-adhoc','routes-search'], apis:[], envVars:['UAC_URL','UAC_USERNAME','UAC_PASSWORD','UAC_TIMEOUT'], x:460, y:890 },
+    { id:'service-monitoring', name:'Monitoring Service', type:'service', layer:'service', file:'backend/src/services/monitoringService.ts', purpose:'SSE client management and UAC polling', resp:'Register/unregister SSE clients, poll agents/jobs, detect alerts', functions:['registerClient()','poll()','detectAlerts()','sendTeamsAlert()','unregisterClient()'], deps:[], consumers:['routes-monitor'], apis:[], envVars:['TEAMS_WEBHOOK_URL'], x:680, y:890 },
+    { id:'service-execution', name:'Execution Queue', type:'service', layer:'service', file:'backend/src/utils/executionQueue.ts', purpose:'Concurrency-controlled batch execution', resp:'Queue jobs with maxConcurrent=2, 300ms delay, 100 batch cap', functions:['enqueue()','acquireConcurrencySlot()','releaseConcurrencySlot()','processStream()'], deps:[], consumers:['routes-execute'], apis:[], envVars:[], x:900, y:890 },
+
+    // === UTILITY LAYER (y: 990) ===
+    { id:'payload-mapper', name:'Payload Mapper', type:'utility', layer:'utility', file:'backend/src/utils/payloadMapper.ts', purpose:'Build UAC XML payloads from job row data', resp:'Map spreadsheet columns to UAC task XML, build trigger XML', functions:['buildTaskPayload()','buildTriggerPayload()'], deps:[], consumers:['service-stonebranch'], apis:[], envVars:[], x:340, y:1000 },
+    { id:'agent-resolver', name:'Agent Resolver', type:'utility', layer:'utility', file:'backend/src/utils/agentResolver.ts', purpose:'Resolve UAC agent names from cache', resp:'Cache agent lookups with 5min TTL', functions:['resolve()','cache lookup','TTL management'], deps:[], consumers:['service-stonebranch'], apis:[], envVars:[], x:520, y:1000 },
+    { id:'trigger-schedule', name:'Trigger Schedule', type:'utility', layer:'utility', file:'backend/src/utils/triggerSchedule.ts', purpose:'Calculate trigger schedules from startTime/freqType', resp:'Parse cron/frequency to UAC schedule XML', functions:['calculate()'], deps:[], consumers:['service-stonebranch'], apis:[], envVars:[], x:700, y:1000 },
+    { id:'file-security', name:'File Security', type:'utility', layer:'utility', file:'backend/src/utils/fileSecurity.ts', purpose:'Validate uploaded file magic bytes', resp:'Check ZIP/OLE2 magic bytes, reject invalid files', functions:['validateFile()'], deps:[], consumers:['routes-upload'], apis:[], envVars:[], x:880, y:1000 },
+    { id:'file-parser', name:'File Parser', type:'utility', layer:'utility', file:'backend/src/utils/fileParserService.ts', purpose:'Parse XLSX/CSV to structured job rows', resp:'XLSX.readFile → JSON → COLUMN_MAP normalization', functions:['parseFile()','normalizeColumns()'], deps:[], consumers:['routes-upload'], apis:[], envVars:[], x:1060, y:1000 },
+    { id:'xml-parser', name:'XML Parser', type:'utility', layer:'utility', file:'backend/src/utils/xmlParser.ts', purpose:'Extract values from UAC XML responses using regex', resp:'Parse <id>, <name>, <status> etc. from UAC XML', functions:['parseTaskResponse()','parseTriggerResponse()','parseAgentStatus()'], deps:[], consumers:['service-stonebranch'], apis:[], envVars:[], x:1240, y:1000 },
+    { id:'dto-mapper', name:'DTO Mapper', type:'utility', layer:'utility', file:'backend/src/utils/dtoMapper.ts', purpose:'Transform parsed XML to TypeScript DTOs', resp:'Map XML fields to TaskDTO, TriggerDTO, AgentDTO', functions:['toTaskDTO()','toTriggerDTO()','toAgentDTO()'], deps:[], consumers:['service-stonebranch'], apis:[], envVars:[], x:1420, y:1000 },
+    { id:'recovery-store', name:'Recovery Store', type:'utility', layer:'utility', file:'backend/src/utils/recoveryStore.ts', purpose:'Save/load job recovery packages', resp:'JSON file persistence in DATA_DIR/recovery/', functions:['save()','load()','update()'], deps:[], consumers:['routes-delete','routes-recovery'], apis:[], envVars:['DATA_DIR'], x:1600, y:1000 },
+    { id:'uac-client', name:'UAC XML Client', type:'utility', layer:'utility', file:'backend/src/utils/uacClient.ts', purpose:'Axios HTTP client configured for UAC XML/SOAP', resp:'Cookie-based auth, XML payload POST, timeout handling', functions:['postXML()','getXML()','deleteXML()','setCookie()','getCookie()'], deps:[], consumers:['service-stonebranch'], apis:[], envVars:['UAC_URL','UAC_TIMEOUT'], x:340, y:1080 },
+
+    // === AUDIT/LOGGING (y: 1170) ===
+    { id:'audit-logger', name:'Audit Logger', type:'middleware', layer:'app', file:'backend/src/middleware/auditLogger.ts', purpose:'Log POST/PUT/DELETE requests to audit.log', resp:'Append JSON audit lines, no rotation', functions:['logAudit()'], deps:[], consumers:['express-server'], apis:[], envVars:['LOG_DIR'], x:910, y:1170 },
+    { id:'error-handler', name:'Error Handler', type:'middleware', layer:'app', file:'backend/src/middleware/errorHandler.ts', purpose:'3-tier error handling (AppError, ZodError, Programmer)', resp:'Categorize errors, log appropriately, return HTTP status', functions:['handleAppError()','handleZodError()','handleProgrammerError()'], deps:[], consumers:['express-server'], apis:[], envVars:[], x:1100, y:1170 },
+    { id:'rate-limiter', name:'Rate Limiter', type:'middleware', layer:'app', file:'backend/src/middleware/rateLimiter.ts', purpose:'Sliding window rate limiting', resp:'Limit requests per window, return 429 if exceeded', functions:['rateLimit()'], deps:[], consumers:['express-server'], apis:[], envVars:['RATE_LIMIT_WINDOW_MS','RATE_LIMIT_MAX'], x:1290, y:1170 },
+
+    // === STONEBRANCH UAC (y: 1280) ===
+    { id:'uac-server', name:'UAC Enterprise Server', type:'uac', layer:'uac', file:'External — Stonebranch', purpose:'Enterprise workload automation server', resp:'Task scheduling, execution, monitoring, agent management', functions:['Task Engine','Scheduler','Agent management','Authentication','REST/SOAP API'], deps:[], consumers:['service-stonebranch','uac-client'], apis:[], envVars:[], x:400, y:1290 },
+    { id:'uac-api', name:'UAC XML/SOAP API', type:'uac', layer:'uac', file:'External — Stonebranch', purpose:'Programmatic interface to UAC', resp:'XML request/response over HTTP, cookie-based auth', functions:['Login','Task CRUD','Trigger CRUD','Agent queries','Instance control'], deps:[], consumers:['uac-server'], apis:[], envVars:[], x:640, y:1290 },
+    { id:'uac-task-engine', name:'UAC Task Engine', type:'uac', layer:'uac', file:'External — Stonebranch', purpose:'Execute batch jobs on agents', resp:'Task definition, scheduling, execution, monitoring', functions:['Execute task','Monitor task','Force-finish task'], deps:[], consumers:['uac-api'], apis:[], envVars:[], x:880, y:1290 },
+    { id:'uac-agents', name:'UAC Agents', type:'uac', layer:'uac', file:'External — Stonebranch', purpose:'Agent execution on UNIX/Windows', resp:'Run commands, report status, streaming output', functions:['Run command','Report status'], deps:[], consumers:['uac-task-engine'], apis:[], envVars:[], x:1120, y:1290 },
+
+    // === EXTERNAL (y: 1400) ===
+    { id:'power-automate', name:'Power Automate', type:'external', layer:'external', file:'External — Microsoft', purpose:'SharePoint list integration via webhooks', resp:'Create/update/delete SharePoint list items from JSON payloads', functions:['Create list item','Update list item','Delete list item'], deps:[], consumers:['routes-jobdoc'], apis:['Webhook POST'], envVars:[], x:460, y:1410 },
+    { id:'teams', name:'Microsoft Teams', type:'external', layer:'external', file:'External — Microsoft', purpose:'Alert notifications via Adaptive Cards', resp:'Receive AdaptiveCard v1.3 JSON via webhook, display in channel', functions:['Display Adaptive Card','Action button: Open ServiceNow'], deps:[], consumers:['service-monitoring'], apis:['Webhook POST'], envVars:[], x:760, y:1410 },
+    { id:'servicenow', name:'ServiceNow', type:'external', layer:'external', file:'External — ServiceNow', purpose:'ITSM ticket integration', resp:'SNOW tickets extracted via regex, linked in Teams cards', functions:['Ticket reference','URL construction'], deps:[], consumers:[], apis:[], envVars:[], x:1060, y:1410 },
+    { id:'sharepoint', name:'SharePoint', type:'external', layer:'external', file:'External — Microsoft', purpose:'Job documentation storage', resp:'List items created/updated/deleted via Power Automate', functions:['Store job docs'], deps:[], consumers:['power-automate'], apis:[], envVars:[], x:1360, y:1410 },
+
+    // === FRONTEND COMPONENTS (y: 1550) ===
+    { id:'landing-page', name:'LandingPage', type:'frontend', layer:'frontend', file:'frontend/app/LandingPage.tsx', purpose:'Home dashboard', resp:'Show welcome, quick stats, navigation links', functions:['Render dashboard'], deps:[], consumers:['nextjs-spa'], apis:[], envVars:[], x:260, y:1560 },
+    { id:'pipeline-page', name:'PipelinePage', type:'frontend', layer:'frontend', file:'frontend/app/PipelinePage.tsx', purpose:'Job creation main page', resp:'Orchestrate DropZone, ParsedDataTable, JobBuilderChat, ExecutionDashboard', functions:['Render job creation UI'], deps:[], consumers:['nextjs-spa'], apis:[], envVars:[], x:520, y:1560 },
+    { id:'monitoring-page', name:'MonitoringPage', type:'frontend', layer:'frontend', file:'frontend/app/MonitoringPage.tsx', purpose:'Real-time monitoring dashboard', resp:'Connect SSE, render agent status, job status, alerts', functions:['EventSource connect','Render status tables','Play alert sounds'], deps:[], consumers:['nextjs-spa'], apis:[], envVars:[], x:780, y:1560 },
+    { id:'search-edit-page', name:'SearchEditPage', type:'frontend', layer:'frontend', file:'frontend/app/SearchEditPage.tsx', purpose:'Search and inline-edit tasks', resp:'Search query, display results, inline field editing, confirm modal', functions:['Search tasks','Inline field editor','Update confirmation'], deps:[], consumers:['nextjs-spa'], apis:[], envVars:[], x:1040, y:1560 },
+    { id:'job-deletion-page', name:'JobDeletionPage', type:'frontend', layer:'frontend', file:'frontend/app/JobDeletionPage.tsx', purpose:'Job deletion with backup', resp:'Search task, dependency analysis, 6-step deletion, recovery', functions:['Search task','Show dependencies','Execute deletion'], deps:[], consumers:['nextjs-spa'], apis:[], envVars:[], x:1300, y:1560 },
+
+    // === ZUSTAND STORES (y: 1660) ===
+    { id:'store-connection', name:'Connection Store', type:'store', layer:'frontend', file:'frontend/store/useConnectionStore.ts', purpose:'Zustand store for UAC connection state', resp:'isConnected, hostname, connect/disconnect actions', functions:['connect()','disconnect()','verifySession()'], deps:[], consumers:['landing-page','pipeline-page','search-edit-page','job-deletion-page'], apis:[], envVars:[], x:400, y:1670 },
+    { id:'store-job', name:'Job Store', type:'store', layer:'frontend', file:'frontend/store/useJobStore.ts', purpose:'Zustand store for job creation state', resp:'rows, progress, results, addJobs, clearJobs actions', functions:['addJobs()','clearJobs()','updateProgress()','setResults()'], deps:[], consumers:['pipeline-page'], apis:[], envVars:[], x:700, y:1670 },
+    { id:'store-workspace', name:'Workspace Store', type:'store', layer:'frontend', file:'frontend/store/useWorkspaceStore.ts', purpose:'Zustand store for tab/workspace management', resp:'activeTab, tabs, openTab, closeTab actions', functions:['openTab()','closeTab()','setActiveTab()'], deps:[], consumers:[], apis:[], envVars:[], x:1000, y:1670 },
+
+    // === FRONTEND SERVICES (y: 1760) ===
+    { id:'api-client', name:'API Client', type:'service', layer:'frontend', file:'frontend/services/api.ts', purpose:'Axios HTTP client with interceptors', resp:'Base URL config, request/response interceptors, session_id injection', functions:['get()','post()','uploadFile()','connect()','searchEdit()'], deps:[], consumers:['store-connection','store-job','landing-page','pipeline-page','monitoring-page','search-edit-page','job-deletion-page'], apis:[], envVars:[], x:700, y:1770 },
+
+    // === INFRASTRUCTURE (y: 1860) ===
+    { id:'pm2', name:'PM2 Process Manager', type:'infra', layer:'infra', file:'ecosystem.config.js', purpose:'Node.js process manager (Fork mode)', resp:'Start, restart, monitor backend/frontend processes', functions:['start','restart','monitor','logs'], deps:[], consumers:['express-server'], apis:[], envVars:[], x:400, y:1870 },
+    { id:'winston', name:'Winston Logger', type:'infra', layer:'infra', file:'backend/src/config/logger.ts', purpose:'Structured logging with daily rotation', resp:'Console + DailyRotateFile, levels from LOG_LEVEL env', functions:['createLogger()','log()','stream()'], deps:[], consumers:['express-server','audit-logger','error-handler'], apis:[], envVars:['LOG_DIR','LOG_LEVEL'], x:760, y:1870 },
+    { id:'file-store', name:'File Store', type:'infra', layer:'infra', file:'backend/src/utils/jobPersistence.ts', purpose:'AES-256-GCM encrypted filesystem persistence', resp:'Encrypt/decrypt sensitive data to disk', functions:['save()','load()','encrypt()','decrypt()'], deps:[], consumers:['recovery-store'], apis:[], envVars:['ENCRYPTION_KEY','DATA_DIR'], x:1100, y:1870 },
+    { id:'ansible', name:'Ansible Deployment', type:'infra', layer:'infra', file:'ansible/deploy.yml', purpose:'Automated server provisioning and deployment', resp:'Install deps, clone code, configure env, build, deploy', functions:['Full deploy','Code update','Config update'], deps:[], consumers:[], apis:[], envVars:[], x:1420, y:1870 },
+  ],
+
+  edges: [
+    { id:'e1', source:'enterprise-ops', target:'browser', label:'User interacts', type:'flow', desc:'Enterprise operators access the SPA via HTTPS' },
+    { id:'e2', source:'batch-schedulers', target:'browser', label:'User interacts', type:'flow', desc:'Batch schedulers manage jobs via the web UI' },
+    { id:'e3', source:'browser', target:'nginx', label:'HTTPS :443 → Proxy :3001', type:'request', desc:'Browser sends HTTPS request to Nginx, which proxies to backend' },
+    { id:'e4', source:'nginx', target:'express-server', label:'HTTP Proxy :3001', type:'request', desc:'Nginx reverse proxies incoming requests to Express' },
+    { id:'e5', source:'express-server', target:'helmet', label:'Middleware order', type:'flow', desc:'Helmet security headers applied first' },
+    { id:'e6', source:'helmet', target:'cors', label:'Middleware chain', type:'flow', desc:'CORS whitelist check' },
+    { id:'e7', source:'cors', target:'json-parser', label:'Body parsing', type:'flow', desc:'Parse request body as JSON' },
+    { id:'e8', source:'json-parser', target:'session-middleware', label:'Session management', type:'flow', desc:'Validate/create session from cookie' },
+    { id:'e9', source:'session-middleware', target:'routes-auth', label:'Authenticate', type:'request', desc:'POST /api/stonebranch/connect' },
+    { id:'e10', source:'session-middleware', target:'routes-execute', label:'Execute batch', type:'request', desc:'POST /api/execute/batch (SSE)' },
+    { id:'e11', source:'session-middleware', target:'routes-delete', label:'Delete job', type:'request', desc:'POST /api/delete/inspect+confirm-delete' },
+    { id:'e12', source:'session-middleware', target:'routes-recovery', label:'Restore job', type:'request', desc:'POST /api/delete/recovery/upload+restore' },
+    { id:'e13', source:'session-middleware', target:'routes-monitor', label:'Monitor', type:'request', desc:'GET /api/monitor/stream (SSE)' },
+    { id:'e14', source:'session-middleware', target:'routes-adhoc', label:'Adhoc action', type:'request', desc:'POST /api/adhoc/*' },
+    { id:'e15', source:'session-middleware', target:'routes-upload', label:'Upload file', type:'request', desc:'POST /api/upload (multipart)' },
+    { id:'e16', source:'session-middleware', target:'routes-jobdoc', label:'JobDoc action', type:'request', desc:'POST /api/job-doc/*' },
+    { id:'e17', source:'routes-auth', target:'service-stonebranch', label:'connect()', type:'call', desc:'stoneBranchService.connect(u,p,sid) → login to UAC' },
+    { id:'e18', source:'routes-execute', target:'service-execution', label:'processStream()', type:'call', desc:'Execution queue processes batch stream' },
+    { id:'e19', source:'routes-delete', target:'service-stonebranch', label:'getTaskDeps()', type:'call', desc:'Get task dependencies and instances from UAC' },
+    { id:'e20', source:'routes-recovery', target:'service-stonebranch', label:'createTask()', type:'call', desc:'Recreate task in UAC from backup' },
+    { id:'e21', source:'routes-monitor', target:'service-monitoring', label:'registerClient()', type:'call', desc:'Register SSE client for polling' },
+    { id:'e22', source:'routes-jobdoc', target:'power-automate', label:'POST webhook', type:'request', desc:'axios.post(POWER_AUTOMATE_URL, row)' },
+    { id:'e23', source:'service-stonebranch', target:'payload-mapper', label:'buildTaskPayload()', type:'call', desc:'Map spreadsheet row to UAC task XML' },
+    { id:'e24', source:'service-stonebranch', target:'agent-resolver', label:'resolve()', type:'call', desc:'Resolve agent name from cache' },
+    { id:'e25', source:'service-stonebranch', target:'trigger-schedule', label:'calculate()', type:'call', desc:'Calculate trigger schedule from startTime' },
+    { id:'e26', source:'service-stonebranch', target:'xml-parser', label:'parseResponse()', type:'call', desc:'Parse UAC XML response via regex' },
+    { id:'e27', source:'service-stonebranch', target:'dto-mapper', label:'toTaskDTO()', type:'call', desc:'Map parsed XML to TypeScript DTO' },
+    { id:'e28', source:'service-stonebranch', target:'uac-client', label:'postXML()/getXML()', type:'call', desc:'HTTP client sends XML to UAC' },
+    { id:'e29', source:'uac-client', target:'uac-server', label:'XML/SOAP POST', type:'request', desc:'HTTP POST with XML body + JSESSIONID cookie' },
+    { id:'e30', source:'uac-server', target:'uac-api', label:'Route request', type:'flow', desc:'UAC internal routing to API handler' },
+    { id:'e31', source:'uac-api', target:'uac-task-engine', label:'Create/control task', type:'flow', desc:'UAC task management' },
+    { id:'e32', source:'uac-task-engine', target:'uac-agents', label:'Execute command', type:'flow', desc:'Agent executes the batch job' },
+    { id:'e33', source:'service-monitoring', target:'teams', label:'POST Adaptive Card', type:'request', desc:'axios.post(TEAMS_WEBHOOK_URL, card, {timeout:5000})' },
+    { id:'e34', source:'service-monitoring', target:'service-stonebranch', label:'getAgentStatus()', type:'call', desc:'Poll UAC for agent health' },
+    { id:'e35', source:'service-execution', target:'service-stonebranch', label:'createTask()', type:'call', desc:'Execute task via UAC' },
+    { id:'e36', source:'routes-upload', target:'file-security', label:'validateFile()', type:'call', desc:'Check magic bytes (ZIP/OLE2)' },
+    { id:'e37', source:'routes-upload', target:'file-parser', label:'parseFile()', type:'call', desc:'XLSX read → JSON → COLUMN_MAP' },
+    { id:'e38', source:'file-store', target:'recovery-store', label:'save()/load()', type:'call', desc:'AES-256-GCM encrypted file persistence' },
+    { id:'e39', source:'express-server', target:'audit-logger', label:'POST/PUT/DELETE audit', type:'flow', desc:'Log to logs/audit.log' },
+    { id:'e40', source:'express-server', target:'error-handler', label:'Catch errors', type:'flow', desc:'3-tier error categorization' },
+    { id:'e41', source:'express-server', target:'rate-limiter', label:'Rate limit check', type:'flow', desc:'Sliding window rate limiting' },
+    { id:'e42', source:'express-server', target:'winston', label:'Log all activity', type:'flow', desc:'Winston console + file logging' },
+    { id:'e43', source:'pm2', target:'express-server', label:'Process management', type:'flow', desc:'PM2 manages Express process lifecycle' },
+    { id:'e44', source:'ansible', target:'pm2', label:'Deploy & restart', type:'flow', desc:'Ansible provisions and deploys the application' },
+    { id:'e45', source:'power-automate', target:'sharepoint', label:'CRUD list items', type:'flow', desc:'Power Automate creates/updates/deletes SharePoint list items' },
+    { id:'e46', source:'service-stonebranch', target:'uac-client', label:'postXML()', type:'call', desc:'POST XML payload to UAC endpoint' },
+    { id:'e47', source:'uac-client', target:'xml-parser', label:'XML response', type:'call', desc:'Parse XML response from UAC' },
+
+    // Frontend connections
+    { id:'e48', source:'nextjs-spa', target:'landing-page', label:'Routes to /', type:'flow', desc:'App Router renders LandingPage at /' },
+    { id:'e49', source:'nextjs-spa', target:'pipeline-page', label:'Routes to /pipeline', type:'flow', desc:'App Router renders PipelinePage at /pipeline' },
+    { id:'e50', source:'nextjs-spa', target:'monitoring-page', label:'Routes to /monitoring', type:'flow', desc:'App Router renders MonitoringPage at /monitoring' },
+    { id:'e51', source:'nextjs-spa', target:'search-edit-page', label:'Routes to /search', type:'flow', desc:'App Router renders SearchEditPage at /search' },
+    { id:'e52', source:'nextjs-spa', target:'job-deletion-page', label:'Routes to /delete', type:'flow', desc:'App Router renders JobDeletionPage at /delete' },
+    { id:'e53', source:'landing-page', target:'store-connection', label:'useConnectionStore', type:'call', desc:'Read connection state' },
+    { id:'e54', source:'pipeline-page', target:'store-job', label:'useJobStore', type:'call', desc:'Read/write job creation state' },
+    { id:'e55', source:'pipeline-page', target:'store-connection', label:'useConnectionStore', type:'call', desc:'Check if connected before execute' },
+    { id:'e56', source:'pipeline-page', target:'api-client', label:'apiClient.uploadFile()', type:'call', desc:'Upload file via Axios multipart POST' },
+    { id:'e57', source:'monitoring-page', target:'api-client', label:'EventSource /api/monitor/stream', type:'call', desc:'Open SSE connection' },
+    { id:'e58', source:'search-edit-page', target:'api-client', label:'apiClient.searchEdit()', type:'call', desc:'Search tasks via Axios POST' },
+    { id:'e59', source:'job-deletion-page', target:'api-client', label:'apiClient.deleteJob()', type:'call', desc:'Delete job via Axios POST' },
+    { id:'e60', source:'store-connection', target:'api-client', label:'connect()', type:'call', desc:'Send POST /api/stonebranch/connect' },
+    { id:'e61', source:'store-job', target:'api-client', label:'executeBatch()', type:'call', desc:'Send POST /api/execute/batch' },
+  ],
+
+  flows: [
+    {
+      id:'job-creation-flow', name:'Job Creation Runtime', description:'Upload XLSX/CSV → Parse → Validate → Execute → Verify → Result',
+      steps:[
+        { nodeId:'pipeline-page', action:'User opens PipelinePage', detail:'DropZone: user drops .xlsx/.csv file' },
+        { nodeId:'pipeline-page', action:'Client validate: extension + size <5MB', detail:'Client-side file validation' },
+        { nodeId:'api-client', action:'apiClient.uploadFile()', detail:'FormData appended, POST /api/upload' },
+        { nodeId:'routes-upload', action:'POST /api/upload → Multer', detail:'Multer parses multipart file upload' },
+        { nodeId:'file-security', action:'fileSecurity.validateFile()', detail:'Magic byte check: ZIP/OLE2 required' },
+        { nodeId:'file-parser', action:'fileParserService.parseFile()', detail:'XLSX.readFile(buf) → JSON → COLUMN_MAP (104 entries)' },
+        { nodeId:'store-job', action:'useJobStore.addJobs(rows)', detail:'Parsed rows stored in Zustand → ParsedDataTable renders' },
+        { nodeId:'pipeline-page', action:'User clicks Execute', detail:'ExecutionDashboard mounts' },
+        { nodeId:'routes-execute', action:'POST /api/execute/batch', detail:'Zod batchSchema.parse() validated' },
+        { nodeId:'service-execution', action:'ExecutionQueue: maxConcurrent=2', detail:'300ms delay between jobs, 100 batch cap' },
+        { nodeId:'service-stonebranch', action:'SSE stream: res.writeHead(200)', detail:'text/event-stream content type set' },
+        { nodeId:'agent-resolver', action:'agentResolver.resolve() cache', detail:'5min TTL cache lookup for agent' },
+        { nodeId:'payload-mapper', action:'payloadMapper.buildTaskPayload()', detail:'Row fields → UAC task XML payload' },
+        { nodeId:'trigger-schedule', action:'triggerSchedule.calculate()', detail:'startTime + freqType → schedule XML' },
+        { nodeId:'uac-client', action:'stoneBranchService.createTask()', detail:'POST XML payload to ${UAC_URL}/task' },
+        { nodeId:'uac-task-engine', action:'UAC creates task', detail:'Task registered in UAC engine' },
+        { nodeId:'xml-parser', action:'XML response parsed', detail:'Regex extracts taskId, taskName from <id><name>' },
+        { nodeId:'dto-mapper', action:'DTO mapped', detail:'TaskDTO created from parsed fields' },
+        { nodeId:'service-execution', action:'SSE push: {type: task-created}', detail:'Progress event streamed to browser' },
+        { nodeId:'monitoring-page', action:'Dashboard updated', detail:'Frontend re-renders progress, toast notification' },
+      ]
+    },
+    {
+      id:'login-flow', name:'Login Runtime', description:'User credentials → UAC authentication → Session mapping',
+      steps:[
+        { nodeId:'landing-page', action:'User enters credentials', detail:'GlobalHeader: username + password input' },
+        { nodeId:'store-connection', action:'useConnectionStore.connect()', detail:'Zustand action called with credentials' },
+        { nodeId:'api-client', action:'apiClient.connect() sends POST', detail:'Axios POST to /api/stonebranch/connect' },
+        { nodeId:'nginx', action:'Nginx proxies :443 → :3001', detail:'Reverse proxy to Express backend' },
+        { nodeId:'express-server', action:'Middleware chain', detail:'helmet → cors → json → session → route' },
+        { nodeId:'session-middleware', action:'Session middleware: UUIDv4', detail:'Create session, Map<string,SessionData>, Set-Cookie' },
+        { nodeId:'routes-auth', action:'connectSchema.parse() Zod', detail:'Validate {username, password}' },
+        { nodeId:'service-stonebranch', action:'stoneBranchService.connect()', detail:'Call service with username, password, sessionId' },
+        { nodeId:'uac-client', action:'Axios POST XML <login>', detail:'XML payload to ${UAC_URL}/login' },
+        { nodeId:'uac-server', action:'UAC authenticates', detail:'Returns Set-Cookie: JSESSIONID=abc123' },
+        { nodeId:'service-stonebranch', action:'Store UAC session', detail:'Map<appSessionId, UACSession> {cookie, connectedAt}' },
+        { nodeId:'routes-auth', action:'Set session properties', detail:'session.username=user, session.uacConnected=true' },
+        { nodeId:'store-connection', action:'Response {success, hostname}', detail:'JSON response → Zustand setState()' },
+      ]
+    },
+    {
+      id:'monitoring-flow', name:'Monitoring Runtime', description:'SSE connect → Poll UAC → Detect alerts → Notify Teams',
+      steps:[
+        { nodeId:'monitoring-page', action:'useEffect → EventSource', detail:'new EventSource(/api/monitor/stream?...) connection opened' },
+        { nodeId:'routes-monitor', action:'GET /api/monitor/stream', detail:'SSE route handler, stores config in req.session' },
+        { nodeId:'service-monitoring', action:'registerClient()', detail:'SSE client registered for polling' },
+        { nodeId:'service-stonebranch', action:'setInterval poll every N ms', detail:'GET ${UAC_URL}/agents/status + /jobs/running' },
+        { nodeId:'service-monitoring', action:'detectAlerts()', detail:'Agent DOWN/UNREACHABLE → critical; Job FAILED/ERROR → high' },
+        { nodeId:'service-monitoring', action:'sendTeamsAlert()', detail:'If critical → POST AdaptiveCard to TEAMS_WEBHOOK_URL' },
+        { nodeId:'teams', action:'Teams channel notification', detail:'AdaptiveCard v1.3 with FactSet, Action.OpenUrl button' },
+        { nodeId:'service-monitoring', action:'SSE push {type:alert}', detail:'Alert event to browser dashboard' },
+        { nodeId:'monitoring-page', action:'setAlertState ring buffer', detail:'Alerts capped at 100, sonic beep on critical' },
+      ]
+    },
+    {
+      id:'delete-flow', name:'Job Delete Runtime', description:'Search → Inspect → Backup → Force-finish → Delete triggers → Delete task → Verify',
+      steps:[
+        { nodeId:'job-deletion-page', action:'User searches task', detail:'POST /api/search/search → searchTasks()' },
+        { nodeId:'service-stonebranch', action:'Dependency analysis', detail:'GET /task/{name}/dependents + /instances' },
+        { nodeId:'job-deletion-page', action:'User confirms', detail:'ConfirmModal: forceFinish? backupOnly?' },
+        { nodeId:'routes-delete', action:'POST /api/delete/confirm-delete', detail:'6-step workflow starts' },
+        { nodeId:'service-stonebranch', action:'STEP 1: GET task + triggers', detail:'Backup to recoveryStore.save()' },
+        { nodeId:'recovery-store', action:'Backup saved to disk', detail:'${DATA_DIR}/recovery/{uuid}.json' },
+        { nodeId:'uac-client', action:'STEP 2: Force-finish if needed', detail:'POST ${UAC_URL}/task/{name}/force-finish' },
+        { nodeId:'uac-client', action:'STEP 3: Delete triggers', detail:'DELETE ${UAC_URL}/trigger/{id} (for each trigger)' },
+        { nodeId:'uac-client', action:'STEP 4: Delete task', detail:'DELETE ${UAC_URL}/task/{name} (core deletion)' },
+        { nodeId:'uac-client', action:'STEP 5: Verify deletion', detail:'GET ${UAC_URL}/task/{name} → expect 404' },
+        { nodeId:'recovery-store', action:'STEP 6: Update backup', detail:'recoveryStore.update(backupId, {deletedAt, verified})' },
+        { nodeId:'job-deletion-page', action:'Toast: Job deleted', detail:'Backup ID shown for recovery instructions' },
+      ]
+    },
+    {
+      id:'teams-flow', name:'Teams Notification', description:'Alert detection → Adaptive Card build → POST webhook → Channel display',
+      steps:[
+        { nodeId:'service-monitoring', action:'Alert detected', detail:'Agent DOWN/UNREACHABLE with critical severity' },
+        { nodeId:'service-monitoring', action:'Guard: TEAMS_WEBHOOK_URL set?', detail:'Skip if not configured' },
+        { nodeId:'service-monitoring', action:'buildTeamsAdaptiveCard()', detail:'Constructs AdaptiveCard v1.3 JSON' },
+        { nodeId:'service-monitoring', action:'SNOW regex extraction', detail:'/SNOW\\d{7}/ from message → Open ServiceNow button' },
+        { nodeId:'service-monitoring', action:'Card header', detail:'Emoji + title "Agent Down: {name}"' },
+        { nodeId:'service-monitoring', action:'Card body: FactSet', detail:'severity, time, type, source fields' },
+        { nodeId:'service-monitoring', action:'axios.post(webhookUrl, card)', detail:'5s timeout, non-blocking' },
+        { nodeId:'teams', action:'Teams receives card', detail:'AdaptiveCard displayed in channel' },
+        { nodeId:'service-monitoring', action:'On failure: log error', detail:'No retry, monitoring continues' },
+      ]
+    },
+    {
+      id:'recovery-flow', name:'Recovery Runtime', description:'Upload package → Validate → Single/bulk restore → Verify → Reconcile',
+      steps:[
+        { nodeId:'job-deletion-page', action:'User browses JobRecoveryPage', detail:'Selects .json recovery package file' },
+        { nodeId:'routes-recovery', action:'POST /api/delete/recovery/upload', detail:'Multer parses multipart file' },
+        { nodeId:'routes-recovery', action:'JSON.parse + validate v1.0', detail:'version === "1.0", jobs array non-empty' },
+        { nodeId:'session-middleware', action:'Store in session', detail:'req.session.recoveryPackage = parsed' },
+        { nodeId:'job-deletion-page', action:'User selects SINGLE or ALL', detail:'RadioGroup choice for restore scope' },
+        { nodeId:'service-stonebranch', action:'SINGLE: createTask()', detail:'Reconstruct payload from backup → POST ${UAC_URL}/task' },
+        { nodeId:'service-stonebranch', action:'If schedule: createTrigger()', detail:'POST ${UAC_URL}/trigger per backup schedule' },
+        { nodeId:'routes-recovery', action:'BULK: restore-all SSE stream', detail:'Iterates all jobs via SSE, continues on per-job error' },
+        { nodeId:'routes-recovery', action:'Trigger Reconciliation', detail:'Schedule conflicts detected → user picks resolution' },
+      ]
+    },
+    {
+      id:'session-flow', name:'Session Lifecycle', description:'Create → Validate → Associate → Expire → Cleanup',
+      steps:[
+        { nodeId:'session-middleware', action:'Request without session_id', detail:'Middleware detects missing cookie' },
+        { nodeId:'session-middleware', action:'Generate UUID v4', detail:'36-char session ID' },
+        { nodeId:'session-middleware', action:'Create SessionData', detail:'{id, createdAt, lastAccess, uacConnected:false}' },
+        { nodeId:'session-middleware', action:'Store in Map', detail:'Map<string, SessionData> in-memory' },
+        { nodeId:'session-middleware', action:'Set-Cookie', detail:'HttpOnly, SameSite=Lax, Path=/, Max-Age=7200' },
+        { nodeId:'session-middleware', action:'Request with session_id', detail:'Extract cookie → lookup Map → extend Max-Age' },
+        { nodeId:'session-middleware', action:'Idle timeout check', detail:'5min interval: Session_IDLE_TIMEOUT (15min)' },
+        { nodeId:'session-middleware', action:'Absolute timeout check', detail:'SESSION_ABSOLUTE_TIMEOUT (2h)' },
+        { nodeId:'session-middleware', action:'Expire: Map.delete()', detail:'logger.info("Session expired: {id}")' },
+        { nodeId:'service-stonebranch', action:'UAC session mapping', detail:'Map<appSessionId, UACSession> stores JSESSIONID' },
+        { nodeId:'service-stonebranch', action:'verifySession() polling', detail:'GET ${UAC_URL}/session every 60s' },
+      ]
+    },
+    {
+      id:'powerautomate-flow', name:'Power Automate Runtime', description:'Job creation complete → Push to SharePoint → Webhook → List item',
+      steps:[
+        { nodeId:'pipeline-page', action:'User clicks Push to SharePoint', detail:'Collects JobDocRow[] from current batch' },
+        { nodeId:'api-client', action:'apiClient.pushJobDoc(rows)', detail:'POST /api/job-doc/push' },
+        { nodeId:'routes-jobdoc', action:'jobDocSchema.parse() Zod', detail:'Validates each row (field lengths, required fields)' },
+        { nodeId:'routes-jobdoc', action:'300ms throttle between rows', detail:'Rate limiting for Power Automate webhook' },
+        { nodeId:'routes-jobdoc', action:'axios.post(webhookUrl, row)', detail:'10s timeout per call' },
+        { nodeId:'power-automate', action:'SharePoint list item created', detail:'Returns 200 on success' },
+        { nodeId:'routes-jobdoc', action:'Collect results', detail:'{pushed:N, failed:M, results:[{task_name, status, error?}]}' },
+        { nodeId:'pipeline-page', action:'Toast per row', detail:'Green success / red failure notifications' },
+      ]
+    },
+  ],
+
+  layers: [
+    { id:'user', name:'User Zone', y:20, color:'#34d399' },
+    { id:'web', name:'Web Tier', y:200, color:'#4a8cff' },
+    { id:'app', name:'Application Tier', y:390, color:'#22d3ee' },
+    { id:'api', name:'API Layer', y:680, color:'#22d3ee' },
+    { id:'service', name:'Service Layer', y:860, color:'#a78bfa' },
+    { id:'utility', name:'Utility Layer', y:970, color:'#818cf8' },
+    { id:'infra', name:'Infrastructure', y:1130, color:'#fb923c' },
+    { id:'frontend', name:'Frontend Layer', y:1530, color:'#4a8cff' },
+    { id:'uac', name:'Stonebranch UAC', y:1260, color:'#a78bfa' },
+    { id:'external', name:'External Systems', y:1380, color:'#f87171' },
+  ],
+
+  filters: [
+    'Frontend', 'Backend', 'Middleware', 'Service', 'Utility', 'API',
+    'User', 'UAC', 'External', 'Infrastructure', 'Store',
+    'Authentication', 'Monitoring', 'Recovery', 'Deployment', 'Logging'
+  ]
+};
+
+// ============================================================
+// CANVAS ENGINE
+// ============================================================
+const state = {
+  pan: { x: 60, y: 20 },
+  zoom: 0.85,
+  selected: null,
+  highlighted: new Set(),
+  dimmed: false,
+  searchQuery: '',
+  activeFilters: new Set(),
+  isGrabbing: false,
+  dragStart: { x:0, y:0 },
+  panStart: { x:0, y:0 },
+  presentationStep: -1,
+  presentationActive: false,
+};
+
+const canvas = document.getElementById('canvas');
+const container = document.getElementById('canvasContainer');
+const edgesSvg = document.getElementById('edgesSvg');
+const nodesContainer = document.getElementById('nodesContainer');
+
+function getNodePos(node) {
+  return { x: node.x * state.zoom + state.pan.x, y: node.y * state.zoom + state.pan.y };
+}
+
+function transformPoint(px, py) {
+  return { x: (px - state.pan.x) / state.zoom, y: (py - state.pan.y) / state.zoom };
+}
+
+// ============================================================
+// RENDER ENGINE
+// ============================================================
+function render() {
+  const scale = state.zoom;
+  canvas.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${scale})`;
+
+  // Render nodes
+  nodesContainer.innerHTML = '';
+  const nodeMap = {};
+  MODEL.nodes.forEach(n => { nodeMap[n.id] = n; });
+
+  const query = state.searchQuery.toLowerCase();
+  const hasFilters = state.activeFilters.size > 0;
+  const nodeEls = [];
+
+  MODEL.nodes.forEach((node, idx) => {
+    const el = document.createElement('div');
+    el.className = `node node-type-${node.type}`;
+    el.style.left = node.x + 'px';
+    el.style.top = node.y + 'px';
+    el.dataset.id = node.id;
+
+    // Highlight / dim
+    const matchesSearch = !query || node.name.toLowerCase().includes(query) || (node.file && node.file.toLowerCase().includes(query)) || (node.purpose && node.purpose.toLowerCase().includes(query)) || (node.functions && node.functions.some(f => f.toLowerCase().includes(query)));
+    const matchesFilter = !hasFilters || state.activeFilters.has(node.type) || state.activeFilters.has(node.layer);
+    const isSelected = state.selected === node.id;
+    const isHighlighted = state.highlighted.has(node.id);
+
+    if (query && !matchesSearch) el.classList.add('dimmed');
+    else if (hasFilters && !matchesFilter) el.classList.add('dimmed');
+    else if (state.dimmed && !isHighlighted && !isSelected) el.classList.add('dimmed');
+
+    if (isSelected) el.classList.add('selected');
+    if (isHighlighted) el.classList.add('highlighted');
+
+    const typeLabel = node.type.charAt(0).toUpperCase() + node.type.slice(1);
+
+    el.innerHTML = `
+      <div class="node-header">
+        <div class="node-icon">${node.name.charAt(0)}</div>
+        <div>
+          <div class="node-name">${node.name}</div>
+          <div class="node-type">${typeLabel} · ${node.layer}</div>
+        </div>
+      </div>
+      ${node.file && node.file !== '—' ? `<div class="node-file">${node.file}</div>` : ''}
+    `;
+
+    el.addEventListener('click', (e) => { e.stopPropagation(); selectNode(node.id); });
+    el.addEventListener('mouseenter', () => { highlightConnections(node.id, true); });
+    el.addEventListener('mouseleave', () => { highlightConnections(node.id, false); });
+    el.style.zIndex = isSelected ? 20 : 10;
+
+    nodesContainer.appendChild(el);
+    nodeEls.push(el);
+  });
+  renderEdges(nodeMap);
+  updateStatus();
+}
+
+function renderEdges(nodeMap) {
+  edgesSvg.innerHTML = '';
+  const hasFilters = state.activeFilters.size > 0;
+  const query = state.searchQuery.toLowerCase();
+
+  MODEL.edges.forEach(edge => {
+    const src = nodeMap[edge.source];
+    const dst = nodeMap[edge.target];
+    if (!src || !dst) return;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const sx = src.x + 110, sy = src.y + 30;
+    const dx = dst.x + 110, dy = dst.y;
+    const mid = (sy + dy) / 2;
+    const d = `M ${sx} ${sy} C ${sx} ${mid}, ${dx} ${mid}, ${dx} ${dy}`;
+    path.setAttribute('d', d);
+    path.classList.add('edge-path');
+
+    // Dim logic
+    const matchesQuery = !query || edge.label.toLowerCase().includes(query) || (edge.desc && edge.desc.toLowerCase().includes(query));
+    if (query && !matchesQuery) path.classList.add('dimmed');
+    if (state.highlighted.size > 0) {
+      if (!state.highlighted.has(edge.source) && !state.highlighted.has(edge.target)) {
+        path.classList.add('dimmed');
+      } else {
+        path.classList.add('highlighted');
+      }
+    }
+    edgesSvg.appendChild(path);
+
+    // Edge label
+    if (edge.label) {
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.textContent = edge.label;
+      label.setAttribute('x', (sx + dx) / 2);
+      label.setAttribute('y', mid - 4);
+      label.classList.add('edge-label');
+      if (state.highlighted.size > 0 && !state.highlighted.has(edge.source) && !state.highlighted.has(edge.target)) {
+        label.setAttribute('opacity', '0.05');
+      }
+      edgesSvg.appendChild(label);
+    }
+  });
+}
+
+function updateStatus() {
+  document.getElementById('statusNodes').textContent = `${MODEL.nodes.length} nodes`;
+  document.getElementById('statusEdges').textContent = `${MODEL.edges.length} connections`;
+  document.getElementById('statusZoom').textContent = `${Math.round(state.zoom * 100)}%`;
+  document.getElementById('statusPos').textContent = `${Math.round(state.pan.x)}, ${Math.round(state.pan.y)}`;
+}
+
+// ============================================================
+// NODE SELECTION & SIDEBAR
+// ============================================================
+function selectNode(id) {
+  const node = MODEL.nodes.find(n => n.id === id);
+  if (!node) return;
+
+  state.selected = id;
+  render();
+
+  // Build sidebar
+  const sb = document.getElementById('sidebarContent');
+  const isSelected = state.selected === node.id;
+  const typeLabel = node.type.charAt(0).toUpperCase() + node.type.slice(1);
+  const allDeps = node.deps.map(d => MODEL.nodes.find(n => n.id === d)).filter(Boolean);
+  const allConsumers = node.consumers.map(c => MODEL.nodes.find(n => n.id === c)).filter(Boolean);
+  const nodeApis = MODEL.edges.filter(e => (e.source === node.id || e.target === node.id) && e.type === 'request');
+  const nodeCalls = MODEL.edges.filter(e => (e.source === node.id || e.target === node.id) && e.type === 'call');
+  const relatedFlows = MODEL.flows.filter(f => f.steps.some(s => s.nodeId === node.id));
+
+  sb.innerHTML = `
+    <div class="sidebar-header fade-in">
+      <div class="sidebar-title">${node.name}</div>
+      <div class="sidebar-subtitle">${typeLabel} · ${node.layer}</div>
+    </div>
+
+    <div class="sidebar-section fade-in">
+      <div class="sidebar-section-title">Purpose</div>
+      <div class="sidebar-body-text">${node.purpose}</div>
+    </div>
+
+    <div class="sidebar-section fade-in">
+      <div class="sidebar-section-title">Responsibilities</div>
+      <div class="sidebar-body-text">${node.resp}</div>
+    </div>
+
+    ${node.file && node.file !== '—' ? `
+    <div class="sidebar-section fade-in">
+      <div class="sidebar-section-title">Implementation</div>
+      <div class="sidebar-monobox">${node.file}</div>
+    </div>` : ''}
+
+    ${node.functions && node.functions.length ? `
+    <div class="sidebar-section fade-in">
+      <div class="sidebar-section-title">Functions</div>
+      ${node.functions.map(f => `<span class="sidebar-tag">${f}</span>`).join('')}
+    </div>` : ''}
+
+    ${node.apis && node.apis.length ? `
+    <div class="sidebar-section fade-in">
+      <div class="sidebar-section-title">REST APIs</div>
+      ${node.apis.map(a => `<div class="sidebar-prop"><span class="sidebar-prop-val">${a}</span></div>`).join('')}
+    </div>` : ''}
+
+    ${node.envVars && node.envVars.length ? `
+    <div class="sidebar-section fade-in">
+      <div class="sidebar-section-title">Environment Variables</div>
+      ${node.envVars.map(v => `<span class="sidebar-tag">${v}</span>`).join('')}
+    </div>` : ''}
+
+    ${allDeps.length ? `
+    <div class="sidebar-section fade-in">
+      <div class="sidebar-section-title">Dependencies (uses)</div>
+      ${allDeps.map(d => `<div class="sidebar-prop sidebar-clickable" onclick="selectNode('${d.id}')"><span class="sidebar-prop-key">${d.name}</span><span class="sidebar-prop-val">${d.type}</span></div>`).join('')}
+    </div>` : ''}
+
+    ${allConsumers.length ? `
+    <div class="sidebar-section fade-in">
+      <div class="sidebar-section-title">Consumers (used by)</div>
+      ${allConsumers.map(c => `<div class="sidebar-prop sidebar-clickable" onclick="selectNode('${c.id}')"><span class="sidebar-prop-key">${c.name}</span><span class="sidebar-prop-val">${c.type}</span></div>`).join('')}
+    </div>` : ''}
+
+    ${nodeApis.length ? `
+    <div class="sidebar-section fade-in">
+      <div class="sidebar-section-title">API Connections</div>
+      ${nodeApis.map(e => `<div class="sidebar-prop"><span class="sidebar-prop-key">${e.label}</span><span class="sidebar-prop-val">${e.desc || ''}</span></div>`).join('')}
+    </div>` : ''}
+
+    ${nodeCalls.length ? `
+    <div class="sidebar-section fade-in">
+      <div class="sidebar-section-title">Service Calls</div>
+      ${nodeCalls.map(e => {
+        const otherId = e.source === node.id ? e.target : e.source;
+        const other = MODEL.nodes.find(n => n.id === otherId);
+        return `<div class="sidebar-prop"><span class="sidebar-prop-key">${e.label}</span><span class="sidebar-prop-val">→ ${other ? other.name : otherId}</span></div>`;
+      }).join('')}
+    </div>` : ''}
+
+    ${relatedFlows.length ? `
+    <div class="sidebar-section fade-in">
+      <div class="sidebar-section-title">Related Runtime Flows</div>
+      ${relatedFlows.map(f => `<div class="sidebar-prop sidebar-clickable" onclick="showFlow('${f.id}')"><span class="sidebar-prop-key">${f.name}</span></div>`).join('')}
+    </div>` : ''}
+  `;
+
+  document.getElementById('sidebar').classList.add('open');
+}
+
+function closeSidebar() {
+  state.selected = null;
+  document.getElementById('sidebar').classList.remove('open');
+  render();
+}
+
+// ============================================================
+// HIGHLIGHT CONNECTIONS
+// ============================================================
+function highlightConnections(nodeId, active) {
+  state.highlighted.clear();
+  state.dimmed = active;
+  if (active) {
+    state.highlighted.add(nodeId);
+    MODEL.edges.forEach(e => {
+      if (e.source === nodeId) state.highlighted.add(e.target);
+      if (e.target === nodeId) state.highlighted.add(e.source);
+    });
+  }
+  render();
+}
+
+// ============================================================
+// CANVAS CONTROLS
+// ============================================================
+let isPanning = false, startX, startY, startPanX, startPanY;
+
+container.addEventListener('mousedown', (e) => {
+  if (e.target === container || e.target === nodesContainer || e.target.tagName === 'svg') {
+    isPanning = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    startPanX = state.pan.x;
+    startPanY = state.pan.y;
+    container.classList.add('grabbing');
+    closeSidebar();
+  }
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (isPanning) {
+    state.pan.x = startPanX + (e.clientX - startX);
+    state.pan.y = startPanY + (e.clientY - startY);
+    render();
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  isPanning = false;
+  container.classList.remove('grabbing');
+});
+
+container.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = container.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const factor = e.deltaY > 0 ? 0.92 : 1.08;
+  const newZoom = Math.max(0.2, Math.min(3, state.zoom * factor));
+  state.pan.x = mx - (mx - state.pan.x) * (newZoom / state.zoom);
+  state.pan.y = my - (my - state.pan.y) * (newZoom / state.zoom);
+  state.zoom = newZoom;
+  render();
+});
+
+function fitView() {
+  const minX = Math.min(...MODEL.nodes.map(n => n.x)) - 40;
+  const minY = Math.min(...MODEL.nodes.map(n => n.y)) - 40;
+  const maxX = Math.max(...MODEL.nodes.map(n => n.x + 220)) + 40;
+  const maxY = Math.max(...MODEL.nodes.map(n => n.y + 60)) + 40;
+  const w = container.clientWidth, h = container.clientHeight;
+  const scale = Math.min(w / (maxX - minX), h / (maxY - minY), 1);
+  state.zoom = scale;
+  state.pan.x = (w - (maxX + minX) * scale) / 2;
+  state.pan.y = 20;
+  render();
+}
+
+function resetView() {
+  state.zoom = 0.85;
+  state.pan.x = 60;
+  state.pan.y = 20;
+  state.selected = null;
+  state.highlighted.clear();
+  state.dimmed = false;
+  closeSidebar();
+  render();
+}
+
+// ============================================================
+// SEARCH
+// ============================================================
+const searchInput = document.getElementById('searchInput');
+let searchTimeout;
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    state.searchQuery = searchInput.value;
+    state.highlighted.clear();
+    state.dimmed = false;
+    if (state.searchQuery) {
+      const q = state.searchQuery.toLowerCase();
+      MODEL.nodes.forEach(n => {
+        if (n.name.toLowerCase().includes(q) || (n.file && n.file.toLowerCase().includes(q)) || (n.purpose && n.purpose.toLowerCase().includes(q))) {
+          state.highlighted.add(n.id);
+        }
+      });
+      if (state.highlighted.size > 0) {
+        state.dimmed = true;
+        // Find first highlighted node and center on it
+        const first = MODEL.nodes.find(n => state.highlighted.has(n.id));
+        if (first) {
+          const cx = container.clientWidth / 2;
+          const cy = container.clientHeight / 2;
+          state.pan.x = cx - first.x * state.zoom;
+          state.pan.y = cy - first.y * state.zoom;
+        }
+      }
+    }
+    render();
+  }, 200);
+});
+
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    searchInput.value = '';
+    state.searchQuery = '';
+    state.highlighted.clear();
+    state.dimmed = false;
+    render();
+  }
+});
+
+// ============================================================
+// FILTERS
+// ============================================================
+function toggleFilters() {
+  const fb = document.getElementById('filterbar');
+  fb.classList.toggle('open');
+}
+
+function initFilters() {
+  const list = document.getElementById('filterList');
+  MODEL.filters.forEach(f => {
+    const chip = document.createElement('button');
+    chip.className = 'filter-chip';
+    chip.textContent = f;
+    chip.onclick = () => {
+      chip.classList.toggle('active');
+      if (chip.classList.contains('active')) state.activeFilters.add(f.toLowerCase());
+      else state.activeFilters.delete(f.toLowerCase());
+      render();
+    };
+    list.appendChild(chip);
+  });
+}
+
+// ============================================================
+// FLOW VIEWER
+// ============================================================
+function showFlow(flowId) {
+  const flow = MODEL.flows.find(f => f.id === flowId);
+  if (!flow) return;
+
+  const sb = document.getElementById('sidebarContent');
+  sb.innerHTML = `
+    <div class="sidebar-header fade-in">
+      <div class="sidebar-title">${flow.name}</div>
+      <div class="sidebar-subtitle">${flow.description}</div>
+      <button class="topbar-btn" style="margin-top:8px" onclick="animateFlow('${flowId}')">▶ Animate Flow</button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Execution Steps</div>
+      ${flow.steps.map((s, i) => `
+        <div class="sidebar-prop fade-in" style="padding:8px 0;border-bottom:1px solid var(--border);animation-delay:${i*0.03}s">
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <div style="width:20px;height:20px;border-radius:10px;background:var(--accent-blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;margin-top:1px">${i+1}</div>
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${s.action}</div>
+              <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${s.detail}</div>
+              <div style="font-size:10px;color:var(--accent-blue);margin-top:2px">${s.nodeId}</div>
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  document.getElementById('sidebar').classList.add('open');
+}
+
+function animateFlow(flowId) {
+  const flow = MODEL.flows.find(f => f.id === flowId);
+  if (!flow) return;
+
+  // Close sidebar, clear canvas, highlight steps one by one
+  closeSidebar();
+  state.highlighted.clear();
+  state.dimmed = true;
+
+  let stepIdx = 0;
+  const interval = setInterval(() => {
+    if (stepIdx >= flow.steps.length) {
+      clearInterval(interval);
+      // Show summary
+      showNotif('Flow complete: ' + flow.steps.length + ' steps');
+      return;
+    }
+    const step = flow.steps[stepIdx];
+    const node = MODEL.nodes.find(n => n.id === step.nodeId);
+    if (node) {
+      state.highlighted.add(node.id);
+      // Also highlight edge leading to this step
+      if (stepIdx > 0) {
+        const prevStep = flow.steps[stepIdx - 1];
+        MODEL.edges.forEach(e => {
+          if (e.source === prevStep.nodeId && e.target === step.nodeId) {
+            state.highlighted.add(e.source);
+          }
+        });
+      }
+      // Center on node
+      const cx = container.clientWidth / 2;
+      const cy = container.clientHeight / 2;
+      state.pan.x = cx - node.x * state.zoom;
+      state.pan.y = cy - node.y * state.zoom;
+    }
+    render();
+    stepIdx++;
+  }, 800);
+}
+
+function showNotif(msg) {
+  const n = document.createElement('div');
+  n.className = 'notif';
+  n.innerHTML = msg;
+  document.body.appendChild(n);
+  setTimeout(() => n.remove(), 3000);
+}
+
+// ============================================================
+// PRESENTATION MODE
+// ============================================================
+function togglePresentation() {
+  state.presentationActive = !state.presentationActive;
+  // Simple implementation: highlight layers step by step
+  if (state.presentationActive) {
+    closeSidebar();
+    state.highlighted.clear();
+    state.dimmed = true;
+    state.presentationStep = 0;
+    const layers = ['user', 'web', 'app', 'api', 'service', 'utility', 'uac', 'external', 'frontend', 'infra'];
+    const interval = setInterval(() => {
+      if (state.presentationStep >= layers.length) {
+        clearInterval(interval);
+        state.dimmed = false;
+        render();
+        showNotif('Presentation complete');
+        return;
+      }
+      const layer = layers[state.presentationStep];
+      MODEL.nodes.forEach(n => {
+        if (n.layer === layer) state.highlighted.add(n.id);
+      });
+      render();
+      state.presentationStep++;
+    }, 1200);
+  } else {
+    state.highlighted.clear();
+    state.dimmed = false;
+    render();
+  }
+}
+
+// ============================================================
+// KEYBOARD SHORTCUTS
+// ============================================================
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeSidebar(); searchInput.blur(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); searchInput.focus(); }
+  if (e.key === 'f' && !e.ctrlKey && !e.metaKey && !searchInput.matches(':focus')) {
+    toggleFilters();
+  }
+});
+
+// ============================================================
+// INIT
+// ============================================================
+function init() {
+  initFilters();
+  render();
+  document.getElementById('loading').style.display = 'none';
+  setTimeout(fitView, 100);
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
