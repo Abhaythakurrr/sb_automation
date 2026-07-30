@@ -84,14 +84,17 @@ export function describeTriggerFields(f: Partial<TriggerScheduleFields>): string
   const tz = f.timeZone ? ` (${f.timeZone})` : '';
 
   if (f.timeStyle === 'Interval') {
-    const units = (f.timeIntervalUnits || 'Minutes').toLowerCase();
     const amount = f.timeInterval ?? 60;
+    const rawUnits = (f.timeIntervalUnits || 'Minutes').toLowerCase();
+    // "every 1 hours" reads badly; drop the count and singularise.
+    const units = amount === 1 ? rawUnits.replace(/s$/, '') : rawUnits;
     const window = f.enabledStart && f.enabledEnd
       ? ` between ${f.enabledStart} and ${f.enabledEnd}`
       : f.enabledStart
         ? ` from ${f.enabledStart} until midnight`
         : '';
-    return `Repeats every ${amount} ${units}${window}, ${days}${tz}.`;
+    const every = amount === 1 ? `every ${units}` : `every ${amount} ${units}`;
+    return `Repeats ${every}${window}, ${days}${tz}.`;
   }
 
   return f.time
@@ -200,20 +203,60 @@ function findTime(text: string): string | undefined {
   return undefined;
 }
 
-/** Finds an IANA timezone or a common abbreviation. */
-function findTimezone(text: string): string | undefined {
+/**
+ * Common timezone spellings mapped to IANA names.
+ *
+ * UAC needs a real IANA zone. An abbreviation like "IST" is ambiguous (India
+ * Standard Time and Irish Standard Time both claim it) and is not a value the
+ * controller resolves, so anything recognised here is expanded rather than
+ * passed through.
+ */
+const TZ_ALIASES: Record<string, string> = {
+  utc: 'UTC', gmt: 'UTC', zulu: 'UTC',
+  est: 'America/New_York', edt: 'America/New_York', et: 'America/New_York',
+  eastern: 'America/New_York', ny: 'America/New_York', nyc: 'America/New_York',
+  cst: 'America/Chicago', cdt: 'America/Chicago', ct: 'America/Chicago', central: 'America/Chicago',
+  mst: 'America/Denver', mdt: 'America/Denver', mountain: 'America/Denver',
+  pst: 'America/Los_Angeles', pdt: 'America/Los_Angeles', pt: 'America/Los_Angeles', pacific: 'America/Los_Angeles',
+  ist: 'Asia/Kolkata', india: 'Asia/Kolkata', kolkata: 'Asia/Kolkata', calcutta: 'Asia/Kolkata',
+  bst: 'Europe/London', uk: 'Europe/London', london: 'Europe/London',
+  cet: 'Europe/Paris', cest: 'Europe/Paris',
+  jst: 'Asia/Tokyo', tokyo: 'Asia/Tokyo',
+  sgt: 'Asia/Singapore', singapore: 'Asia/Singapore',
+  aest: 'Australia/Sydney', aedt: 'Australia/Sydney', sydney: 'Australia/Sydney',
+  brt: 'America/Sao_Paulo',
+};
+
+export interface NormalizedTimezone {
+  value?: string;
+  /** True when an abbreviation was expanded, so the caller can say so. */
+  expanded: boolean;
+  original?: string;
+}
+
+/** Expands a timezone abbreviation to its IANA name. Leaves IANA names alone. */
+export function normalizeTimezone(raw?: string): NormalizedTimezone {
+  const t = (raw || '').trim();
+  if (!t) return { expanded: false };
+  if (t.includes('/')) return { value: t, expanded: false, original: t };
+  const mapped = TZ_ALIASES[t.toLowerCase()];
+  return mapped
+    ? { value: mapped, expanded: mapped.toLowerCase() !== t.toLowerCase(), original: t }
+    : { value: t, expanded: false, original: t };
+}
+
+/** Finds an IANA timezone or a recognised abbreviation in free text. */
+function findTimezone(text: string): NormalizedTimezone {
   const iana = text.match(/\b([A-Za-z]+\/[A-Za-z_]+)\b/);
-  if (iana) return iana[1];
-  const map: Record<string, string> = {
-    utc: 'UTC', gmt: 'UTC',
-    est: 'America/New_York', edt: 'America/New_York', et: 'America/New_York',
-    cst: 'America/Chicago', cdt: 'America/Chicago',
-    pst: 'America/Los_Angeles', pdt: 'America/Los_Angeles',
-    ist: 'Asia/Kolkata',
-    bst: 'Europe/London', uk: 'Europe/London',
-  };
-  const abbr = text.toLowerCase().match(/\b(utc|gmt|est|edt|et|cst|cdt|pst|pdt|ist|bst|uk)\b/);
-  return abbr ? map[abbr[1]] : undefined;
+  if (iana) return { value: iana[1], expanded: false, original: iana[1] };
+
+  const alt = Object.keys(TZ_ALIASES).join('|');
+  const abbr = text.toLowerCase().match(new RegExp(`\\b(${alt})\\b`));
+  if (!abbr) return { expanded: false };
+  // "et" and "ct" are short enough to appear inside other words; the word
+  // boundary handles that, but a bare "pt"/"et" in prose is still risky, so
+  // only trust them when they look like a trailing timezone tag.
+  return { value: TZ_ALIASES[abbr[1]], expanded: true, original: abbr[1].toUpperCase() };
 }
 
 function numberBefore(text: string, unitPattern: string): number | undefined {
@@ -222,6 +265,165 @@ function numberBefore(text: string, unitPattern: string): number | undefined {
   if (!m) return undefined;
   const raw = m[1].toLowerCase();
   return /^\d+$/.test(raw) ? parseInt(raw, 10) : WORD_NUMBERS[raw];
+}
+
+/** Every distinct time mentioned, so multiple times can be detected. */
+function findAllTimes(text: string): string[] {
+  const found = new Set<string>();
+  // Split on connectors and scan each fragment, since findTime returns first-match.
+  for (const frag of text.split(/\b(?:and|,|&|\+|then)\b/i)) {
+    const t = findTime(frag);
+    if (t) found.add(t);
+  }
+  const whole = findTime(text);
+  if (whole) found.add(whole);
+  return Array.from(found);
+}
+
+// ── Day pattern extraction ───────────────────────────────────────────────────
+
+/**
+ * The day dimension of a schedule, extracted independently of the time
+ * dimension. Keeping these separate is the point: "every 5 minutes on Monday,
+ * Tuesday and Wednesday" has an interval time pattern AND a specific-day
+ * pattern, and an earlier version of this parser dropped the days whenever it
+ * saw an interval.
+ */
+type DayKind =
+  | 'daily'
+  | 'businessDays'
+  | 'specificDays'
+  | 'monthlyDay'      // day-of-month, e.g. the 24th
+  | 'monthlyOrdinal'  // ordinal weekday, e.g. last Friday
+  | 'everyNDays'
+  | 'unknown';
+
+interface DayPattern {
+  kind: DayKind;
+  /** Weekday flags, e.g. ['mon','tue','wed']. */
+  days: string[];
+  /** Days of the month, e.g. [1, 15]. */
+  monthDays: number[];
+  ordinal?: string;      // '1st' | '2nd' | '3rd' | '4th' | 'Last'
+  ordinalNoun?: string;  // 'Friday' | 'Business Day' | 'Day'
+  qualifier?: string;    // 'Month' | 'Jan' …
+  dayInterval?: number;  // every N days
+  reason: string;
+}
+
+const ORDINAL_WORDS: Record<string, string> = {
+  first: '1st', '1st': '1st',
+  second: '2nd', '2nd': '2nd',
+  third: '3rd', '3rd': '3rd',
+  fourth: '4th', '4th': '4th',
+  last: 'Last', final: 'Last',
+};
+
+function extractDayPattern(lower: string): DayPattern {
+  const empty = { days: [], monthDays: [] };
+
+  // Named weekdays. Deduplicated and returned in week order so
+  // "wednesday, monday" reads back as "Monday and Wednesday".
+  const named = DAY_WORDS.filter(d => d.re.test(lower)).map(d => d.key);
+  const days = DAY_ORDER.filter(d => named.includes(d));
+
+  const wantsWeekdays = /\b(weekday|week day|business day|working day|mon(day)?\s*(-|to|through|thru)\s*fri(day)?)s?\b/.test(lower);
+  const wantsWeekend = /\bweekends?\b/.test(lower);
+  const monthly = /\b(month|monthly)\b/.test(lower);
+
+  // ── Ordinal weekday / ordinal business day: "last Friday of every month" ──
+  //
+  // Precedence matters. A *word* ordinal ("last", "first") signals an ordinal
+  // pattern. A *numeric* ordinal only does so when it is attached to a weekday
+  // or business day — "1st Monday of the month" is ordinal, but "the 1st and
+  // 15th" is plain day-of-month and must not collapse to "1st Day".
+  const wordOrdinal = lower.match(/\b(first|second|third|fourth|last|final)\b/);
+  const numericOrdinal = lower.match(/\b(1st|2nd|3rd|4th)\b/);
+  const ordinalTarget = days.length > 0 || /\bbusiness day\b/.test(lower);
+  const ordinalMatch = wordOrdinal || (numericOrdinal && ordinalTarget ? numericOrdinal : null);
+
+  if (ordinalMatch && (monthly || ordinalTarget || /\bday\b/.test(lower))) {
+    const ordinal = ORDINAL_WORDS[ordinalMatch[1]];
+    const ordinalNoun = days.length
+      ? DAY_LABEL[days[0]]
+      : /\bbusiness day\b/.test(lower) ? 'Business Day' : 'Day';
+    const monthWord = MONTH_WORDS.find(m => new RegExp(`\\b${m}`, 'i').test(lower));
+    const qualifier = monthWord && !monthly
+      ? monthWord.charAt(0).toUpperCase() + monthWord.slice(1)
+      : 'Month';
+    return {
+      ...empty, kind: 'monthlyOrdinal', ordinal, ordinalNoun, qualifier,
+      reason: `Monthly pattern: the ${ordinal.toLowerCase()} ${ordinalNoun.toLowerCase()} of every ${qualifier.toLowerCase()}.`,
+    };
+  }
+
+  // ── Day-of-month: "on the 24th", "on the 1st and 15th of every month" ──────
+  if (monthly || /\b\d{1,2}(st|nd|rd|th)\b/.test(lower)) {
+    const nums = Array.from(lower.matchAll(/\b(\d{1,2})(?:st|nd|rd|th)\b/g))
+      .map(m => parseInt(m[1], 10))
+      .filter(n => n >= 1 && n <= 31);
+    const dayOf = Array.from(lower.matchAll(/\bday\s+(\d{1,2})\b/g))
+      .map(m => parseInt(m[1], 10))
+      .filter(n => n >= 1 && n <= 31);
+    const monthDays = Array.from(new Set([...nums, ...dayOf])).sort((a, b) => a - b);
+    if (monthDays.length > 0) {
+      return {
+        ...empty, kind: 'monthlyDay', monthDays,
+        reason: monthDays.length === 1
+          ? `Monthly on day ${monthDays[0]}.`
+          : `Monthly on days ${monthDays.join(', ')}.`,
+      };
+    }
+    if (monthly) {
+      return { ...empty, kind: 'monthlyDay', monthDays: [1], reason: 'Monthly — no day given, so day 1 is assumed.' };
+    }
+  }
+
+  // ── Every N days / weeks ──────────────────────────────────────────────────
+  const everyOtherDay = /\bevery\s+other\s+day\b/.test(lower);
+  const nDays = numberBefore(lower, '(?:days?)');
+  const nWeeks = numberBefore(lower, '(?:weeks?)');
+  const everyOtherWeek = /\bevery\s+other\s+week\b|\bbi-?weekly\b|\bfortnight/.test(lower);
+  if (everyOtherDay || everyOtherWeek || (nDays && nDays > 1 && /\bevery\b/.test(lower)) || (nWeeks && nWeeks > 1)) {
+    const interval = everyOtherDay ? 2
+      : everyOtherWeek ? 14
+        : nWeeks && nWeeks > 1 ? nWeeks * 7
+          : nDays!;
+    return {
+      ...empty, kind: 'everyNDays', dayInterval: interval,
+      reason: `Runs every ${interval} day(s) counting from the start date.`,
+    };
+  }
+
+  if (wantsWeekdays) {
+    return { ...empty, kind: 'businessDays', reason: 'Business days only — weekends and calendar holidays are skipped.' };
+  }
+  if (wantsWeekend) {
+    return { ...empty, kind: 'specificDays', days: ['sat', 'sun'], reason: 'Weekends only.' };
+  }
+  if (days.length > 0) {
+    return {
+      ...empty, kind: 'specificDays', days,
+      reason: `Specific days: ${joinList(days.map(d => DAY_LABEL[d]))}.`,
+    };
+  }
+  // "every day", "daily", and the time-of-day forms people actually use.
+  if (/\b(daily|every\s*day|each\s*day|everyday|every\s+(morning|night|evening|afternoon|midnight|noon))\b/.test(lower)) {
+    return { ...empty, kind: 'daily', reason: 'Runs every day.' };
+  }
+  if (/\b(weekly|every\s+week)\b/.test(lower)) {
+    return { ...empty, kind: 'unknown', reason: 'Weekly, but no day of the week was given.' };
+  }
+  return { ...empty, kind: 'unknown', reason: '' };
+}
+
+/** Renders a day pattern as the `byday=` value the trigger builder parses. */
+function bydayToken(p: DayPattern): string | undefined {
+  if (p.kind === 'businessDays') return 'weekdays';
+  if (p.kind === 'specificDays' && p.days.length) {
+    return p.days.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(',');
+  }
+  return undefined;
 }
 
 export interface ScheduleInterpretation {
@@ -277,27 +479,52 @@ export function interpretSchedule(input: string, fallbackTz?: string): ScheduleI
   const questions: string[] = [];
   let confidence = 0.5;
 
-  const timezone = findTimezone(text) || (fallbackTz || undefined);
-  if (findTimezone(text)) {
-    reasoning.push(`Timezone "${timezone}" read from the request.`);
+  // ── Timezone ──────────────────────────────────────────────────────────────
+  const stated = findTimezone(text);
+  const fallback = normalizeTimezone(fallbackTz);
+  const tz = stated.value ? stated : fallback;
+  const timezone = tz.value;
+
+  if (stated.value) {
+    reasoning.push(stated.expanded
+      ? `Timezone: "${stated.original}" expanded to ${stated.value} — UAC needs an IANA zone, and abbreviations like ${stated.original} are ambiguous.`
+      : `Timezone ${stated.value} read from the request.`);
     confidence += 0.1;
-  } else if (fallbackTz) {
-    reasoning.push(`No timezone stated, so the one you used earlier in this session (${fallbackTz}) is assumed.`);
+  } else if (fallback.value) {
+    reasoning.push(fallback.expanded
+      ? `No timezone stated. Using ${fallback.value}, expanded from the "${fallback.original}" you used earlier in this session.`
+      : `No timezone stated, so the one you used earlier in this session (${fallback.value}) is assumed.`);
   } else {
     questions.push('Which timezone should this run in? Without one UAC falls back to the controller default, which is rarely what a business schedule intends.');
   }
 
+  // ── Day pattern, extracted independently of the time pattern ──────────────
+  // This is the whole point of the split: a schedule can be an interval AND be
+  // restricted to specific days. Deriving the two separately means neither can
+  // swallow the other.
+  const dayPattern = extractDayPattern(lower);
+
   // ── Interval? ─────────────────────────────────────────────────────────────
   // Plurals matter here: "every 15 minutes" and "every 2 hours" are the normal
-  // phrasings, so the unit pattern has to accept them.
-  const isInterval = (/\bevery\b/.test(lower) || /\b(hourly|every other)\b/.test(lower))
+  // phrasings, so the unit pattern has to accept them. The exclusion only
+  // covers day/week/month words directly after "every", so "every 5 minutes of
+  // Monday" is still correctly read as an interval.
+  const isInterval = (/\bevery\b/.test(lower) || /\b(hourly|every other hour)\b/.test(lower))
     && /\b(mins?|minutes?|hrs?|hours?|secs?|seconds?|hourly)\b/.test(lower)
-    && !/\bevery\s+(day|weekday|business|mon|tue|wed|thu|fri|sat|sun|week|month|year)/.test(lower);
+    && !/\bevery\s+(day|weekday|business|week|month|year)\b/.test(lower);
 
   let frequency = '';
   let scheduleString = '';
   let endTime: string | undefined;
   let complexOverride: ComplexOverride | undefined;
+
+  // Multiple distinct times cannot be expressed by one UAC time trigger.
+  const allTimes = findAllTimes(text);
+  const windowPhrase = /\b(from|between|until|till|starting)\b/.test(lower);
+  if (!isInterval && allTimes.length > 1 && !windowPhrase) {
+    questions.push(`You mentioned ${allTimes.length} times (${allTimes.join(', ')}). A single UAC time trigger fires at one time, so this needs either an interval, or one job per time, or separate triggers on the same task. I have used ${allTimes[0]}.`);
+    confidence -= 0.1;
+  }
 
   if (isInterval) {
     const minutes = numberBefore(lower, '(?:mins?|minutes?)');
@@ -310,12 +537,37 @@ export function interpretSchedule(input: string, fallbackTz?: string): ScheduleI
     else if (hours !== undefined) { amount = hours; units = 'hours'; }
     else if (seconds !== undefined) { amount = seconds; units = 'seconds'; }
     else if (/\bevery\s+(half\s*(an\s*)?hour|half-hour)\b/.test(lower)) { amount = 30; units = 'minutes'; }
+    else if (/\bevery\s+other\s+hour\b/.test(lower)) { amount = 2; units = 'hours'; }
     else if (/\bhourly\b/.test(lower)) { amount = 1; units = 'hours'; }
     else { amount = 60; units = 'minutes'; }
 
     frequency = `FREQ=INTERVAL;interval=${amount};units=${units}`;
     reasoning.push(`Interval schedule: every ${amount} ${units}.`);
     confidence += 0.3;
+
+    // Restrict the interval to the requested days. The trigger builder already
+    // understands byday= and monthday= on a FREQ=INTERVAL string, so these
+    // flow straight through instead of needing an override.
+    const byday = bydayToken(dayPattern);
+    if (byday) {
+      frequency += `;byday=${byday}`;
+      reasoning.push(dayPattern.reason);
+      confidence += 0.15;
+    } else if (dayPattern.kind === 'monthlyDay' && dayPattern.monthDays.length === 1) {
+      frequency += `;monthday=${dayPattern.monthDays[0]}`;
+      reasoning.push(`${dayPattern.reason} The interval repeats within that day.`);
+      confidence += 0.1;
+    } else if (dayPattern.kind === 'daily') {
+      reasoning.push('Runs every day.');
+      confidence += 0.05;
+    } else if (dayPattern.kind === 'monthlyOrdinal' || dayPattern.kind === 'everyNDays'
+      || (dayPattern.kind === 'monthlyDay' && dayPattern.monthDays.length > 1)) {
+      // An interval combined with a complex day pattern is expressible in UAC
+      // but not in the frequency column; flag rather than silently drop it.
+      questions.push(`I read the timing as an interval, but "${dayPattern.reason.replace(/\.$/, '')}" is a complex day pattern. Combining the two needs the day fields set on the trigger directly — confirm that is what you want.`);
+    } else {
+      reasoning.push('No day restriction given, so the interval runs on every day.');
+    }
 
     // Window: "from 06:00 to 22:00" / "between 6am and 10pm" / "until 22:00"
     const windowMatch = lower.match(/\b(?:from|between|starting(?:\s+at)?)\s+(.+?)\s+(?:to|until|till|and|-)\s+([^,.;]+)/);
@@ -352,72 +604,94 @@ export function interpretSchedule(input: string, fallbackTz?: string): ScheduleI
       questions.push('What time of day should it run?');
     }
 
-    const namedDays = DAY_WORDS.filter(d => d.re.test(lower)).map(d => d.key);
-    const wantsWeekdays = /\b(weekday|week day|business day|working day|mon(day)?\s*(-|to|through)\s*fri(day)?)\b/.test(lower);
-    const wantsWeekend = /\bweekend\b/.test(lower);
+    switch (dayPattern.kind) {
+      case 'monthlyOrdinal': {
+        // The spreadsheet frequency column has no syntax for an ordinal
+        // weekday, so build the UAC fields directly and say so.
+        const { ordinal, ordinalNoun, qualifier } = dayPattern;
+        complexOverride = {
+          fields: {
+            dayStyle: 'Complex',
+            dateAdjective: ordinal,
+            dateNouns: [{ value: ordinalNoun! }],
+            dateQualifiers: [{ value: qualifier! }],
+            simpleDateType: undefined,
+          },
+          caveat: `The Scheduled Frequency column cannot express "${ordinal!.toLowerCase()} ${ordinalNoun!.toLowerCase()} of every ${qualifier!.toLowerCase()}" — it only understands day-of-month. Set this pattern either by pointing ref_job at an existing job that already has it, or by configuring dateAdjective, dateNouns and dateQualifiers on the trigger after creation. The fields below are the correct UAC configuration.`,
+        };
+        frequency = 'Monthly'; // closest supported value, keeps the row valid
+        reasoning.push(dayPattern.reason);
+        confidence += 0.25;
+        break;
+      }
 
-    // Monthly / complex patterns.
-    const ordinal = lower.match(/\b(first|1st|second|2nd|third|3rd|fourth|4th|last)\b/);
-    const monthly = /\b(month|monthly)\b/.test(lower);
-    const nthDayOfMonth = lower.match(/\b(?:on\s+the\s+)?(\d{1,2})(?:st|nd|rd|th)\b/);
+      case 'monthlyDay': {
+        if (dayPattern.monthDays.length === 1) {
+          frequency = `FREQ=MONTHLY;INTERVAL=1;byday=${dayPattern.monthDays[0]}th`;
+        } else {
+          // Several days of the month: valid in UAC as multiple dateNouns, but
+          // the frequency column carries only one.
+          frequency = `FREQ=MONTHLY;INTERVAL=1;byday=${dayPattern.monthDays[0]}th`;
+          complexOverride = {
+            fields: {
+              dayStyle: 'Complex',
+              dateAdjective: 'Every',
+              dateNouns: dayPattern.monthDays.map(d => ({ value: `Month Day ${String(d).padStart(2, '0')}` })),
+              dateQualifiers: [{ value: 'Month' }],
+              simpleDateType: undefined,
+            },
+            caveat: `The Scheduled Frequency column carries a single day of the month, so days ${dayPattern.monthDays.join(', ')} cannot be expressed there. The dateNouns below are the correct UAC configuration — set them on the trigger, or inherit from a ref_job that already has this pattern.`,
+          };
+        }
+        reasoning.push(dayPattern.reason);
+        confidence += 0.25;
+        break;
+      }
 
-    if (ordinal && (monthly || namedDays.length > 0 || /\bbusiness day\b/.test(lower))) {
-      const map: Record<string, string> = {
-        first: '1st', '1st': '1st', second: '2nd', '2nd': '2nd',
-        third: '3rd', '3rd': '3rd', fourth: '4th', '4th': '4th', last: 'Last',
-      };
-      const adj = map[ordinal[1]] || 'Every';
-      const noun = namedDays.length
-        ? DAY_LABEL[namedDays[0]]
-        : /\bbusiness day\b/.test(lower) ? 'Business Day' : 'Day';
-      const monthWord = MONTH_WORDS.find(m => new RegExp(`\\b${m}`, 'i').test(lower));
-      const qualifier = monthWord && !monthly ? monthWord.charAt(0).toUpperCase() + monthWord.slice(1) : 'Month';
+      case 'everyNDays': {
+        complexOverride = {
+          fields: {
+            dayStyle: 'Every',
+            dayInterval: dayPattern.dayInterval,
+            simpleDateType: undefined,
+          },
+          caveat: `"Every ${dayPattern.dayInterval} days" uses UAC's Every day style with dayInterval, which the Scheduled Frequency column has no syntax for. Set dayStyle and dayInterval on the trigger, and give the job a first run date so the count has a starting point.`,
+        };
+        frequency = 'Daily';
+        reasoning.push(dayPattern.reason);
+        confidence += 0.2;
+        break;
+      }
 
-      // The spreadsheet frequency column has no syntax for an ordinal weekday,
-      // so build the UAC fields directly and say so.
-      complexOverride = {
-        fields: {
-          dayStyle: 'Complex',
-          dateAdjective: adj,
-          dateNouns: [{ value: noun }],
-          dateQualifiers: [{ value: qualifier }],
-          simpleDateType: undefined,
-        },
-        caveat: `The Scheduled Frequency column cannot express "${adj.toLowerCase()} ${noun.toLowerCase()} of every ${qualifier.toLowerCase()}" — it only understands day-of-month. Set this pattern either by pointing ref_job at an existing job that already has it, or by configuring dateAdjective, dateNouns and dateQualifiers on the trigger after creation. The fields below are the correct UAC configuration.`,
-      };
-      // Closest supported value, used only so the rest of the row stays valid.
-      frequency = 'Monthly';
-      reasoning.push(`Monthly pattern: the ${adj.toLowerCase()} ${noun.toLowerCase()} of every ${qualifier.toLowerCase()}.`);
-      confidence += 0.25;
-    } else if (monthly && nthDayOfMonth) {
-      frequency = `FREQ=MONTHLY;INTERVAL=1;byday=${nthDayOfMonth[1]}th`;
-      reasoning.push(`Monthly on day ${nthDayOfMonth[1]}.`);
-      confidence += 0.25;
-    } else if (wantsWeekdays) {
-      frequency = 'Weekdays';
-      reasoning.push('Business days only — weekends and calendar holidays are skipped.');
-      confidence += 0.3;
-    } else if (wantsWeekend) {
-      frequency = 'Saturday,Sunday';
-      reasoning.push('Weekends only.');
-      confidence += 0.25;
-    } else if (namedDays.length > 0) {
-      frequency = namedDays.map(d => DAY_LABEL[d]).join(',');
-      reasoning.push(`Specific days: ${joinList(namedDays.map(d => DAY_LABEL[d]))}.`);
-      confidence += 0.3;
-    } else if (/\b(daily|every day|each day|everyday)\b/.test(lower)) {
-      frequency = 'Daily';
-      reasoning.push('Runs every day.');
-      confidence += 0.3;
-    } else if (/\b(week|weekly)\b/.test(lower)) {
-      frequency = 'Weekly';
-      reasoning.push('Weekly.');
-      confidence += 0.15;
-      questions.push('Which day of the week?');
-    } else {
-      frequency = 'Daily';
-      reasoning.push('No day pattern recognised, so Daily is assumed — the builder\'s own default.');
-      confidence -= 0.1;
+      case 'businessDays':
+        frequency = 'Weekdays';
+        reasoning.push(dayPattern.reason);
+        confidence += 0.3;
+        break;
+
+      case 'specificDays':
+        frequency = dayPattern.days.map(d => DAY_LABEL[d]).join(',');
+        reasoning.push(dayPattern.reason);
+        confidence += 0.3;
+        break;
+
+      case 'daily':
+        frequency = 'Daily';
+        reasoning.push(dayPattern.reason);
+        confidence += 0.3;
+        break;
+
+      default:
+        frequency = 'Daily';
+        if (dayPattern.reason) {
+          reasoning.push(dayPattern.reason);
+          questions.push('Which day or days of the week?');
+          confidence += 0.15;
+        } else {
+          reasoning.push('No day pattern recognised, so Daily is assumed — the builder\'s own default.');
+          confidence -= 0.1;
+        }
+        break;
     }
   }
 

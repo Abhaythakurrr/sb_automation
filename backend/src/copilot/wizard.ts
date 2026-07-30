@@ -121,7 +121,12 @@ export const WIZARD_FIELDS: WizardFieldSpec[] = [
     type: 'schedule',
     required: true,
     help: 'Describe the schedule the way you would say it. I will translate it into a valid UAC trigger and read it back to you before anything is created. There are no cron expressions in UAC time triggers.',
-    examples: ['every weekday at 8 PM', 'every 15 minutes from 06:00 to 22:00', 'the last Friday of every month at 23:00', 'every Monday at 06:30'],
+    examples: [
+      'every weekday at 8 PM',
+      'every 5 minutes on Monday, Tuesday and Wednesday',
+      'every 15 minutes from 06:00 to 22:00',
+      'the last Friday of every month at 23:00',
+    ],
     validate: v => {
       if (!v.trim()) return 'A schedule is required. If you genuinely want no schedule, say "no schedule" and I will create the task without a trigger.';
       if (/^no( schedule)?$|^none$|^manual$/i.test(v.trim())) return undefined;
