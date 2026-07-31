@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stonebranch Automation Platform — Enterprise Architecture</title>
+<!--
+  Enterprise Architecture diagram, generated from the repository source.
+
+  Every node, edge and label below corresponds to real code. The inventory in
+  the DATA block is the single source of truth for the on-screen SVG and for all
+  four exports (VSDX, draw.io, SVG, PNG), so they can never disagree.
+
+  Self-contained by design: no CDN, no build step, no dependencies. Open the
+  file directly in a browser. The .vsdx writer implements the OPC/ZIP container
+  and Visio 2013+ drawing XML by hand for exactly that reason.
+-->
+<style>
+  /* ── Tokens ─────────────────────────────────────────────────────────────── */
+  :root {
+    --bg:        #05080f;
+    --bg-2:      #0a1220;
+    --panel:     rgba(12, 22, 38, 0.72);
+    --line:      rgba(148, 163, 184, 0.16);
+    --text:      #dbe4f0;
+    --text-dim:  #8fa0b8;
+    --text-mute: #5b6b82;
+
+    --l-user:       #c4b5fd;
+    --l-infra:      #94a3b8;
+    --l-frontend:   #22d3ee;
+    --l-entry:      #60a5fa;
+    --l-middleware: #818cf8;
+    --l-api:        #38bdf8;
+    --l-logic:      #34d399;
+    --l-store:      #fbbf24;
+    --l-external:   #fb923c;
+    --l-security:   #fb7185;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1100px 620px at 12% -8%, rgba(34,211,238,0.07), transparent 60%),
+      radial-gradient(900px 560px at 92% 4%, rgba(167,139,250,0.07), transparent 58%),
+      var(--bg);
+    color: var(--text);
+    font: 13px/1.5 'Segoe UI', Inter, system-ui, -apple-system, sans-serif;
+    display: flex; flex-direction: column;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────────── */
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(5, 8, 15, 0.85);
+    backdrop-filter: blur(14px) saturate(150%);
+    position: sticky; top: 0; z-index: 30;
+    flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(140deg, #22d3ee, #8b5cf6);
+    box-shadow: 0 4px 16px rgba(34,211,238,0.35), inset 0 1px 0 rgba(255,255,255,0.4);
+    display: grid; place-items: center;
+    font-weight: 800; font-size: 13px; color: #04121f;
+  }
+  h1 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: 0.2px; }
+  .sub { margin: 1px 0 0; font-size: 10.5px; color: var(--text-mute); font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .spacer { flex: 1 1 auto; }
+
+  /* ── Controls ───────────────────────────────────────────────────────────── */
+  .views { display: flex; gap: 4px; flex-wrap: wrap; }
+  .btn {
+    font: inherit; font-size: 11px; font-weight: 600;
+    color: var(--text-dim); background: rgba(148,163,184,0.07);
+    border: 1px solid var(--line); border-radius: 9px;
+    padding: 6px 11px; cursor: pointer;
+    transition: all .18s cubic-bezier(.22,1,.36,1);
+    white-space: nowrap;
+  }
+  .btn:hover { color: var(--text); border-color: rgba(34,211,238,0.4); transform: translateY(-1px); }
+  .btn.on {
+    color: #cffafe;
+    background: linear-gradient(135deg, rgba(34,211,238,0.18), rgba(139,92,246,0.13));
+    border-color: rgba(34,211,238,0.45);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+  }
+  .btn.primary { color: #d1fae5; background: linear-gradient(135deg, rgba(16,185,129,0.22), rgba(6,182,212,0.16)); border-color: rgba(16,185,129,0.42); }
+  input[type=search] {
+    font: inherit; font-size: 11px; color: var(--text);
+    background: rgba(2,8,18,0.6); border: 1px solid var(--line);
+    border-radius: 9px; padding: 6px 10px; width: 190px; outline: none;
+  }
+  input[type=search]:focus { border-color: rgba(34,211,238,0.45); box-shadow: 0 0 0 3px rgba(34,211,238,0.10); }
+
+  /* ── Layout ─────────────────────────────────────────────────────────────── */
+  .body { flex: 1 1 auto; display: flex; min-height: 0; }
+  .canvas-wrap { flex: 1 1 auto; overflow: auto; position: relative; }
+  #canvas { display: block; }
+
+  aside {
+    width: 320px; flex: 0 0 320px;
+    border-left: 1px solid var(--line);
+    background: var(--panel);
+    backdrop-filter: blur(14px);
+    overflow: auto; padding: 14px 16px;
+  }
+  aside h2 { margin: 0 0 3px; font-size: 12.5px; }
+  aside .path { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10px; color: #67e8f9; word-break: break-all; }
+  aside .desc { font-size: 11.5px; color: var(--text-dim); margin: 10px 0 0; line-height: 1.6; }
+  aside .k { font-size: 9px; text-transform: uppercase; letter-spacing: .14em; color: var(--text-mute); font-weight: 800; margin: 16px 0 6px; }
+  aside ul { margin: 0; padding: 0; list-style: none; }
+  aside li { font-size: 11px; color: var(--text-dim); padding: 5px 0; border-top: 1px solid rgba(148,163,184,0.08); line-height: 1.5; }
+  aside li b { color: var(--text); font-weight: 600; }
+  .chip { display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; }
+  .empty { color: var(--text-mute); font-size: 11.5px; line-height: 1.6; }
+
+  /* ── Legend ─────────────────────────────────────────────────────────────── */
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; padding: 9px 18px; border-bottom: 1px solid var(--line); background: rgba(5,8,15,0.5); }
+  .legend span { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text-dim); }
+  .dot { width: 9px; height: 9px; border-radius: 3px; }
+
+  /* ── SVG element styles ─────────────────────────────────────────────────── */
+  .node { cursor: pointer; }
+  .node rect { transition: filter .18s ease, opacity .18s ease; }
+  .node:hover rect.box { filter: brightness(1.35); }
+  .node.dim { opacity: 0.13; }
+  .node.sel rect.box { stroke-width: 2.4; }
+  .edge { transition: opacity .18s ease; }
+  .edge.dim { opacity: 0.05; }
+  .edge.hot path { stroke-width: 2.2; }
+  .band { pointer-events: none; }
+
+  footer { padding: 8px 18px; border-top: 1px solid var(--line); font-size: 10px; color: var(--text-mute); display: flex; gap: 14px; flex-wrap: wrap; }
+
+  /* ── Print / PDF ────────────────────────────────────────────────────────── */
+  @media print {
+    body { background: #fff; color: #000; }
+    header, aside, .legend, footer, .views, .exports { display: none !important; }
+    .canvas-wrap { overflow: visible; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">SB</div>
+    <div>
+      <h1>Stonebranch Automation Platform — Enterprise Architecture</h1>
+      <p class="sub" id="meta">generated from source</p>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="views" id="views"></div>
+  <input type="search" id="find" placeholder="Find a component…" />
+  <div class="views exports">
+    <button class="btn primary" id="dl-vsdx">Download .vsdx</button>
+    <button class="btn" id="dl-drawio">.drawio</button>
+    <button class="btn" id="dl-svg">SVG</button>
+    <button class="btn" id="dl-png">PNG</button>
+    <button class="btn" id="do-print">Print</button>
+  </div>
+</header>
+
+<div class="legend" id="legend"></div>
+
+<div class="body">
+  <div class="canvas-wrap"><svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <aside id="panel"></aside>
+</div>
+
+<footer>
+  <span id="stat"></span>
+  <span>Click a component for its file path and runtime connections.</span>
+  <span>Every arrow is an actual execution path.</span>
+</footer>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   1. DATA — the verified repository inventory.
+   Single source of truth for the SVG and every export.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const LAYERS = [
+  { id:'user',       name:'User',                 color:'var(--l-user)',       hex:'#c4b5fd' },
+  { id:'infra',      name:'Infrastructure / Edge',color:'var(--l-infra)',      hex:'#94a3b8' },
+  { id:'frontend',   name:'Frontend — Next.js 14 App Router (:3000)', color:'var(--l-frontend)', hex:'#22d3ee' },
+  { id:'entry',      name:'Backend Entry — Express (:3001)', color:'var(--l-entry)', hex:'#60a5fa' },
+  { id:'middleware', name:'Middleware',           color:'var(--l-middleware)', hex:'#818cf8' },
+  { id:'api',        name:'API Routers',          color:'var(--l-api)',        hex:'#38bdf8' },
+  { id:'logic',      name:'Business Logic — Services, Utilities, Copilot', color:'var(--l-logic)', hex:'#34d399' },
+  { id:'store',      name:'Persistence — local JSON + in-memory (no database)', color:'var(--l-store)', hex:'#fbbf24' },
+  { id:'external',   name:'External Systems',     color:'var(--l-external)',   hex:'#fb923c' },
+];
+
+const V = { ALL:'overview', CREATE:'create', DEL:'delete', MON:'monitor', COP:'copilot', OPS:'ops' };
+const EVERY = [V.ALL, V.CREATE, V.DEL, V.MON, V.COP, V.OPS];
+
+/* n(id, label, sublabel/file, layer, views, description) */
+const N = (id, label, sub, layer, views, desc) => ({ id, label, sub, layer, views, desc });
+
+const NODES = [
+  // ── User ────────────────────────────────────────────────────────────────
+  N('user','Operations Engineer','browser · internal network only','user',EVERY,
+    'Reaches the platform only from the internal corporate network. Nginx serves it over HTTPS on a private DNS name; there is no public internet exposure.'),
+
+  // ── Infrastructure ──────────────────────────────────────────────────────
+  N('nginx','Nginx reverse proxy','nginx/sb-automation.conf','infra',EVERY,
+    'sb-automation.adient.internal. Port 80 issues a 301 to HTTPS. Port 443 terminates TLS 1.2/1.3 with an internal PKI certificate and adds HSTS, X-Frame-Options DENY, X-Content-Type-Options nosniff and Referrer-Policy. client_max_body_size 11M matches the backend upload cap. Routes /api/ to 127.0.0.1:3001 (120s read timeout for slow UAC calls), / to 127.0.0.1:3000, and /health to the backend unauthenticated.'),
+  N('pm2','PM2 process manager','ecosystem.config.js','infra',[V.ALL],
+    'Two fork-mode processes, both autorestart with max_memory_restart 512M: "sb-frontend" runs next start -p 3000, "sb-backend" runs tsx src/index.ts on port 3001. Registered with systemd via pm2 startup.'),
+  N('ansible','Ansible deployment','ansible/deploy.yml','infra',[V.ALL],
+    'Installs Node.js, Nginx and PM2, creates the app user, clones the repo, renders .env from templates/env.j2 and the vhost from templates/nginx.conf.j2, builds both apps, then starts and saves the PM2 process list.'),
+
+  // ── Frontend ────────────────────────────────────────────────────────────
+  N('layout','app/layout.tsx','root layout · ToastProvider · CopilotDock','frontend',[V.ALL,V.COP],
+    'Wraps every route in the toast provider and mounts the Copilot dock globally, so the assistant is present on all pages including the documentation and SOP routes that render outside the workspace shell.'),
+  N('workspace','WorkspaceLayout.tsx','VS Code style tab shell','frontend',[V.ALL],
+    'Automations open as tabs and every opened tab stays mounted (hidden, not unmounted), so an upload or a half-finished execution survives switching away and back.'),
+  N('pipeline','PipelinePage','Job Creation pipeline','frontend',[V.ALL,V.CREATE],
+    'Five stages: Upload, Parse/Preview, Resolve, Execute, Verify. Drives the whole bulk creation flow and hosts the Job Builder Chat entry point.'),
+  N('execdash','ExecutionDashboard','live SSE result grid','frontend',[V.ALL,V.CREATE],
+    'Consumes the Server-Sent Events stream and renders one row per object as it is created, plus the post-creation verification checks.'),
+  N('monpage','MonitoringPage','monitoring console','frontend',[V.ALL,V.MON],
+    'Start/stop the monitor, choose a 1/5/10/15 minute poll interval, toggle agent and job monitoring, and read the alert history with ServiceNow links.'),
+  N('delpage','JobDeletionPage','inspect · backup · delete','frontend',[V.ALL,V.DEL],
+    'Walks the enforced deletion sequence and blocks on active instances until they are finished or force-finished.'),
+  N('recpage','JobRecoveryPage','restore deleted jobs','frontend',[V.ALL,V.DEL],
+    'Restores from the server-side recovery store or an uploaded Excel backup, with per-job progress.'),
+  N('agentpage','AgentControlPage','suspend / resume / schedule','frontend',[V.ALL,V.OPS],
+    'Bulk suspend and resume of agents and clusters, immediately or scheduled for a future date and time.'),
+  N('searchpage','SearchEditPage','lookup and inline edit','frontend',[V.ALL,V.OPS],
+    'Exact-name lookup of a task or trigger, showing every field, with inline editing saved straight back to UAC.'),
+  N('adhocpage','AdhocLaunchPage','search · launch · instance ops','frontend',[V.ALL,V.OPS],
+    'Partial-name search across tasks, workflows and triggers, on-demand launch, and live instance control.'),
+  N('copilotui','CopilotDock + InlineAssistant','components/copilot/','frontend',[V.ALL,V.COP],
+    'The Copilot surface: Ask, Guidance and the Inline Assistant that collects one field at a time and then creates the job.'),
+  N('stores','Zustand stores','useConnectionStore · useJobStore · useWorkspaceStore · useCopilotStore','frontend',EVERY,
+    'useConnectionStore holds the singleton ApiClient and enforces a 30-minute idle disconnect. The others hold parsed rows and previews, open tabs, and Copilot conversation plus context.'),
+  N('apiclient','services/api.ts — ApiClient','axios · X-Session-ID · SSE reader','frontend',EVERY,
+    'One typed method per backend endpoint. A request interceptor injects the X-Session-ID header, a response interceptor handles 401 SESSION_EXPIRED globally, and executeStream reads Server-Sent Events with fetch plus a ReadableStream reader.'),
+
+  // ── Backend entry ───────────────────────────────────────────────────────
+  N('express','backend/src/index.ts','Express app wiring','entry',EVERY,
+    'Loads config/env first, then helmet, the CORS allow-list, five rate limiters, 15 MB JSON body limit, requestLogger, all routers, GET /health, and errorHandler last. On listen it calls restoreScheduledJobs() and restoreMonitoring(); SIGTERM and SIGINT drain and exit.'),
+  N('cors','helmet + CORS allow-list','CORS_ORIGINS','entry',[V.ALL],
+    'Origins come from an explicit comma-separated allow-list, deliberately not a wildcard, so a malicious page cannot drive the API from a victim browser. helmet sets the security headers and x-powered-by is disabled.'),
+  N('ratelimit','Rate limiters','express-rate-limit','entry',[V.ALL],
+    'Global 200/min per IP. /api/execution and /api/deletion 200/min for bulk work. /api/upload 30/min. /api/stonebranch/connect 10 per 15 minutes to throttle token guessing. /api/copilot/ask 60/min.'),
+
+  // ── Middleware ──────────────────────────────────────────────────────────
+  N('session','middleware/session.ts','in-memory session store','middleware',EVERY,
+    'The UAC token is validated once at connect, stored in an in-memory Map keyed by UUID and never returned to the browser. Sessions expire after 15 minutes idle and 2 hours absolute. Invalid sessions get 401 with code SESSION_EXPIRED.'),
+  N('reqlog','middleware/requestLogger.ts','requestId + timing','middleware',[V.ALL],
+    'Assigns a requestId and logs method, path, status, duration and client IP for every request.'),
+  N('audit','middleware/auditLogger.ts','audit trail','middleware',[V.ALL,V.CREATE,V.DEL],
+    'Writes every state-changing operation — creation, deletion, recovery, field edits, agent actions — to audit.log and the rotated audit stream.'),
+  N('errh','middleware/errorHandler.ts','JSON error shape','middleware',[V.ALL],
+    'Normalises thrown errors into a consistent JSON body. Mounted last so it catches everything.'),
+  N('logger','config/logger.ts','Winston + daily rotate','middleware',EVERY,
+    'Five streams under LOG_DIRECTORY: application, api, error, audit and startup. Rotated daily, gzipped, retained per LOG_RETENTION_DAYS. Secrets are never logged, only whether they are configured.'),
+
+  // ── API routers ─────────────────────────────────────────────────────────
+  N('r_sb','routes/stoneBranch.ts','connect · task · trigger · enable','api',[V.ALL,V.CREATE,V.COP],
+    'POST /connect and /disconnect are public (they create and destroy sessions). Then GET /validate, GET+POST /task, GET /trigger/resolve, POST /trigger and POST /triggers/enable.'),
+  N('r_up','routes/fileUpload.ts','POST /api/upload','api',[V.ALL,V.CREATE],
+    'multer single-file multipart upload, capped by MAX_FILE_SIZE and 30 requests per minute per IP.'),
+  N('r_exec','routes/execution.ts','preview · stream · verify','api',[V.ALL,V.CREATE,V.COP],
+    'POST /preview is a true dry run. POST /stream creates objects and emits SSE per job. POST /batch is the non-streaming equivalent. GET /qualifying-times asks UAC for the next run dates. POST /verify re-reads what was created.'),
+  N('r_agent','routes/agentControl.ts','suspend · resume · schedule','api',[V.ALL,V.OPS],
+    'GET /list, POST /suspend, /resume, /clusters/suspend, /clusters/resume, POST+GET /schedule and DELETE /schedule/:jobId.'),
+  N('r_mon','routes/monitoring.ts','start · status · alerts · audit','api',[V.ALL,V.MON],
+    'POST /start, /stop, /run-now, /clear-state; GET /status, /failures, /alerts, /audit. Calling /start while running reconfigures the cycle live.'),
+  N('r_del','routes/jobDeletion.ts','inspect · backup · delete · recover','api',[V.ALL,V.DEL],
+    'GET /inspect, POST /backup, POST /force-finish, DELETE /job and /jobs, plus GET /recovery, POST /recover and DELETE /recovery.'),
+  N('r_search','routes/search.ts','task + trigger read/update','api',[V.ALL,V.OPS],
+    'GET and PUT for both tasks and triggers. UAC-managed read-only fields are rejected on write and every update is audited.'),
+  N('r_adhoc','routes/adhoc.ts','search · launch · instance op','api',[V.ALL,V.OPS],
+    'GET /search across tasks, workflows and triggers; POST /launch; POST /instance/status; POST /instance/op for cancel, force-finish, halt, rerun, hold and release.'),
+  N('r_doc','routes/jobDoc.ts','POST /api/jobdoc/push','api',[V.ALL,V.CREATE],
+    'Forwards created rows to the Power Automate flow that appends them to the shared job documentation Excel.'),
+  N('r_sai','routes/scheduleAI.ts','PUBLIC · rule-based schedule hints','api',[V.ALL],
+    'Public, no session. Rule-based natural-language schedule recommendation backed by scheduleMLParser — pattern matching and confidence scoring, not a model.'),
+  N('r_cop','routes/copilot.ts','ask · context · wizard · explain','api',[V.ALL,V.COP],
+    'GET /health is public so the UI can decide whether to render the dock before connecting. Everything else requires a session: /context, /ask, /suggestions, /analyze, /explain, /schedule, /wizard, /impact and /memory.'),
+
+  // ── Business logic ──────────────────────────────────────────────────────
+  N('svc_sb','services/stoneBranchService.ts','the ONLY caller of UAC','logic',EVERY,
+    'An axios client bound to the session base URL and bearer token. Every UAC interaction in the platform goes through here, which is what keeps the token server-side and the browser out of the loop.'),
+  N('svc_mon','services/monitoringService.ts','poll · dedupe · alert','logic',[V.ALL,V.MON],
+    'Polls agents and failed job instances, deduplicates so a job that stays failed does not re-alert each cycle, extracts ServiceNow incident numbers from operational memos, builds deep links and posts Teams Adaptive Cards.'),
+  N('svc_file','services/fileParserService.ts','xlsx / xls / ods / csv','logic',[V.ALL,V.CREATE],
+    'Parses the workbook, normalises header spellings onto the canonical column names, and validates rows, reporting unusable ones rather than dropping them silently.'),
+  N('u_pay','utils/payloadMapper.ts','builds task + trigger payloads','logic',[V.ALL,V.CREATE,V.COP],
+    'Field allow-lists for task and trigger, read-only fields stripped, empty values removed. The trigger is always named <task>-TR001 and always created disabled. Also applies the calendar, holiday and skip-condition defaults.'),
+  N('u_sched','utils/triggerSchedule.ts','buildScheduleFields()','logic',[V.ALL,V.CREATE,V.COP],
+    'Converts start time and frequency text into UAC trigger fields, covering the AT/EVERY/UNTIL grammar and the timeStyle / dayStyle model. Interval triggers never carry an absolute time.'),
+  N('u_ver','utils/scheduleVerifier.ts','cross-check + correct','logic',[V.ALL,V.CREATE],
+    'Re-reads the job description for schedule intent and corrects the parser when they disagree — the classic case being a frequency of Daily against a description that says weekdays.'),
+  N('u_agent','utils/agentResolver.ts','agent vs agentCluster','logic',[V.ALL,V.CREATE],
+    'Probes UAC to decide whether the supplied name is an individual agent or a cluster, and writes it to the matching field.'),
+  N('u_queue','utils/executionQueue.ts','100 jobs · 2 concurrent · 300 ms','logic',[V.ALL,V.CREATE],
+    'Deliberately conservative pacing so a bulk load cannot overwhelm the controller.'),
+  N('u_sec','utils/fileSecurity.ts','filename + magic bytes','logic',[V.ALL,V.CREATE],
+    'Rejects unsafe filenames and verifies file content against its extension, so a renamed executable is caught before parsing.'),
+  N('u_persist','utils/jobPersistence.ts','encrypted scheduled jobs','logic',[V.ALL,V.OPS],
+    'Persists scheduled agent actions with the token encrypted using ENCRYPTION_KEY, so a scheduled resume still fires after a backend restart.'),
+  N('u_rec','utils/recoveryStore.ts','per-environment · 7-day retention','logic',[V.ALL,V.DEL],
+    'Stores pre-deletion snapshots keyed by UAC environment and prunes them after seven days.'),
+  N('c_know','copilot/knowledge/','214 curated chunks','logic',[V.ALL,V.COP],
+    'features, apis, fields, validation and scheduling. The only application knowledge the Copilot may answer from. Each chunk cites the implementation it was derived from.'),
+  N('c_ret','copilot/retriever.ts','BM25 + synonyms','logic',[V.ALL,V.COP],
+    'Lexical retrieval with domain synonym expansion and page-context boosting. No vector database and no network call, so answers are reproducible and nothing leaves the process.'),
+  N('c_mem','copilot/memory.ts','per-session memory','logic',[V.ALL,V.COP],
+    'Page context, uploaded rows, generated payloads, findings, execution results and the conversation. In-memory only, expires with the session. The UAC token is never copied in.'),
+  N('c_anal','copilot/analyzers.ts','pre-execution validation','logic',[V.ALL,V.COP],
+    'Missing fields, invalid values, duplicate job names, inverted interval windows, schedule conflicts on a shared agent, and impact analysis. Every finding cites the rule that produced it.'),
+  N('c_sched','copilot/scheduleAssistant.ts','natural language ↔ fields','logic',[V.ALL,V.COP],
+    'Turns plain English into trigger fields using the same buildScheduleFields the pipeline uses, then reads the result back in plain English.'),
+  N('c_wiz','copilot/wizard.ts','Inline Assistant state machine','logic',[V.ALL,V.COP],
+    'Asks one field at a time, skips inapplicable questions, suggests values from earlier answers, and ends with a summary for confirmation.'),
+  N('c_llm','copilot/llm.ts','OPTIONAL model adapter','logic',[V.ALL,V.COP],
+    'openai, azure-openai, anthropic or ollama over plain HTTP. With COPILOT_PROVIDER=none — the default — answers are composed deterministically and every Copilot capability still works. A failed call falls back rather than erroring.'),
+
+  // ── Persistence ─────────────────────────────────────────────────────────
+  N('s_sess','In-memory maps','sessions · Copilot memory','store',EVERY,
+    'Both live in process memory only and are lost on restart, which is why monitoring is not auto-restored and why sessions must be re-established after a deploy.'),
+  N('s_mon','monitor_configs / states / history','backend/monitor_*','store',[V.ALL,V.MON],
+    'Monitor configuration, alert dedupe state and alert history as JSON on disk, so the monitor survives a restart.'),
+  N('s_rec','recovery_store.json','deleted-job snapshots','store',[V.ALL,V.DEL],
+    'What Job Recovery restores from. Per environment, seven-day retention.'),
+  N('s_log','audit.log + logs/','5 rotated Winston streams','store',EVERY,
+    'application, api, error, audit and startup. Rotated daily and gzipped.'),
+  N('s_up','UPLOAD_DIR','./uploads — transient','store',[V.ALL,V.CREATE],
+    'Spreadsheets land here for parsing and are not retained as source data.'),
+
+  // ── External ────────────────────────────────────────────────────────────
+  N('x_uac','Stonebranch UAC Controller','REST/HTTPS · bearer token','external',EVERY,
+    'The system of record. /resources/task and /resources/trigger for read and create, trigger enable, agent and cluster operations, task instance operations and the qualifying-times query.'),
+  N('x_teams','Microsoft Teams','incoming webhook · Adaptive Cards','external',[V.ALL,V.MON],
+    'Outbound only. Alerts are delivered as Adaptive Cards to TEAMS_WEBHOOK_URL; the platform cannot be driven from Teams today.'),
+  N('x_snow','ServiceNow','deep links only — no API call','external',[V.ALL,V.MON],
+    'Incident numbers are extracted from a failed instance operational memo and turned into URLs against SERVICENOW_PROD_HOST or SERVICENOW_NONPROD_HOST. No request is ever sent to ServiceNow.'),
+  N('x_pa','Power Automate flow','POWER_AUTOMATE_URL','external',[V.ALL,V.CREATE],
+    'Appends job documentation rows to the shared Excel. The last optional step of job creation; it does not touch UAC.'),
+  N('x_llm','LLM provider','OPTIONAL · absent by default','external',[V.ALL,V.COP],
+    'Only contacted when COPILOT_PROVIDER is configured. With the default of none, or with self-hosted ollama, no application data leaves the network.'),
+];
+
+/* e(from, to, label, views) */
+const E = (from, to, label, views) => ({ from, to, label, views });
+
+const EDGES = [
+  // Spine
+  E('user','nginx','HTTPS request (internal network)',EVERY),
+  E('nginx','workspace','proxy / → :3000',[V.ALL]),
+  E('nginx','express','proxy /api/ → :3001',EVERY),
+  E('pm2','express','runs tsx src/index.ts',[V.ALL]),
+  E('pm2','workspace','runs next start -p 3000',[V.ALL]),
+  E('ansible','pm2','builds and starts processes',[V.ALL]),
+  E('ansible','nginx','renders vhost from nginx.conf.j2',[V.ALL]),
+  E('layout','copilotui','mounts the dock on every route',[V.ALL,V.COP]),
+  E('workspace','pipeline','mounts tab, keeps state alive',[V.ALL,V.CREATE]),
+  E('workspace','monpage','mounts tab',[V.ALL,V.MON]),
+  E('workspace','delpage','mounts tab',[V.ALL,V.DEL]),
+  E('workspace','recpage','mounts tab',[V.ALL,V.DEL]),
+  E('workspace','agentpage','mounts tab',[V.ALL,V.OPS]),
+  E('workspace','searchpage','mounts tab',[V.ALL,V.OPS]),
+  E('workspace','adhocpage','mounts tab',[V.ALL,V.OPS]),
+  E('pipeline','stores','read/write parsed rows and previews',[V.ALL,V.CREATE]),
+  E('pipeline','apiclient','invoke typed API method',[V.ALL,V.CREATE]),
+  E('pipeline','execdash','hand off SSE progress',[V.ALL,V.CREATE]),
+  E('monpage','apiclient','start/stop, poll status and alerts',[V.ALL,V.MON]),
+  E('delpage','apiclient','inspect, backup, delete',[V.ALL,V.DEL]),
+  E('recpage','apiclient','list and recover snapshots',[V.ALL,V.DEL]),
+  E('agentpage','apiclient','suspend, resume, schedule',[V.ALL,V.OPS]),
+  E('searchpage','apiclient','lookup and update',[V.ALL,V.OPS]),
+  E('adhocpage','apiclient','search, launch, instance op',[V.ALL,V.OPS]),
+  E('copilotui','apiclient','share context, ask, drive wizard',[V.ALL,V.COP]),
+  E('stores','apiclient','hold the singleton ApiClient',EVERY),
+  E('apiclient','nginx','axios/fetch + X-Session-ID header',EVERY),
+
+  // Entry → middleware
+  E('express','cors','apply helmet and origin allow-list',[V.ALL]),
+  E('express','ratelimit','enforce per-route budgets',[V.ALL]),
+  E('express','reqlog','assign requestId, log request',[V.ALL]),
+  E('express','session','resolve X-Session-ID to the token',EVERY),
+  E('express','errh','catch and normalise failures',[V.ALL]),
+  E('reqlog','logger','write api + application streams',[V.ALL]),
+  E('logger','s_log','append rotated log files',EVERY),
+  E('session','s_sess','read/write in-memory session',EVERY),
+
+  // Session → routers
+  E('session','r_up','attach token, or 401 SESSION_EXPIRED',[V.ALL,V.CREATE]),
+  E('session','r_exec','attach token and sbBaseUrl',[V.ALL,V.CREATE,V.COP]),
+  E('session','r_sb','attach token and sbBaseUrl',[V.ALL,V.CREATE,V.COP]),
+  E('session','r_mon','attach token and sbBaseUrl',[V.ALL,V.MON]),
+  E('session','r_del','attach token and sbBaseUrl',[V.ALL,V.DEL]),
+  E('session','r_agent','attach token and sbBaseUrl',[V.ALL,V.OPS]),
+  E('session','r_search','attach token and sbBaseUrl',[V.ALL,V.OPS]),
+  E('session','r_adhoc','attach token and sbBaseUrl',[V.ALL,V.OPS]),
+  E('session','r_doc','attach token',[V.ALL,V.CREATE]),
+  E('session','r_cop','attach session id (token not used)',[V.ALL,V.COP]),
+  E('express','r_sai','PUBLIC — no session required',[V.ALL]),
+
+  // Job creation flow
+  E('r_up','u_sec','verify filename and magic bytes',[V.ALL,V.CREATE]),
+  E('u_sec','svc_file','parse the workbook',[V.ALL,V.CREATE]),
+  E('svc_file','r_up','normalised rows as JSON',[V.ALL,V.CREATE]),
+  E('r_up','s_up','write then discard temp file',[V.ALL,V.CREATE]),
+  E('r_sb','svc_sb','resolve ref_job trigger for inheritance',[V.ALL,V.CREATE]),
+  E('r_exec','u_pay','build task and trigger payloads',[V.ALL,V.CREATE]),
+  E('u_pay','u_sched','convert schedule text to trigger fields',[V.ALL,V.CREATE]),
+  E('u_sched','u_ver','cross-check against the description',[V.ALL,V.CREATE]),
+  E('r_exec','u_agent','resolve agent vs agentCluster',[V.ALL,V.CREATE]),
+  E('r_exec','u_queue','pace calls: 2 concurrent, 300 ms apart',[V.ALL,V.CREATE]),
+  E('r_exec','svc_sb','create task, then create trigger',[V.ALL,V.CREATE]),
+  E('u_agent','svc_sb','probe UAC for the agent name',[V.ALL,V.CREATE]),
+  E('r_exec','execdash','stream SSE: step, job_done, complete',[V.ALL,V.CREATE]),
+  E('r_exec','audit','write BATCH_EXECUTE_STREAM entry',[V.ALL,V.CREATE]),
+  E('audit','s_log','append audit.log',[V.ALL,V.CREATE,V.DEL]),
+  E('r_sb','svc_sb','enable verified triggers',[V.ALL,V.CREATE]),
+  E('r_doc','x_pa','HTTPS POST job documentation rows',[V.ALL,V.CREATE]),
+
+  // UAC
+  E('svc_sb','x_uac','REST/HTTPS with bearer token',EVERY),
+
+  // Monitoring
+  E('r_mon','svc_mon','start, stop or force one cycle',[V.ALL,V.MON]),
+  E('svc_mon','svc_sb','poll agents and failed instances',[V.ALL,V.MON]),
+  E('svc_mon','x_teams','post Adaptive Card via webhook',[V.ALL,V.MON]),
+  E('svc_mon','x_snow','build incident deep link (no call)',[V.ALL,V.MON]),
+  E('svc_mon','s_mon','persist config, dedupe state, history',[V.ALL,V.MON]),
+  E('express','svc_mon','restoreMonitoring() on boot',[V.ALL,V.MON]),
+
+  // Deletion and recovery
+  E('r_del','svc_sb','inspect, disable, delete, force-finish',[V.ALL,V.DEL]),
+  E('r_del','u_rec','snapshot before deleting',[V.ALL,V.DEL]),
+  E('u_rec','s_rec','store and prune per environment',[V.ALL,V.DEL]),
+  E('r_del','audit','audit every deletion and recovery',[V.ALL,V.DEL]),
+
+  // Ops
+  E('r_agent','svc_sb','suspend or resume agents/clusters',[V.ALL,V.OPS]),
+  E('r_agent','u_persist','persist scheduled action, token encrypted',[V.ALL,V.OPS]),
+  E('express','u_persist','restoreScheduledJobs() on boot',[V.ALL,V.OPS]),
+  E('r_search','svc_sb','read and update, read-only fields rejected',[V.ALL,V.OPS]),
+  E('r_adhoc','svc_sb','launch and control live instances',[V.ALL,V.OPS]),
+
+  // Copilot
+  E('r_cop','c_mem','store page, rows, payloads, results',[V.ALL,V.COP]),
+  E('r_cop','c_anal','validate rows on receipt',[V.ALL,V.COP]),
+  E('r_cop','c_ret','retrieve grounded knowledge',[V.ALL,V.COP]),
+  E('c_ret','c_know','BM25 over 214 curated chunks',[V.ALL,V.COP]),
+  E('r_cop','c_sched','natural language → trigger fields',[V.ALL,V.COP]),
+  E('c_sched','u_sched','reuse buildScheduleFields',[V.ALL,V.COP]),
+  E('r_cop','c_wiz','advance the Inline Assistant',[V.ALL,V.COP]),
+  E('c_wiz','u_pay','build payloads for the summary',[V.ALL,V.COP]),
+  E('r_cop','c_llm','OPTIONAL: phrase retrieved material',[V.ALL,V.COP]),
+  E('c_llm','x_llm','HTTPS, only if COPILOT_PROVIDER set',[V.ALL,V.COP]),
+  E('c_mem','s_sess','in-memory, expires with the session',[V.ALL,V.COP]),
+  E('copilotui','r_exec','create the confirmed job (task + trigger)',[V.ALL,V.COP]),
+  E('copilotui','r_sb','create a task only, when no schedule given',[V.ALL,V.COP]),
+
+  // Return path
+  E('express','apiclient','JSON response',EVERY),
+  E('apiclient','stores','update state, re-render UI',EVERY),
+];
+
+const VIEW_DEFS = [
+  { id: V.ALL,    name: 'System Overview' },
+  { id: V.CREATE, name: 'Job Creation' },
+  { id: V.DEL,    name: 'Deletion & Recovery' },
+  { id: V.MON,    name: 'Monitoring & Alerts' },
+  { id: V.COP,    name: 'AI Copilot' },
+  { id: V.OPS,    name: 'Agent / Ad-hoc / Search' },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2. LAYOUT — deterministic layered placement.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const BOX_W = 208, BOX_H = 58, GAP_X = 20, GAP_Y = 26;
+const BAND_PAD_TOP = 30, BAND_PAD_BOT = 16, BAND_GAP = 30;
+const MARGIN = 34;
+
+function layout(view) {
+  const nodes = NODES.filter(n => n.views.includes(view));
+  const ids = new Set(nodes.map(n => n.id));
+  const edges = EDGES.filter(e => e.views.includes(view) && ids.has(e.from) && ids.has(e.to));
+
+  const byLayer = LAYERS
+    .map(l => ({ layer: l, items: nodes.filter(n => n.layer === l.id) }))
+    .filter(g => g.items.length);
+
+  // Widest band decides the canvas width, so bands stay centred on one another.
+  const perRow = Math.max(...byLayer.map(g => Math.min(g.items.length, 6)));
+  const contentW = perRow * BOX_W + (perRow - 1) * GAP_X;
+  const width = contentW + MARGIN * 2;
+
+  const placed = new Map();
+  const bands = [];
+  let y = MARGIN;
+
+  for (const g of byLayer) {
+    const cols = Math.min(6, g.items.length);
+    const rows = Math.ceil(g.items.length / cols);
+    const bandH = BAND_PAD_TOP + rows * BOX_H + (rows - 1) * GAP_Y + BAND_PAD_BOT;
+    bands.push({ ...g, y, h: bandH });
+
+    g.items.forEach((n, i) => {
+      const r = Math.floor(i / cols);
+      const inRow = Math.min(cols, g.items.length - r * cols);
+      const rowW = inRow * BOX_W + (inRow - 1) * GAP_X;
+      const startX = MARGIN + (contentW - rowW) / 2;
+      const c = i % cols;
+      placed.set(n.id, {
+        node: n,
+        x: startX + c * (BOX_W + GAP_X),
+        y: y + BAND_PAD_TOP + r * (BOX_H + GAP_Y),
+        w: BOX_W, h: BOX_H,
+      });
+    });
+
+    y += bandH + BAND_GAP;
+  }
+
+  return { nodes, edges, bands, placed, width, height: y - BAND_GAP + MARGIN };
+}
+
+/** Orthogonal-ish route between two boxes, chosen by relative position. */
+function route(a, b) {
+  const ax = a.x + a.w / 2, bx = b.x + b.w / 2;
+  const down = b.y > a.y + a.h;
+  const up = b.y + b.h < a.y;
+
+  if (down) {
+    const y1 = a.y + a.h, y2 = b.y, my = (y1 + y2) / 2;
+    return { d: `M ${ax} ${y1} C ${ax} ${my}, ${bx} ${my}, ${bx} ${y2}`, lx: (ax + bx) / 2, ly: my };
+  }
+  if (up) {
+    const y1 = a.y, y2 = b.y + b.h, my = (y1 + y2) / 2;
+    return { d: `M ${ax} ${y1} C ${ax} ${my}, ${bx} ${my}, ${bx} ${y2}`, lx: (ax + bx) / 2, ly: my };
+  }
+  // Same band: leave and enter from the sides, bowing outward to clear siblings.
+  const leftToRight = bx > ax;
+  const x1 = leftToRight ? a.x + a.w : a.x;
+  const x2 = leftToRight ? b.x : b.x + b.w;
+  const cy = a.y + a.h / 2, dy = a.y - 20;
+  return { d: `M ${x1} ${cy} C ${(x1 + x2) / 2} ${dy}, ${(x1 + x2) / 2} ${dy}, ${x2} ${cy}`, lx: (x1 + x2) / 2, ly: dy + 6 };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3. RENDER
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+const el = (t, a = {}) => { const e = document.createElementNS(SVGNS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const hexOf = id => (LAYERS.find(l => l.id === id) || {}).hex || '#94a3b8';
+
+let currentView = V.ALL, L = null, selected = null, query = '';
+
+function wrap(text, max) {
+  const words = String(text).split(/\s+/);
+  const lines = []; let cur = '';
+  for (const w of words) {
+    const t = cur ? cur + ' ' + w : w;
+    if (t.length > max && cur) { lines.push(cur); cur = w; } else cur = t;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+function render() {
+  L = layout(currentView);
+  const svg = document.getElementById('canvas');
+  svg.innerHTML = '';
+  svg.setAttribute('width', L.width);
+  svg.setAttribute('height', L.height);
+  svg.setAttribute('viewBox', `0 0 ${L.width} ${L.height}`);
+
+  // Styles are inlined into the SVG so exported files render standalone.
+  const style = el('style');
+  style.textContent = `
+    .nl { font: 600 11.5px 'Segoe UI', Inter, system-ui, sans-serif; fill: #eef4fb; }
+    .ns { font: 400 8.6px ui-monospace, Menlo, Consolas, monospace; fill: #93a6bf; }
+    .bt { font: 800 9.5px 'Segoe UI', Inter, sans-serif; letter-spacing: .16em; text-transform: uppercase; }
+    .et { font: 500 8.4px 'Segoe UI', Inter, sans-serif; fill: #a9bad2; }
+  `;
+  svg.appendChild(style);
+
+  const defs = el('defs');
+  for (const l of LAYERS) {
+    const m = el('marker', { id: `ar-${l.id}`, viewBox: '0 0 10 10', refX: '9', refY: '5',
+      markerWidth: '6', markerHeight: '6', orient: 'auto-start-reverse' });
+    m.appendChild(el('path', { d: 'M 0 0 L 10 5 L 0 10 z', fill: l.hex, opacity: '0.85' }));
+    defs.appendChild(m);
+  }
+  svg.appendChild(defs);
+
+  // Bands
+  const gBands = el('g', { class: 'band' });
+  for (const b of L.bands) {
+    gBands.appendChild(el('rect', {
+      x: MARGIN - 16, y: b.y, width: L.width - (MARGIN - 16) * 2, height: b.h, rx: 14,
+      fill: b.layer.hex, 'fill-opacity': '0.035',
+      stroke: b.layer.hex, 'stroke-opacity': '0.20', 'stroke-width': '1',
+    }));
+    const t = el('text', { x: MARGIN - 2, y: b.y + 19, class: 'bt', fill: b.layer.hex, 'fill-opacity': '0.95' });
+    t.textContent = b.layer.name;
+    gBands.appendChild(t);
+  }
+  svg.appendChild(gBands);
+
+  // Edges
+  const gEdges = el('g');
+  L.edges.forEach((e, i) => {
+    const a = L.placed.get(e.from), b = L.placed.get(e.to);
+    if (!a || !b) return;
+    const r = route(a, b);
+    const hex = hexOf(a.node.layer);
+    const g = el('g', { class: 'edge', 'data-from': e.from, 'data-to': e.to, id: `e${i}` });
+    g.appendChild(el('path', { d: r.d, fill: 'none', stroke: hex, 'stroke-opacity': '0.42',
+      'stroke-width': '1.3', 'marker-end': `url(#ar-${a.node.layer})` }));
+
+    const lines = wrap(e.label, 30);
+    const w = Math.max(...lines.map(s => s.length)) * 4.5 + 10;
+    const h = lines.length * 10 + 5;
+    g.appendChild(el('rect', { x: r.lx - w / 2, y: r.ly - h / 2, width: w, height: h, rx: 4,
+      fill: '#05080f', 'fill-opacity': '0.90', stroke: hex, 'stroke-opacity': '0.20' }));
+    lines.forEach((s, k) => {
+      const t = el('text', { x: r.lx, y: r.ly - h / 2 + 11 + k * 10, class: 'et', 'text-anchor': 'middle' });
+      t.textContent = s;
+      g.appendChild(t);
+    });
+    gEdges.appendChild(g);
+  });
+  svg.appendChild(gEdges);
+
+  // Nodes
+  const gNodes = el('g');
+  for (const [id, p] of L.placed) {
+    const hex = hexOf(p.node.layer);
+    const g = el('g', { class: 'node', 'data-id': id });
+    g.appendChild(el('rect', { class: 'box', x: p.x, y: p.y, width: p.w, height: p.h, rx: 10,
+      fill: '#0b1524', 'fill-opacity': '0.94', stroke: hex, 'stroke-opacity': '0.62', 'stroke-width': '1.3' }));
+    // Left accent bar carries the layer colour at a glance.
+    g.appendChild(el('rect', { x: p.x, y: p.y, width: 3.5, height: p.h, rx: 2, fill: hex, 'fill-opacity': '0.85' }));
+
+    const nameLines = wrap(p.node.label, 26).slice(0, 2);
+    nameLines.forEach((s, k) => {
+      const t = el('text', { x: p.x + 12, y: p.y + 19 + k * 13, class: 'nl' });
+      t.textContent = s;
+      g.appendChild(t);
+    });
+    const subLines = wrap(p.node.sub, 34).slice(0, 2);
+    subLines.forEach((s, k) => {
+      const t = el('text', { x: p.x + 12, y: p.y + 19 + nameLines.length * 13 + 4 + k * 10, class: 'ns' });
+      t.textContent = s;
+      g.appendChild(t);
+    });
+
+    g.addEventListener('click', () => select(id));
+    g.addEventListener('mouseenter', () => highlight(id));
+    g.addEventListener('mouseleave', () => highlight(selected));
+    gNodes.appendChild(g);
+  }
+  svg.appendChild(gNodes);
+
+  document.getElementById('stat').textContent =
+    `${L.nodes.length} components · ${L.edges.length} labelled connections · ${L.bands.length} layers`;
+  applyQuery();
+  highlight(selected);
+}
+
+function highlight(id) {
+  const svg = document.getElementById('canvas');
+  const nodes = svg.querySelectorAll('.node');
+  const edges = svg.querySelectorAll('.edge');
+  if (!id) {
+    nodes.forEach(n => n.classList.remove('dim'));
+    edges.forEach(e => { e.classList.remove('dim'); e.classList.remove('hot'); });
+    applyQuery();
+    return;
+  }
+  const keep = new Set([id]);
+  L.edges.forEach(e => { if (e.from === id) keep.add(e.to); if (e.to === id) keep.add(e.from); });
+  nodes.forEach(n => n.classList.toggle('dim', !keep.has(n.dataset.id)));
+  edges.forEach(e => {
+    const hot = e.dataset.from === id || e.dataset.to === id;
+    e.classList.toggle('hot', hot);
+    e.classList.toggle('dim', !hot);
+  });
+}
+
+function select(id) {
+  selected = selected === id ? null : id;
+  document.querySelectorAll('.node').forEach(n => n.classList.toggle('sel', n.dataset.id === selected));
+  panel(selected);
+  highlight(selected);
+}
+
+function panel(id) {
+  const p = document.getElementById('panel');
+  if (!id) {
+    p.innerHTML = `<div class="k">How to read this</div>
+      <p class="empty">Bands are architectural layers. Each box is a real file or component; each arrow is an actual
+      runtime execution path, labelled with what happens.<br><br>
+      Click any component to see its file path, what it does, and everything it talks to.<br><br>
+      Switch views to isolate one flow — the overview holds every component, the flow views stay readable.</p>
+      <div class="k">Exports</div>
+      <p class="empty"><b>.vsdx</b> opens in Microsoft Visio, one page per view.<br>
+      <b>.drawio</b> opens in diagrams.net.<br>
+      <b>SVG / PNG</b> for slides. <b>Print</b> for PDF.</p>`;
+    return;
+  }
+  const n = NODES.find(x => x.id === id);
+  const layer = LAYERS.find(l => l.id === n.layer);
+  const out = L.edges.filter(e => e.from === id);
+  const inc = L.edges.filter(e => e.to === id);
+  const nm = i => (NODES.find(x => x.id === i) || {}).label || i;
+
+  p.innerHTML = `
+    <span class="chip" style="background:${layer.hex}22;color:${layer.hex};border:1px solid ${layer.hex}55">${layer.name}</span>
+    <h2 style="margin-top:10px">${n.label}</h2>
+    <div class="path">${n.sub}</div>
+    <p class="desc">${n.desc}</p>
+    ${out.length ? `<div class="k">Calls out (${out.length})</div><ul>${out.map(e => `<li><b>${nm(e.to)}</b><br>${e.label}</li>`).join('')}</ul>` : ''}
+    ${inc.length ? `<div class="k">Called by (${inc.length})</div><ul>${inc.map(e => `<li><b>${nm(e.from)}</b><br>${e.label}</li>`).join('')}</ul>` : ''}
+  `;
+}
+
+function applyQuery() {
+  if (selected) return;
+  const q = query.trim().toLowerCase();
+  document.querySelectorAll('.node').forEach(g => {
+    if (!q) { g.classList.remove('dim'); return; }
+    const n = NODES.find(x => x.id === g.dataset.id);
+    const hit = (n.label + ' ' + n.sub + ' ' + n.desc).toLowerCase().includes(q);
+    g.classList.toggle('dim', !hit);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4. EXPORTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+function svgString() {
+  const svg = document.getElementById('canvas').cloneNode(true);
+  svg.setAttribute('xmlns', SVGNS);
+  // Opaque background so the export is not transparent on white slides.
+  const bg = el('rect', { x: 0, y: 0, width: L.width, height: L.height, fill: '#05080f' });
+  svg.insertBefore(bg, svg.firstChild);
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(svg);
+}
+
+function exportSVG() { download(new Blob([svgString()], { type: 'image/svg+xml' }), `sb-architecture-${currentView}.svg`); }
+
+function exportPNG() {
+  const scale = 2;
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas');
+    c.width = L.width * scale; c.height = L.height * scale;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#05080f'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    c.toBlob(b => download(b, `sb-architecture-${currentView}.png`), 'image/png');
+  };
+  img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString())));
+}
+
+const xmlEsc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** draw.io / diagrams.net XML — one <diagram> per view. */
+function exportDrawio() {
+  const pages = VIEW_DEFS.map(v => {
+    const g = layout(v.id);
+    let cells = '';
+    for (const [id, p] of g.placed) {
+      const hex = hexOf(p.node.layer);
+      const label = xmlEsc(`${p.node.label}\n${p.node.sub}`);
+      cells += `<mxCell id="${xmlEsc(id)}" value="${label}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0b1524;strokeColor=${hex};fontColor=#eef4fb;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="1"><mxGeometry x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" as="geometry"/></mxCell>`;
+    }
+    g.edges.forEach((e, i) => {
+      const hex = hexOf((g.placed.get(e.from) || { node: {} }).node.layer);
+      cells += `<mxCell id="ed${i}" value="${xmlEsc(e.label)}" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=${hex};fontColor=#a9bad2;fontSize=8;" edge="1" parent="1" source="${xmlEsc(e.from)}" target="${xmlEsc(e.to)}"><mxGeometry relative="1" as="geometry"/></mxCell>`;
+    });
+    return `<diagram name="${xmlEsc(v.name)}"><mxGraphModel dx="${g.width}" dy="${g.height}" grid="0" background="#05080f" pageWidth="${g.width}" pageHeight="${g.height}"><root><mxCell id="0"/><mxCell id="1" parent="0"/>${cells}</root></mxGraphModel></diagram>`;
+  }).join('');
+  download(new Blob([`<mxfile host="sb-architecture">${pages}</mxfile>`], { type: 'application/xml' }), 'sb-architecture.drawio');
+}
+
+// ==== VSDX-BUILDER-START ====
+/* ───────────────────────────────────────────────────────────────────────────
+   Minimal ZIP (STORE) writer + Visio 2013+ .vsdx generator.
+
+   Written by hand rather than pulling in a zip library so the page stays a
+   single self-contained file with no CDN and no build step. VSDX is an OPC
+   package: a ZIP whose parts are declared in [Content_Types].xml and linked by
+   relationship files. Entries are stored uncompressed, which the OPC spec
+   permits and Visio accepts.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function utf8(str) { return new TextEncoder().encode(str); }
+
+/** Builds a ZIP archive from [{name, data:Uint8Array}]. Stored, no compression. */
+function zip(files) {
+  const chunks = [];
+  const central = [];
+  let offset = 0;
+
+  const u16 = v => [v & 0xFF, (v >>> 8) & 0xFF];
+  const u32 = v => [v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF];
+
+  for (const f of files) {
+    const name = utf8(f.name);
+    const crc = crc32(f.data);
+    const local = [
+      ...u32(0x04034b50), ...u16(20), ...u16(0), ...u16(0),
+      ...u16(0), ...u16(0),                       // time, date
+      ...u32(crc), ...u32(f.data.length), ...u32(f.data.length),
+      ...u16(name.length), ...u16(0),
+    ];
+    chunks.push(new Uint8Array(local), name, f.data);
+
+    central.push([
+      ...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0), ...u16(0),
+      ...u16(0), ...u16(0),
+      ...u32(crc), ...u32(f.data.length), ...u32(f.data.length),
+      ...u16(name.length), ...u16(0), ...u16(0),
+      ...u16(0), ...u16(0), ...u32(0), ...u32(offset),
+    ]);
+    offset += local.length + name.length + f.data.length;
+  }
+
+  const cdStart = offset;
+  let cdSize = 0;
+  const cdChunks = [];
+  central.forEach((c, i) => {
+    const name = utf8(files[i].name);
+    const arr = new Uint8Array(c.length + name.length);
+    arr.set(c, 0); arr.set(name, c.length);
+    cdChunks.push(arr);
+    cdSize += arr.length;
+  });
+
+  const end = new Uint8Array([
+    ...u32(0x06054b50), ...u16(0), ...u16(0),
+    ...u16(files.length), ...u16(files.length),
+    ...u32(cdSize), ...u32(cdStart), ...u16(0),
+  ]);
+
+  const total = [...chunks, ...cdChunks, end];
+  const size = total.reduce((s, a) => s + a.length, 0);
+  const out = new Uint8Array(size);
+  let o = 0;
+  for (const a of total) { out.set(a, o); o += a.length; }
+  return out;
+}
+
+const VNS = 'http://schemas.microsoft.com/office/visio/2012/main';
+const RNS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PX_PER_IN = 96;
+
+/**
+ * Builds one Visio page from a laid-out view.
+ * Visio units are inches with the origin at the bottom-left, so Y is flipped.
+ */
+function visioPage(g, esc) {
+  const pw = g.width / PX_PER_IN, ph = g.height / PX_PER_IN;
+  const fx = v => (v / PX_PER_IN).toFixed(4);
+  const fy = v => (ph - v / PX_PER_IN).toFixed(4);
+
+  let shapes = '';
+  let id = 1;
+  const shapeIds = new Map();
+
+  // Layer bands first, so nodes sit on top of them.
+  for (const b of g.bands) {
+    const w = (g.width - (MARGIN - 16) * 2) / PX_PER_IN, h = b.h / PX_PER_IN;
+    const cx = ((MARGIN - 16) + (g.width - (MARGIN - 16) * 2) / 2) / PX_PER_IN;
+    const cy = ph - (b.y + b.h / 2) / PX_PER_IN;
+    shapes += `<Shape ID='${id++}' Type='Shape' LineStyle='0' FillStyle='0' TextStyle='0'>`
+      + `<Cell N='PinX' V='${cx.toFixed(4)}'/><Cell N='PinY' V='${cy.toFixed(4)}'/>`
+      + `<Cell N='Width' V='${w.toFixed(4)}'/><Cell N='Height' V='${h.toFixed(4)}'/>`
+      + `<Cell N='LocPinX' V='${(w / 2).toFixed(4)}'/><Cell N='LocPinY' V='${(h / 2).toFixed(4)}'/>`
+      + `<Cell N='FillForegnd' V='${b.layer.hex}'/><Cell N='FillForegndTrans' V='0.94'/>`
+      + `<Cell N='LineColor' V='${b.layer.hex}'/><Cell N='LineWeight' V='0.01'/><Cell N='Rounding' V='0.14'/>`
+      + `<Cell N='VerticalAlign' V='0'/>`
+      + `<Section N='Character'><Row IX='0'><Cell N='Size' V='0.11'/><Cell N='Color' V='${b.layer.hex}'/><Cell N='Style' V='1'/></Row></Section>`
+      + `<Section N='Paragraph'><Row IX='0'><Cell N='HorzAlign' V='0'/></Row></Section>`
+      + rectGeom(w, h)
+      + `<Text>${esc(b.layer.name)}</Text></Shape>`;
+  }
+
+  // Nodes
+  for (const [nid, p] of g.placed) {
+    const hex = hexOf(p.node.layer);
+    const w = p.w / PX_PER_IN, h = p.h / PX_PER_IN;
+    const cx = (p.x + p.w / 2) / PX_PER_IN, cy = ph - (p.y + p.h / 2) / PX_PER_IN;
+    shapeIds.set(nid, id);
+    shapes += `<Shape ID='${id++}' Type='Shape' LineStyle='0' FillStyle='0' TextStyle='0'>`
+      + `<Cell N='PinX' V='${cx.toFixed(4)}'/><Cell N='PinY' V='${cy.toFixed(4)}'/>`
+      + `<Cell N='Width' V='${w.toFixed(4)}'/><Cell N='Height' V='${h.toFixed(4)}'/>`
+      + `<Cell N='LocPinX' V='${(w / 2).toFixed(4)}'/><Cell N='LocPinY' V='${(h / 2).toFixed(4)}'/>`
+      + `<Cell N='FillForegnd' V='#0b1524'/><Cell N='LineColor' V='${hex}'/>`
+      + `<Cell N='LineWeight' V='0.013'/><Cell N='Rounding' V='0.08'/>`
+      + `<Cell N='VerticalAlign' V='1'/>`
+      + `<Section N='Character'><Row IX='0'><Cell N='Size' V='0.108'/><Cell N='Color' V='#eef4fb'/></Row></Section>`
+      + `<Section N='Paragraph'><Row IX='0'><Cell N='HorzAlign' V='1'/></Row></Section>`
+      + rectGeom(w, h)
+      + `<Text>${esc(p.node.label)}\n${esc(p.node.sub)}</Text></Shape>`;
+  }
+
+  // Connectors as 1-D shapes: length along local X, rotated by Angle.
+  let connects = '';
+  for (const e of g.edges) {
+    const a = g.placed.get(e.from), b = g.placed.get(e.to);
+    if (!a || !b) continue;
+    const x1 = (a.x + a.w / 2) / PX_PER_IN, y1 = ph - (a.y + a.h / 2) / PX_PER_IN;
+    const x2 = (b.x + b.w / 2) / PX_PER_IN, y2 = ph - (b.y + b.h / 2) / PX_PER_IN;
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.max(0.01, Math.sqrt(dx * dx + dy * dy));
+    const ang = Math.atan2(dy, dx);
+    const hex = hexOf(a.node.layer);
+    const cid = id++;
+
+    shapes += `<Shape ID='${cid}' Type='Shape' LineStyle='0' FillStyle='0' TextStyle='0'>`
+      + `<Cell N='PinX' V='${((x1 + x2) / 2).toFixed(4)}'/><Cell N='PinY' V='${((y1 + y2) / 2).toFixed(4)}'/>`
+      + `<Cell N='Width' V='${len.toFixed(4)}'/><Cell N='Height' V='0'/>`
+      + `<Cell N='LocPinX' V='${(len / 2).toFixed(4)}'/><Cell N='LocPinY' V='0'/>`
+      + `<Cell N='Angle' V='${ang.toFixed(6)}'/>`
+      + `<Cell N='BeginX' V='${x1.toFixed(4)}'/><Cell N='BeginY' V='${y1.toFixed(4)}'/>`
+      + `<Cell N='EndX' V='${x2.toFixed(4)}'/><Cell N='EndY' V='${y2.toFixed(4)}'/>`
+      + `<Cell N='LineColor' V='${hex}'/><Cell N='LineWeight' V='0.01'/>`
+      + `<Cell N='EndArrow' V='13'/><Cell N='EndArrowSize' V='1'/>`
+      + `<Cell N='ObjType' V='2'/>`
+      + `<Section N='Character'><Row IX='0'><Cell N='Size' V='0.083'/><Cell N='Color' V='#a9bad2'/></Row></Section>`
+      + `<Section N='Geometry' IX='0'><Cell N='NoFill' V='1'/><Cell N='NoLine' V='0'/>`
+      + `<Row T='MoveTo' IX='1'><Cell N='X' V='0'/><Cell N='Y' V='0'/></Row>`
+      + `<Row T='LineTo' IX='2'><Cell N='X' V='${len.toFixed(4)}'/><Cell N='Y' V='0'/></Row></Section>`
+      + `<Text>${esc(e.label)}</Text></Shape>`;
+
+    // Glue so the connector follows the shapes when they are moved in Visio.
+    const fromId = shapeIds.get(e.from), toId = shapeIds.get(e.to);
+    if (fromId && toId) {
+      connects += `<Connect FromSheet='${cid}' FromCell='BeginX' FromPart='9' ToSheet='${fromId}' ToCell='PinX' ToPart='3'/>`
+        + `<Connect FromSheet='${cid}' FromCell='EndX' FromPart='12' ToSheet='${toId}' ToCell='PinX' ToPart='3'/>`;
+    }
+  }
+
+  const contents = `<?xml version='1.0' encoding='UTF-8' standalone='yes'?>`
+    + `<PageContents xmlns='${VNS}' xmlns:r='${RNS}' xml:space='preserve'>`
+    + `<Shapes>${shapes}</Shapes>`
+    + (connects ? `<Connects>${connects}</Connects>` : '')
+    + `</PageContents>`;
+
+  return { contents, pw, ph };
+}
+
+function rectGeom(w, h) {
+  return `<Section N='Geometry' IX='0'><Cell N='NoFill' V='0'/><Cell N='NoLine' V='0'/>`
+    + `<Row T='RelMoveTo' IX='1'><Cell N='X' V='0'/><Cell N='Y' V='0'/></Row>`
+    + `<Row T='RelLineTo' IX='2'><Cell N='X' V='1'/><Cell N='Y' V='0'/></Row>`
+    + `<Row T='RelLineTo' IX='3'><Cell N='X' V='1'/><Cell N='Y' V='1'/></Row>`
+    + `<Row T='RelLineTo' IX='4'><Cell N='X' V='0'/><Cell N='Y' V='1'/></Row>`
+    + `<Row T='RelLineTo' IX='5'><Cell N='X' V='0'/><Cell N='Y' V='0'/></Row></Section>`;
+}
+
+/** Assembles the full .vsdx package: one Visio page per view. */
+function buildVSDX(views, layoutFn, escFn) {
+  const esc = escFn;
+  const pages = views.map(v => ({ name: v.name, ...visioPage(layoutFn(v.id), esc) }));
+
+  const files = [];
+  const add = (name, str) => files.push({ name, data: utf8(str) });
+
+  const overrides = pages.map((_, i) =>
+    `<Override PartName='/visio/pages/page${i + 1}.xml' ContentType='application/vnd.ms-visio.page+xml'/>`).join('');
+
+  add('[Content_Types].xml',
+    `<?xml version='1.0' encoding='UTF-8' standalone='yes'?>`
+    + `<Types xmlns='http://schemas.openxmlformats.org/package/2006/content-types'>`
+    + `<Default Extension='rels' ContentType='application/vnd.openxmlformats-package.relationships+xml'/>`
+    + `<Default Extension='xml' ContentType='application/xml'/>`
+    + `<Override PartName='/docProps/core.xml' ContentType='application/vnd.openxmlformats-package.core-properties+xml'/>`
+    + `<Override PartName='/docProps/app.xml' ContentType='application/vnd.openxmlformats-officedocument.extended-properties+xml'/>`
+    + `<Override PartName='/visio/document.xml' ContentType='application/vnd.ms-visio.drawing.main+xml'/>`
+    + `<Override PartName='/visio/pages/pages.xml' ContentType='application/vnd.ms-visio.pages+xml'/>`
+    + overrides
+    + `<Override PartName='/visio/windows.xml' ContentType='application/vnd.ms-visio.windows+xml'/>`
+    + `</Types>`);
+
+  add('_rels/.rels',
+    `<?xml version='1.0' encoding='UTF-8' standalone='yes'?>`
+    + `<Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'>`
+    + `<Relationship Id='rId1' Type='http://schemas.microsoft.com/visio/2010/relationships/document' Target='visio/document.xml'/>`
+    + `<Relationship Id='rId2' Type='http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties' Target='docProps/core.xml'/>`
+    + `<Relationship Id='rId3' Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties' Target='docProps/app.xml'/>`
+    + `</Relationships>`);
+
+  const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  add('docProps/core.xml',
+    `<?xml version='1.0' encoding='UTF-8' standalone='yes'?>`
+    + `<cp:coreProperties xmlns:cp='http://schemas.openxmlformats.org/package/2006/metadata/core-properties'`
+    + ` xmlns:dc='http://purl.org/dc/elements/1.1/' xmlns:dcterms='http://purl.org/dc/terms/'`
+    + ` xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'>`
+    + `<dc:title>Stonebranch Automation Platform - Enterprise Architecture</dc:title>`
+    + `<dc:creator>Generated from repository source</dc:creator>`
+    + `<cp:lastModifiedBy>architecture-diagram.html</cp:lastModifiedBy>`
+    + `<dcterms:created xsi:type='dcterms:W3CDTF'>${now}</dcterms:created>`
+    + `<dcterms:modified xsi:type='dcterms:W3CDTF'>${now}</dcterms:modified>`
+    + `</cp:coreProperties>`);
+
+  add('docProps/app.xml',
+    `<?xml version='1.0' encoding='UTF-8' standalone='yes'?>`
+    + `<Properties xmlns='http://schemas.openxmlformats.org/officeDocument/2006/extended-properties'`
+    + ` xmlns:vt='http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes'>`
+    + `<Application>Microsoft Visio</Application><AppVersion>15.0000</AppVersion></Properties>`);
+
+  add('visio/document.xml',
+    `<?xml version='1.0' encoding='UTF-8' standalone='yes'?>`
+    + `<VisioDocument xmlns='${VNS}' xmlns:r='${RNS}' xml:space='preserve'>`
+    + `<DocumentSettings TopPage='0' DefaultTextStyle='0' DefaultLineStyle='0' DefaultFillStyle='0' DefaultGuideStyle='0'>`
+    + `<GlueSettings>9</GlueSettings><SnapSettings>65847</SnapSettings>`
+    + `<SnapExtensions>34</SnapExtensions><SnapAngles/><DynamicGridEnabled>1</DynamicGridEnabled>`
+    + `<ProtectStyles>0</ProtectStyles><ProtectShapes>0</ProtectShapes><ProtectMasters>0</ProtectMasters>`
+    + `<ProtectBkgnds>0</ProtectBkgnds></DocumentSettings>`
+    + `</VisioDocument>`);
+
+  add('visio/_rels/document.xml.rels',
+    `<?xml version='1.0' encoding='UTF-8' standalone='yes'?>`
+    + `<Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'>`
+    + `<Relationship Id='rId1' Type='http://schemas.microsoft.com/visio/2010/relationships/pages' Target='pages/pages.xml'/>`
+    + `<Relationship Id='rId2' Type='http://schemas.microsoft.com/visio/2010/relationships/windows' Target='windows.xml'/>`
+    + `</Relationships>`);
+
+  const pageEls = pages.map((p, i) =>
+    `<Page ID='${i}' NameU='${esc(p.name)}' Name='${esc(p.name)}' ViewScale='-1'`
+    + ` ViewCenterX='${(p.pw / 2).toFixed(4)}' ViewCenterY='${(p.ph / 2).toFixed(4)}'>`
+    + `<PageSheet LineStyle='0' FillStyle='0' TextStyle='0'>`
+    + `<Cell N='PageWidth' V='${p.pw.toFixed(4)}'/><Cell N='PageHeight' V='${p.ph.toFixed(4)}'/>`
+    + `<Cell N='PageScale' V='1'/><Cell N='DrawingScale' V='1'/>`
+    + `<Cell N='DrawingSizeType' V='3'/><Cell N='DrawingScaleType' V='0'/>`
+    + `</PageSheet><Rel r:id='rId${i + 1}'/></Page>`).join('');
+
+  add('visio/pages/pages.xml',
+    `<?xml version='1.0' encoding='UTF-8' standalone='yes'?>`
+    + `<Pages xmlns='${VNS}' xmlns:r='${RNS}' xml:space='preserve'>${pageEls}</Pages>`);
+
+  add('visio/pages/_rels/pages.xml.rels',
+    `<?xml version='1.0' encoding='UTF-8' standalone='yes'?>`
+    + `<Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'>`
+    + pages.map((_, i) =>
+      `<Relationship Id='rId${i + 1}' Type='http://schemas.microsoft.com/visio/2010/relationships/page' Target='page${i + 1}.xml'/>`).join('')
+    + `</Relationships>`);
+
+  pages.forEach((p, i) => add(`visio/pages/page${i + 1}.xml`, p.contents));
+
+  add('visio/windows.xml',
+    `<?xml version='1.0' encoding='UTF-8' standalone='yes'?>`
+    + `<Windows xmlns='${VNS}' xmlns:r='${RNS}' ClientWidth='1600' ClientHeight='900'>`
+    + `<Window ID='0' WindowType='Drawing' WindowState='1073741824' Document='visio/document.xml'`
+    + ` Page='0' ViewScale='-1' ViewCenterX='5' ViewCenterY='4'/></Windows>`);
+
+  return zip(files);
+}
+// ==== VSDX-BUILDER-END ====
+
+function exportVSDX() {
+  const bytes = buildVSDX(VIEW_DEFS, layout, xmlEsc);
+  download(new Blob([bytes], { type: 'application/vnd.ms-visio.drawing' }), 'sb-architecture.vsdx');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5. BOOT
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+(function init() {
+  const vw = document.getElementById('views');
+  VIEW_DEFS.forEach(v => {
+    const b = document.createElement('button');
+    b.className = 'btn' + (v.id === currentView ? ' on' : '');
+    b.textContent = v.name;
+    b.onclick = () => {
+      currentView = v.id; selected = null;
+      [...vw.children].forEach(c => c.classList.remove('on'));
+      b.classList.add('on');
+      render(); panel(null);
+    };
+    vw.appendChild(b);
+  });
+
+  const lg = document.getElementById('legend');
+  LAYERS.forEach(l => {
+    const s = document.createElement('span');
+    s.innerHTML = `<i class="dot" style="background:${l.hex}"></i>${l.name}`;
+    lg.appendChild(s);
+  });
+
+  document.getElementById('meta').textContent =
+    `${NODES.length} components · ${EDGES.length} runtime connections · ${VIEW_DEFS.length} views · generated from source`;
+
+  document.getElementById('find').addEventListener('input', e => { query = e.target.value; selected = null; applyQuery(); });
+  document.getElementById('dl-vsdx').onclick = exportVSDX;
+  document.getElementById('dl-drawio').onclick = exportDrawio;
+  document.getElementById('dl-svg').onclick = exportSVG;
+  document.getElementById('dl-png').onclick = exportPNG;
+  document.getElementById('do-print').onclick = () => window.print();
+  document.getElementById('canvas').addEventListener('click', e => {
+    if (e.target.id === 'canvas') { selected = null; document.querySelectorAll('.node').forEach(n => n.classList.remove('sel')); panel(null); highlight(null); }
+  });
+
+  render();
+  panel(null);
+})();
+</script>
+</body>
+</html>
