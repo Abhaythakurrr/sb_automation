@@ -9,6 +9,9 @@
 import { create } from 'zustand';
 import { globalApi } from '@/store/useConnectionStore';
 import {
+  playClick, playSuccess, playError, playTick, playComplete, playWhoosh, playWarning,
+} from '@/utils/soundEffects';
+import {
   CopilotAnswer,
   CopilotContext,
   CopilotFinding,
@@ -53,6 +56,14 @@ interface CopilotState {
   wizardStep: WizardStep | null;
   wizardBusy: boolean;
 
+  // ── Job creation (the wizard's commit step) ──
+  creating: boolean;
+  createSteps: CreateStep[];
+  createResult: { successful: number; failed: number; taskName: string } | null;
+  createError: string | null;
+  verifyChecks: VerifyCheck[] | null;
+  verifying: boolean;
+
   // ── Actions ──
   checkHealth: () => Promise<void>;
   toggle: () => void;
@@ -76,7 +87,25 @@ interface CopilotState {
   wizard: (action: string, answer?: string) => Promise<void>;
   closeWizard: () => void;
 
+  /** Creates the job the wizard assembled, in the connected UAC environment. */
+  createJob: () => Promise<void>;
+  verifyCreatedJob: () => Promise<void>;
+  resetCreate: () => void;
+
   reset: () => void;
+}
+
+export interface CreateStep {
+  step: string;
+  status: 'processing' | 'success' | 'error';
+  message?: string;
+}
+
+export interface VerifyCheck {
+  field: string;
+  actual?: string;
+  expected?: string;
+  status: 'pass' | 'fail' | 'warn';
 }
 
 /** Last context payload sent, so identical updates are not re-sent. */
@@ -112,6 +141,13 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   wizardStep: null,
   wizardBusy: false,
 
+  creating: false,
+  createSteps: [],
+  createResult: null,
+  createError: null,
+  verifyChecks: null,
+  verifying: false,
+
   // ── Availability ───────────────────────────────────────────────────────────
   checkHealth: async () => {
     if (get().healthChecked) return;
@@ -132,11 +168,13 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
 
   toggle: () => {
     const open = !get().open;
+    playWhoosh();
     set({ open, badge: open ? 0 : get().badge });
     if (open) get().loadGuidance();
   },
 
   setOpen: (v) => {
+    if (v !== get().open) playWhoosh();
     set({ open: v, badge: v ? 0 : get().badge });
     if (v) get().loadGuidance();
   },
@@ -209,6 +247,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
     const q = question.trim();
     if (!q || get().thinking) return;
 
+    playClick();
     const userMsg: CopilotMessage = { id: nextId(), role: 'user', content: q, at: new Date().toISOString() };
     const pendingId = nextId();
     set({
@@ -225,6 +264,8 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       const { page, step, focus } = get().context;
       const res = await globalApi.copilotAsk(q, { page, step, focus });
       const answer: CopilotAnswer = res.data?.data;
+      // A findings-bearing answer is a warning, not a neutral reply.
+      answer?.findings?.some(f => f.severity === 'error') ? playWarning() : playTick();
       set({
         thinking: false,
         messages: get().messages.map(m => m.id === pendingId
@@ -378,9 +419,14 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   wizard: async (action, answer) => {
     if (!globalApi.hasSession()) return;
     set({ wizardBusy: true, open: true, wizardOpen: action !== 'cancel' });
+    if (action === 'start') { set({ createSteps: [], createResult: null, createError: null, verifyChecks: null }); }
     try {
       const res = await globalApi.copilotWizard(action, answer);
       const step: WizardStep = res.data?.data;
+      // Distinct feedback for "question rejected" vs "moved on" vs "finished".
+      if (step?.error) playWarning();
+      else if (step?.done) playSuccess();
+      else playTick();
       set({
         wizardStep: step ?? null,
         wizardBusy: false,
@@ -397,13 +443,146 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
     }
   },
 
-  closeWizard: () => set({ wizardOpen: false, wizardStep: null }),
+  closeWizard: () => set({
+    wizardOpen: false, wizardStep: null,
+    creating: false, createSteps: [], createResult: null, createError: null,
+    verifyChecks: null, verifying: false,
+  }),
+
+  resetCreate: () => set({
+    creating: false, createSteps: [], createResult: null, createError: null,
+    verifyChecks: null, verifying: false,
+  }),
+
+  // ── Create the job for real ────────────────────────────────────────────────
+  // Routed through /api/execution/stream, the same endpoint bulk creation uses,
+  // so the Copilot inherits agent resolution, the enforced task-before-trigger
+  // order, the paced execution queue and the audit trail. No separate creation
+  // path exists to drift from the tested one.
+  createJob: async () => {
+    const summary = get().wizardStep?.summary;
+    if (!summary) return;
+    if (get().creating) return;
+
+    if (!globalApi.hasSession()) {
+      set({ createError: 'Not connected. Reconnect to a UAC environment and try again.' });
+      playError();
+      return;
+    }
+
+    // Hard gate: never write a job that validation says will fail.
+    const blocking = summary.findings.filter(f => f.severity === 'error');
+    if (blocking.length > 0) {
+      set({ createError: `${blocking.length} validation error(s) must be fixed first: ${blocking.map(f => f.message).join(' ')}` });
+      playWarning();
+      return;
+    }
+
+    const taskName = String(summary.row.task_name || '');
+    set({
+      creating: true, createError: null, createResult: null,
+      verifyChecks: null, createSteps: [{ step: 'Sending to UAC', status: 'processing' }],
+    });
+    playWhoosh();
+
+    const row = { ...summary.row };
+    const wantsTrigger = Object.keys(summary.trigger || {}).length > 0;
+
+    // ── Task only ────────────────────────────────────────────────────────────
+    // The batch and stream endpoints always build a trigger from the row, so a
+    // deliberately unscheduled task must go through the single-task endpoint or
+    // the user would silently get a trigger they declined.
+    if (!wantsTrigger) {
+      set({ createSteps: [{ step: 'Creating task (no trigger requested)', status: 'processing' }] });
+      try {
+        await globalApi.createTask(summary.task);
+        set({
+          creating: false,
+          createSteps: [{ step: 'Task created', status: 'success' }],
+          createResult: { successful: 1, failed: 0, taskName },
+        });
+        playComplete();
+      } catch (e) {
+        set({
+          creating: false,
+          createSteps: [{ step: 'Task failed', status: 'error', message: errText(e) }],
+          createError: errText(e),
+        });
+        playError();
+      }
+      return;
+    }
+
+    await new Promise<void>(resolve => {
+      let settled = false;
+      const finish = () => { if (!settled) { settled = true; resolve(); } };
+
+      globalApi.executeStream(
+        [row],
+        {},
+        (event, data) => {
+          if (event === 'step') {
+            const status: CreateStep['status'] =
+              data.status === 'success' ? 'success' : data.status === 'error' ? 'error' : 'processing';
+            if (status === 'success') playTick();
+            if (status === 'error') playError();
+            set(s => {
+              // Collapse the placeholder and any earlier "processing" row for
+              // the same step so the list reads as a checklist, not a log.
+              const steps = s.createSteps.filter(
+                x => x.step !== 'Sending to UAC' && !(x.status === 'processing'),
+              );
+              return { createSteps: [...steps, { step: data.step, status, message: data.message }] };
+            });
+          } else if (event === 'complete') {
+            const successful = data.successful ?? 0;
+            const failed = data.failed ?? 0;
+            set({ createResult: { successful, failed, taskName } });
+            if (failed === 0) playComplete(); else playError();
+          }
+        },
+        () => { set({ creating: false }); finish(); },
+        (err) => {
+          set({ creating: false, createError: err || 'Creation failed.' });
+          playError();
+          finish();
+        },
+      );
+    });
+
+    // Refresh the Copilot's own awareness of what now exists.
+    const result = get().createResult;
+    if (result) {
+      get().shareExecutions([
+        { name: taskName, type: 'task', status: result.failed === 0 ? 'success' : 'failed' },
+      ]).catch(() => {});
+    }
+  },
+
+  // Read-only confirmation: re-reads the created objects back out of UAC.
+  verifyCreatedJob: async () => {
+    const taskName = get().createResult?.taskName;
+    if (!taskName || get().verifying) return;
+    set({ verifying: true });
+    playClick();
+    try {
+      const res = await globalApi.verifyJob(taskName);
+      const checks: VerifyCheck[] = res.data?.data?.checks ?? [];
+      set({ verifyChecks: checks, verifying: false });
+      checks.some(c => c.status === 'fail') ? playWarning() : playSuccess();
+    } catch (e) {
+      set({ verifying: false, createError: errText(e) });
+      playError();
+    }
+  },
 
   reset: () => {
     lastContextKey = '';
     set({
       messages: [], thinking: false, analysis: null, guidance: null,
       wizardOpen: false, wizardStep: null, badge: 0,
+      creating: false, createSteps: [], createResult: null, createError: null,
+      verifyChecks: null, verifying: false,
     });
   },
 }));

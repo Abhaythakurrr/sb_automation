@@ -707,3 +707,381 @@ main {
    ══════════════════════════════════════════════════════════════════════════════ */
 .sfx-click:active { transform: scale(0.97); }
 .sfx-success { animation: entrance3d 0.5s ease forwards; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   AI OPERATIONS COPILOT — LIQUID GLASS
+   ──────────────────────────────────────────────────────────────────────────────
+   A self-contained surface language for the Copilot. Everything is prefixed
+   `lq-` so it can never collide with the rest of the app's utilities.
+
+   The look is built from four stacked ideas:
+     1. a translucent, saturated blur (the "glass")
+     2. an inset specular highlight along the top edge (the "wet" look)
+     3. a slowly rotating conic-gradient rim (the "liquid" motion)
+     4. depth from large, soft, low-opacity shadows rather than borders
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --lq-tint:        rgba(8, 20, 38, 0.72);
+  --lq-tint-deep:   rgba(3, 10, 22, 0.86);
+  --lq-rim:         rgba(125, 211, 252, 0.22);
+  --lq-rim-strong:  rgba(125, 211, 252, 0.45);
+  --lq-sheen:       rgba(255, 255, 255, 0.10);
+  --lq-cyan:        #22d3ee;
+  --lq-violet:      #a78bfa;
+  --lq-blur:        26px;
+}
+
+/* ── Base glass ─────────────────────────────────────────────────────────────
+   background-image gives the pane an internal gradient so it does not read as
+   flat plastic; the two inset shadows are the highlight (top) and the
+   grounding shade (bottom). */
+.lq-glass {
+  position: relative;
+  background-color: var(--lq-tint);
+  background-image:
+    linear-gradient(160deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0) 42%),
+    radial-gradient(120% 80% at 12% 0%, rgba(34,211,238,0.10) 0%, transparent 60%),
+    radial-gradient(110% 90% at 95% 100%, rgba(167,139,250,0.09) 0%, transparent 58%);
+  backdrop-filter: blur(var(--lq-blur)) saturate(165%);
+  -webkit-backdrop-filter: blur(var(--lq-blur)) saturate(165%);
+  border: 1px solid var(--lq-rim);
+  box-shadow:
+    0 28px 70px -18px rgba(0, 0, 0, 0.78),
+    0 4px 22px -8px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 var(--lq-sheen),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.32);
+}
+
+/* Graceful degradation: without backdrop-filter the tint alone would be too
+   transparent to read, so the pane goes opaque instead. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .lq-glass { background-color: rgba(4, 12, 24, 0.97); }
+}
+
+/* ── Rotating liquid rim ────────────────────────────────────────────────────
+   A conic gradient masked to a 1px ring. Sits behind content (z-index 0 with
+   children raised) so it never intercepts pointer events. */
+.lq-rim {
+  position: relative;
+  isolation: isolate;
+}
+.lq-rim::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--lq-angle, 0deg),
+    transparent 0deg,
+    rgba(34, 211, 238, 0.55) 60deg,
+    transparent 130deg,
+    transparent 230deg,
+    rgba(167, 139, 250, 0.45) 290deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: lq-spin 9s linear infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* @property lets the conic angle animate smoothly; browsers without it fall
+   back to the static gradient, which still looks intentional. */
+@property --lq-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes lq-spin {
+  to { --lq-angle: 360deg; }
+}
+
+/* ── Specular sweep ────────────────────────────────────────────────────────
+   A soft band of light travelling across the top of the pane. Deliberately
+   slow and low-contrast — it should register as material, not as animation. */
+.lq-specular { position: relative; overflow: hidden; }
+.lq-specular::after {
+  content: '';
+  position: absolute;
+  top: 0; left: -60%;
+  width: 55%; height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,0.055), transparent);
+  transform: skewX(-18deg);
+  animation: lq-sweep 7.5s ease-in-out infinite;
+  animation-delay: 1.2s;
+  pointer-events: none;
+}
+@keyframes lq-sweep {
+  0%, 62%  { left: -60%; opacity: 0; }
+  68%      { opacity: 1; }
+  100%     { left: 118%; opacity: 0; }
+}
+
+/* ── Message bubbles ───────────────────────────────────────────────────────── */
+.lq-bubble {
+  position: relative;
+  background-image: linear-gradient(155deg, rgba(255,255,255,0.05), rgba(255,255,255,0.015));
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow:
+    0 8px 24px -12px rgba(0,0,0,0.6),
+    inset 0 1px 0 rgba(255,255,255,0.07);
+}
+.lq-bubble-user {
+  background-image: linear-gradient(150deg, rgba(34,211,238,0.16), rgba(59,130,246,0.09));
+  border: 1px solid rgba(34, 211, 238, 0.30);
+  box-shadow:
+    0 8px 26px -12px rgba(8, 145, 178, 0.5),
+    inset 0 1px 0 rgba(255,255,255,0.12);
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────────
+   The ::after band is a light sweep triggered on hover, which gives the glass
+   a sense of thickness when touched. */
+.lq-btn {
+  position: relative;
+  overflow: hidden;
+  background-image: linear-gradient(140deg, rgba(34,211,238,0.20), rgba(99,102,241,0.16));
+  border: 1px solid rgba(34, 211, 238, 0.34);
+  color: #cffafe;
+  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  box-shadow:
+    0 6px 20px -8px rgba(8, 145, 178, 0.55),
+    inset 0 1px 0 rgba(255,255,255,0.14);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.25s ease, border-color 0.25s ease, filter 0.2s ease;
+}
+.lq-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(34, 211, 238, 0.6);
+  box-shadow:
+    0 12px 30px -10px rgba(8, 145, 178, 0.7),
+    0 0 22px rgba(34, 211, 238, 0.22),
+    inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.lq-btn:active:not(:disabled) { transform: translateY(0) scale(0.985); }
+.lq-btn:disabled { opacity: 0.42; cursor: not-allowed; }
+.lq-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,0.22) 50%, transparent 62%);
+  transform: translateX(-120%);
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lq-btn:hover:not(:disabled)::after { transform: translateX(120%); }
+
+/* Destructive / commit variant — used for the button that writes to UAC. */
+.lq-btn-commit {
+  background-image: linear-gradient(140deg, rgba(16,185,129,0.24), rgba(6,182,212,0.18));
+  border-color: rgba(16, 185, 129, 0.40);
+  color: #d1fae5;
+  box-shadow:
+    0 6px 20px -8px rgba(5, 150, 105, 0.6),
+    inset 0 1px 0 rgba(255,255,255,0.14);
+}
+.lq-btn-commit:hover:not(:disabled) {
+  border-color: rgba(16, 185, 129, 0.7);
+  box-shadow:
+    0 12px 32px -10px rgba(5, 150, 105, 0.75),
+    0 0 24px rgba(16, 185, 129, 0.26),
+    inset 0 1px 0 rgba(255,255,255,0.2);
+}
+
+.lq-btn-ghost {
+  background-image: linear-gradient(140deg, rgba(148,163,184,0.10), rgba(148,163,184,0.04));
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  color: #94a3b8;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.lq-btn-ghost:hover:not(:disabled) {
+  border-color: rgba(148, 163, 184, 0.34);
+  color: #e2e8f0;
+}
+
+/* ── Input ──────────────────────────────────────────────────────────────────
+   The focus ring is a glow rather than an outline, matching the glass. */
+.lq-input {
+  background-color: rgba(2, 8, 18, 0.55);
+  background-image: linear-gradient(180deg, rgba(255,255,255,0.03), transparent);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: #e2e8f0;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.4);
+  transition: border-color 0.2s ease, box-shadow 0.25s ease, background-color 0.2s ease;
+}
+.lq-input::placeholder { color: rgba(100, 116, 139, 0.85); }
+.lq-input:focus {
+  outline: none;
+  border-color: rgba(34, 211, 238, 0.5);
+  background-color: rgba(2, 8, 18, 0.72);
+  box-shadow:
+    inset 0 1px 2px rgba(0,0,0,0.35),
+    0 0 0 3px rgba(34, 211, 238, 0.13),
+    0 0 20px rgba(34, 211, 238, 0.10);
+}
+
+/* ── Launcher orb ───────────────────────────────────────────────────────────── */
+.lq-orb {
+  background-image:
+    radial-gradient(circle at 32% 28%, rgba(255,255,255,0.30), transparent 46%),
+    linear-gradient(145deg, rgba(34,211,238,0.85), rgba(139,92,246,0.85));
+  box-shadow:
+    0 8px 26px -6px rgba(8, 145, 178, 0.65),
+    0 0 34px rgba(34, 211, 238, 0.30),
+    inset 0 1px 1px rgba(255,255,255,0.45),
+    inset 0 -2px 6px rgba(8, 47, 73, 0.5);
+}
+/* Concentric pulse emitted by the orb while idle. */
+.lq-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1px solid rgba(34, 211, 238, 0.5);
+  animation: lq-halo 2.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  pointer-events: none;
+}
+@keyframes lq-halo {
+  0%   { transform: scale(1);    opacity: 0.55; }
+  70%  { transform: scale(1.85); opacity: 0; }
+  100% { transform: scale(1.85); opacity: 0; }
+}
+
+/* ── Thinking shimmer ───────────────────────────────────────────────────────
+   A gradient sliding through the text while the Copilot composes an answer. */
+.lq-shimmer {
+  background: linear-gradient(
+    100deg,
+    rgba(148,163,184,0.55) 20%,
+    rgba(224,242,254,0.98) 45%,
+    rgba(148,163,184,0.55) 70%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: lq-shimmer 1.9s linear infinite;
+}
+@keyframes lq-shimmer {
+  0%   { background-position: 180% 0; }
+  100% { background-position: -80% 0; }
+}
+
+/* ── Gradient heading text ──────────────────────────────────────────────────── */
+.lq-title {
+  background: linear-gradient(96deg, #e0f2fe 0%, #67e8f9 45%, #c4b5fd 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ── Progress rail (job creation) ───────────────────────────────────────────── */
+.lq-rail {
+  background: rgba(148, 163, 184, 0.14);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.35);
+  overflow: hidden;
+}
+.lq-rail-fill {
+  background: linear-gradient(90deg, #06b6d4, #6366f1, #a78bfa);
+  background-size: 220% 100%;
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.55);
+  animation: lq-flow 2.4s linear infinite;
+}
+@keyframes lq-flow {
+  0%   { background-position: 0% 0; }
+  100% { background-position: 220% 0; }
+}
+
+/* Live "writing to UAC" pulse — a travelling light along the rail. */
+.lq-rail-live::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+  width: 38%;
+  animation: lq-slide 1.35s ease-in-out infinite;
+}
+@keyframes lq-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+
+/* ── Aurora backdrop behind the panel body ──────────────────────────────────
+   Two very large, very soft blobs drifting slowly. Kept at low opacity so text
+   contrast is unaffected. */
+.lq-aurora { position: relative; overflow: hidden; }
+.lq-aurora::before,
+.lq-aurora::after {
+  content: '';
+  position: absolute;
+  width: 340px; height: 340px;
+  border-radius: 9999px;
+  filter: blur(76px);
+  pointer-events: none;
+  z-index: 0;
+}
+.lq-aurora::before {
+  background: rgba(34, 211, 238, 0.13);
+  top: -140px; left: -110px;
+  animation: lq-drift-a 17s ease-in-out infinite alternate;
+}
+.lq-aurora::after {
+  background: rgba(139, 92, 246, 0.12);
+  bottom: -160px; right: -120px;
+  animation: lq-drift-b 21s ease-in-out infinite alternate;
+}
+@keyframes lq-drift-a {
+  from { transform: translate3d(0,0,0)      scale(1); }
+  to   { transform: translate3d(40px,26px,0) scale(1.16); }
+}
+@keyframes lq-drift-b {
+  from { transform: translate3d(0,0,0)        scale(1.1); }
+  to   { transform: translate3d(-34px,-30px,0) scale(0.94); }
+}
+
+/* ── Finding cards ──────────────────────────────────────────────────────────── */
+.lq-find {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 4px 14px -8px rgba(0,0,0,0.6);
+}
+
+/* ── Scrollbar inside the Copilot ───────────────────────────────────────────── */
+.lq-scroll::-webkit-scrollbar { width: 5px; }
+.lq-scroll::-webkit-scrollbar-track { background: transparent; }
+.lq-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(34,211,238,0.34), rgba(139,92,246,0.28));
+  border-radius: 9999px;
+}
+.lq-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(34,211,238,0.55), rgba(139,92,246,0.45));
+}
+
+/* ── Accessibility ──────────────────────────────────────────────────────────
+   Everything decorative above is motion. Users who ask for reduced motion get
+   the same visual language, held still. */
+@media (prefers-reduced-motion: reduce) {
+  .lq-rim::before,
+  .lq-specular::after,
+  .lq-halo,
+  .lq-shimmer,
+  .lq-rail-fill,
+  .lq-rail-live::after,
+  .lq-aurora::before,
+  .lq-aurora::after {
+    animation: none !important;
+  }
+  .lq-specular::after { opacity: 0; }
+  .lq-shimmer {
+    -webkit-text-fill-color: #cbd5e1;
+    background: none;
+  }
+}

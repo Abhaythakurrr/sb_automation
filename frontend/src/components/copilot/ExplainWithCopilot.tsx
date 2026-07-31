@@ -8,11 +8,7 @@
  */
 import { useCopilotStore } from '@/store/useCopilotStore';
 
-const CHIP = {
-  background: 'rgba(6,182,212,0.06)',
-  border: '1px solid rgba(6,182,212,0.18)',
-  color: '#67e8f9',
-} as const;
+import { playHover } from '@/utils/soundEffects';
 
 function SparkIcon({ className = 'w-3 h-3' }: { className?: string }) {
   return (
@@ -32,8 +28,8 @@ export function ExplainError({ message, label = 'Explain this error' }: { messag
     <button
       onClick={() => explainError(message)}
       title="Ask the AI Operations Copilot what this means"
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold transition-all hover:brightness-125"
-      style={CHIP}
+      onMouseEnter={playHover}
+      className="lq-btn inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-bold"
     >
       <SparkIcon />
       {label}
@@ -58,7 +54,8 @@ export function ExplainField({
     <button
       onClick={() => explainField(field, payload)}
       title={`What does ${field} mean?`}
-      className="inline-flex items-center gap-1 text-[9px] text-slate-600 hover:text-cyan-400 transition-colors"
+      onMouseEnter={playHover}
+      className="inline-flex items-center gap-1 text-[9px] text-slate-600 hover:text-cyan-300 transition-colors"
     >
       <SparkIcon className="w-2.5 h-2.5" />
       {label || 'explain'}
@@ -83,8 +80,8 @@ export function ExplainPayload({
     <button
       onClick={() => explainPayload(name, payload)}
       title="Ask the Copilot what every field means and where this goes"
-      className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[9px] font-bold transition-all hover:brightness-125"
-      style={CHIP}
+      onMouseEnter={playHover}
+      className="lq-btn inline-flex items-center gap-1 px-2 py-1 rounded-md text-[9px] font-bold"
     >
       <SparkIcon />
       {label}
@@ -100,8 +97,8 @@ export function AskCopilot({ question, label }: { question: string; label?: stri
   return (
     <button
       onClick={() => ask(question)}
-      className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[9px] font-bold transition-all hover:brightness-125"
-      style={CHIP}
+      onMouseEnter={playHover}
+      className="lq-btn inline-flex items-center gap-1 px-2 py-1 rounded-md text-[9px] font-bold"
     >
       <SparkIcon />
       {label || question}

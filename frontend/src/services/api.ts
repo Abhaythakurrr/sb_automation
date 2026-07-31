@@ -80,6 +80,17 @@ export class ApiClient {
     });
   }
 
+  /**
+   * Creates a task on its own, with no trigger.
+   *
+   * The batch/stream execution endpoints always build a trigger from the row,
+   * so a deliberately unscheduled task has to go through the single-task
+   * endpoint instead.
+   */
+  async createTask(payload: any): Promise<any> {
+    return this.http.post('/api/stonebranch/task', payload, { timeout: 90000 });
+  }
+
   async resolveRefJobTrigger(refJob: string): Promise<any> {
     return this.http.get('/api/stonebranch/trigger/resolve', { params: { refJob } });
   }

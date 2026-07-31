@@ -368,9 +368,11 @@ What it knows: every feature, page and workflow; every backend API; every spread
 
 What it can see in your session: the file you uploaded and its parsed rows, the payloads that were generated from them, validation findings, execution results, and everything you have already told it. It does not ask twice for something you have already provided.
 
-What it can do: analyse an upload and report missing fields, invalid values, duplicate names and schedule conflicts; translate plain English like "every weekday at 8 PM" into a valid trigger configuration and explain it back in plain English; explain any generated payload field by field, including why a value was chosen and which API will receive it; explain an error message; run an inline wizard that collects one field at a time to build a job; and suggest best practices for what you are doing right now.
+What it can do: analyse an upload and report missing fields, invalid values, duplicate names and schedule conflicts; translate plain English like "every weekday at 8 PM" into a valid trigger configuration and explain it back in plain English; explain any generated payload field by field, including why a value was chosen and which API will receive it; explain an error message; run an inline wizard that collects one field at a time and then creates the job for you; and suggest best practices for what you are doing right now.
 
-What it will not do: guess at Stonebranch behaviour that is not implemented here, act on your behalf without you clicking, or read anything outside this application. It never sees your UAC token.
+Creating jobs: the Inline Assistant can create the task and its trigger in the connected UAC environment. It goes through the same execution endpoint bulk creation uses, so agent resolution, the task-before-trigger order, the paced execution queue and the audit trail all apply. Three conditions gate that write: you click the create button and then confirm it, the validation findings contain no errors, and the environment being written to is named on the button itself. The trigger is still created disabled — the Copilot will not enable a trigger. When you ask for a task with no schedule it creates the task alone rather than quietly attaching a trigger you declined.
+
+What it will not do: guess at Stonebranch behaviour that is not implemented here, enable triggers, delete anything, act without an explicit confirmed click, or read anything outside this application. It never sees your UAC token.
 
 Beta scope: a future release adds Microsoft Teams integration so the same contextual assistance is available directly from Teams.`,
   },
