@@ -30,7 +30,7 @@ import { analyzeUpload, buildPayloadSnapshots, analyzeCreationImpact, analyzeDel
 import { explainField, explainPayload, explainError, explainFinding, explainDestination } from '../copilot/explainer';
 import { interpretSchedule, describeTriggerPayload, scheduleExamples } from '../copilot/scheduleAssistant';
 import { advanceWizard, WizardAction } from '../copilot/wizard';
-import { llmStatus } from '../copilot/llm';
+import { mlStatus, warmUp } from '../copilot/ml';
 import { KNOWLEDGE_STATS } from '../copilot/knowledge';
 import { retrieverStats } from '../copilot/retriever';
 import {
@@ -113,7 +113,10 @@ router.get('/health', (_req: Request, res: Response): void => {
       betaNote: 'A future release will add Microsoft Teams integration, so the Copilot can be reached directly from Teams with the same contextual guidance and operational assistance available here.',
       knowledge: KNOWLEDGE_STATS,
       retrieval: retrieverStats(),
-      model: llmStatus(),
+      // Training happens on the first health probe, so the first real question
+      // does not pay for it.
+      warmUpMs: warmUp().ms,
+      ml: mlStatus(),
       activeSessions: memoryCount(),
       timestamp: new Date().toISOString(),
     },

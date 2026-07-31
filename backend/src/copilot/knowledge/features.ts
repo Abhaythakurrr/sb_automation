@@ -303,7 +303,7 @@ Uploads: UPLOAD_DIR, MAX_FILE_SIZE.
 Integrations: TEAMS_WEBHOOK_URL, POWER_AUTOMATE_URL, SERVICENOW_PROD_HOST, SERVICENOW_NONPROD_HOST.
 Security: ENCRYPTION_KEY (required, at least 32 characters, encrypts persisted scheduled-job tokens), ALLOW_ENV_TOKEN_FALLBACK (false by default — turning it on lets any request without a session use the server's own token, which is an auth bypass outside a trusted single-tenant deployment).
 Logging: LOG_DIRECTORY, LOG_LEVEL, LOG_RETENTION_DAYS, LOG_MAX_FILE_SIZE, ENABLE_CONSOLE_LOGGING.
-Copilot: COPILOT_ENABLED, COPILOT_PROVIDER, COPILOT_MODEL, COPILOT_API_KEY, COPILOT_BASE_URL, COPILOT_MAX_TOKENS, COPILOT_TEMPERATURE.`,
+Copilot: COPILOT_ENABLED is the only knob. The Copilot is self-contained — its ML models are trained in-process from repo-local corpora, so there is no provider, no API key and no endpoint to configure.`,
   },
 
   // ── Integrations ───────────────────────────────────────────────────────────
@@ -369,6 +369,16 @@ What it knows: every feature, page and workflow; every backend API; every spread
 What it can see in your session: the file you uploaded and its parsed rows, the payloads that were generated from them, validation findings, execution results, and everything you have already told it. It does not ask twice for something you have already provided.
 
 What it can do: analyse an upload and report missing fields, invalid values, duplicate names and schedule conflicts; translate plain English like "every weekday at 8 PM" into a valid trigger configuration and explain it back in plain English; explain any generated payload field by field, including why a value was chosen and which API will receive it; explain an error message; run an inline wizard that collects one field at a time and then creates the job for you; and suggest best practices for what you are doing right now.
+
+How it works, and what it is not: the Copilot is fully self-contained. There is no external language model, no API key, no model download and no telemetry — nothing it does leaves this server. Five small models are trained in-process at first use, from corpora that live in the repository:
+
+A Multinomial Naive Bayes classifier routes each question to the right specialism, and can report which features drove that decision.
+Two small neural networks (one hidden layer, leaky ReLU, softmax, trained by SGD with momentum) read the shape of a schedule request — one for the time dimension, one for the day dimension. They act as a cross-check on the rule-based schedule parser, never as its replacement, because field values must be exact.
+Latent Semantic Analysis over the knowledge base gives a dense semantic retrieval channel, so a question that shares meaning but no vocabulary with the answer still finds it. It is blended with BM25 rather than replacing it.
+Maximal Marginal Relevance composes answers by selecting the most relevant, least redundant sentences from the knowledge base. Every sentence is verbatim from the repository, so an answer cannot contain a claim the code does not make.
+Robust statistics (median and scaled MAD, plus Dice bigram similarity) flag rows that are individually valid but unlike the rest of an uploaded batch.
+
+All randomness is seeded, so a given build produces identical weights and therefore identical answers on every boot. The same question does not get a different answer after a restart.
 
 Creating jobs: the Inline Assistant can create the task and its trigger in the connected UAC environment. It goes through the same execution endpoint bulk creation uses, so agent resolution, the task-before-trigger order, the paced execution queue and the audit trail all apply. Three conditions gate that write: you click the create button and then confirm it, the validation findings contain no errors, and the environment being written to is named on the button itself. The trigger is still created disabled — the Copilot will not enable a trigger. When you ask for a task with no schedule it creates the task alone rather than quietly attaching a trigger you declined.
 

@@ -67,7 +67,8 @@ export interface CopilotAnswer {
   citations: Citation[];
   findings: CopilotFinding[];
   actions: QuickAction[];
-  mode: 'llm' | 'grounded';
+  /** Always 'grounded' — answers are assembled from the local knowledge base. */
+  mode: 'grounded';
   outOfScope: boolean;
 }
 
@@ -153,12 +154,22 @@ export interface CopilotHealth {
   betaNote: string;
   knowledge: { chunks: number; endpoints: number; byKind: Record<string, number> };
   retrieval: { documents: number; strategy: string };
-  model: {
-    provider: string;
-    model: string | null;
-    available: boolean;
-    credentialConfigured: boolean;
-    mode: 'llm' | 'grounded';
+  warmUpMs?: number;
+  /** The self-contained ML layer. No external model is involved. */
+  ml: {
+    selfContained: boolean;
+    externalCalls: string;
+    deterministic: string;
+    models: {
+      intent: { algorithm: string; trainingExamples: number; classes: number; vocabulary: number };
+      schedulePattern: {
+        algorithm: string; parameters: number; classes: number;
+        trainAccuracy: number; heldOutAccuracy: number; finalLoss: number;
+      };
+      semanticIndex: { algorithm: string; documents: number; dimensions: number; vocabulary: number };
+      answerComposer: { algorithm: string; note: string };
+      anomalyDetection: { algorithm: string; note: string };
+    };
   };
   activeSessions: number;
 }
@@ -201,7 +212,7 @@ export interface CopilotMessage {
   citations?: Citation[];
   findings?: CopilotFinding[];
   actions?: QuickAction[];
-  mode?: 'llm' | 'grounded';
+  mode?: 'grounded';
   outOfScope?: boolean;
   /** Set while an assistant reply is in flight. */
   pending?: boolean;

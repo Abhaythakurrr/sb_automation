@@ -11,6 +11,7 @@ import { buildTaskPayload, buildTriggerPayload, ExcelRow } from '../utils/payloa
 import { Finding, JobRowLike, PayloadSnapshot, Severity } from './types';
 import { lookupRule } from './knowledge/validation';
 import { describeTriggerFields } from './scheduleAssistant';
+import { median, outliers, nearDuplicates } from './ml/stats';
 
 const SCRIPT_TASK_TYPES = new Set(['taskUnix', 'taskWindows', 'taskUcmd', 'taskIbmi', 'taskZos']);
 const AGENT_TASK_TYPES = new Set([
@@ -343,6 +344,69 @@ export interface UploadAnalysis {
   blockedJobs: string[];
 }
 
+/**
+ * Flags rows that are individually valid but statistically unlike the rest of
+ * the batch — the class of mistake no per-row rule can catch, because nothing
+ * about the row is wrong in isolation.
+ *
+ * Uses a robust z-score (median and scaled MAD) so a single extreme value
+ * cannot inflate the spread and hide itself, plus Dice bigram similarity for
+ * names that differ just enough to be a copy/paste slip.
+ */
+export function detectBatchAnomalies(rows: JobRowLike[]): Finding[] {
+  const out: Finding[] = [];
+  if (rows.length < 4) return out;   // "unlike the others" needs a batch
+
+  // Max runtime outliers.
+  const withRt = rows
+    .map((r, i) => ({ i, name: str(r.task_name) || `row ${i + 1}`, v: parseInt(str(r.max_runtime), 10) }))
+    .filter(x => !isNaN(x.v) && x.v > 0);
+  if (withRt.length >= 4) {
+    const med = median(withRt.map(x => x.v));
+    for (const o of outliers(withRt.map(x => x.v))) {
+      const s = withRt[o.index];
+      out.push(finding('info', s.name, 'quality.missing-max-runtime',
+        `Maximum runtime is ${o.value} minute(s), which is well ${o.direction === 'high' ? 'above' : 'below'} the batch median of ${med}. Worth confirming it is deliberate.`,
+        o.direction === 'high'
+          ? 'A runtime much longer than its peers usually means a different kind of workload, or a value entered in the wrong unit.'
+          : 'A very short runtime makes the Late Finish monitor fire on normal variation.',
+        { row: s.i + 1, field: 'max_runtime' }));
+    }
+  }
+
+  // Interval outliers, compared in minutes so units do not skew the comparison.
+  const schedules = resolveSchedules(rows);
+  const intervals = schedules
+    .map((s, i) => {
+      const f = s.fields;
+      if (f.timeStyle !== 'Interval' || !f.timeInterval) return null;
+      const mins = f.timeIntervalUnits === 'Hours' ? f.timeInterval * 60
+        : f.timeIntervalUnits === 'Seconds' ? f.timeInterval / 60
+          : f.timeInterval;
+      return { i, name: s.name, v: mins };
+    })
+    .filter((x): x is { i: number; name: string; v: number } => x !== null);
+  if (intervals.length >= 4) {
+    const med = median(intervals.map(x => x.v));
+    for (const o of outliers(intervals.map(x => x.v))) {
+      const s = intervals[o.index];
+      out.push(finding('info', s.name, 'schedule.high-frequency',
+        `Fires every ${o.value} minute(s) against a batch median of ${med}. That is a noticeably ${o.direction === 'high' ? 'longer' : 'shorter'} cycle than its peers.`,
+        undefined, { row: s.i + 1, field: 'frequency_type' }));
+    }
+  }
+
+  // Names that are nearly, but not exactly, the same.
+  const names = rows.map(r => str(r.task_name)).filter(Boolean);
+  for (const nd of nearDuplicates(names).slice(0, 6)) {
+    out.push(finding('warning', nd.a, 'duplicate.task_name_in_file',
+      `"${nd.a}" and "${nd.b}" are ${Math.round(nd.score * 100)}% similar. UAC will treat them as two separate jobs, so if one is a typo you will get a duplicate.`,
+      'Confirm both names are intentional.', { field: 'task_name' }));
+  }
+
+  return out;
+}
+
 export function analyzeUpload(rows: JobRowLike[]): UploadAnalysis {
   findingSeq = 0;
   const findings: Finding[] = [];
@@ -356,6 +420,7 @@ export function analyzeUpload(rows: JobRowLike[]): UploadAnalysis {
 
   findings.push(...detectDuplicates(rows));
   findings.push(...detectScheduleConflicts(schedules));
+  findings.push(...detectBatchAnomalies(rows));
 
   const counts = {
     error: findings.filter(f => f.severity === 'error').length,

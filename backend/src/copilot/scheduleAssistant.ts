@@ -13,6 +13,9 @@
  */
 import { buildScheduleFields, TriggerScheduleFields } from '../utils/triggerSchedule';
 import { SCHEDULE_EXAMPLES } from './knowledge/scheduling';
+import {
+  classifyShape, TimeShape, DayShape, DISAGREEMENT_FLOOR,
+} from './ml/schedulePattern';
 
 // ── Plain-English rendering ──────────────────────────────────────────────────
 
@@ -446,6 +449,11 @@ export interface ScheduleInterpretation {
   /** Follow-up questions when something material is missing. */
   questions: string[];
   /**
+   * False when the neural pattern classifier read the request differently from
+   * the rule parser. The rule parser's fields are still what gets used.
+   */
+  modelAgrees: boolean;
+  /**
    * False when the pattern cannot be expressed in the spreadsheet frequency
    * column, so the fields must be applied to the trigger another way.
    */
@@ -703,11 +711,46 @@ export function interpretSchedule(input: string, fallbackTz?: string): ScheduleI
     delete (fields as Partial<TriggerScheduleFields>).simpleDateType;
   }
 
+  // ── Neural cross-check ────────────────────────────────────────────────────
+  // The rule parser above stays authoritative for the actual field values: a
+  // probabilistic model has no business deciding whether timeInterval is 5 or
+  // 15. What the classifier provides is an independent read of the *shape* of
+  // the request. When the two disagree confidently, the phrasing is unusual and
+  // the user is told — rather than silently receiving a schedule they did not
+  // ask for, which is precisely the failure that shipped once already when an
+  // interval quietly dropped its day restriction.
+  let modelAgrees = true;
+  try {
+    const pred = classifyShape(text);
+    const ruleTime: TimeShape = fields.timeStyle === 'Interval' ? 'interval' : 'absolute';
+    const ruleDay = ruleDayShape(dayPattern);
+
+    // Each dimension is checked on its own. Checking a single combined label
+    // produced false alarms on requests that legitimately have both an interval
+    // and a day restriction.
+    if (pred.time !== ruleTime && pred.timeConfidence >= DISAGREEMENT_FLOOR) {
+      modelAgrees = false;
+      confidence -= 0.18;
+      reasoning.push(`Cross-check: the timing classifier reads this as ${TIME_WORDS[pred.time]} (${Math.round(pred.timeConfidence * 100)}% confident) while the parser produced ${TIME_WORDS[ruleTime]}. The parser's fields below are what would be created — please confirm they match your intent.`);
+      questions.push(`Did you mean ${TIME_WORDS[pred.time]}?`);
+    }
+    if (ruleDay && pred.day !== ruleDay && pred.dayConfidence >= DISAGREEMENT_FLOOR) {
+      modelAgrees = false;
+      confidence -= 0.18;
+      reasoning.push(`Cross-check: the day-pattern classifier reads this as ${DAY_SHAPE_WORDS[pred.day]} (${Math.round(pred.dayConfidence * 100)}% confident) while the parser produced ${DAY_SHAPE_WORDS[ruleDay]}. Please confirm the day pattern below.`);
+      questions.push(`Did you mean ${DAY_SHAPE_WORDS[pred.day]}?`);
+    }
+  } catch {
+    // Classifier unavailable — the rule parse stands on its own.
+  }
+
   const summary = describeTriggerFields(fields);
-  const understood = confidence >= 0.55 && (!!fields.time || !!fields.timeInterval || !!fields.dayStyle);
+  const understood = confidence >= 0.55
+    && (!!fields.time || !!fields.timeInterval || !!fields.dayStyle);
 
   return {
     understood,
+    modelAgrees,
     confidence: Math.max(0, Math.min(1, confidence)),
     scheduleString,
     frequency,
@@ -721,6 +764,38 @@ export function interpretSchedule(input: string, fallbackTz?: string): ScheduleI
     caveat: complexOverride?.caveat,
   };
 }
+
+/**
+ * The rule parser's day pattern in the classifier's label space.
+ *
+ * Returns null when the parser recognised no day pattern at all: it defaulted,
+ * so it has no opinion to disagree with and the check is skipped.
+ */
+function ruleDayShape(day: DayPattern): DayShape | null {
+  switch (day.kind) {
+    case 'monthlyOrdinal': return 'monthlyOrdinal';
+    case 'monthlyDay':     return 'monthlyDay';
+    case 'everyNDays':     return 'everyNDays';
+    case 'businessDays':   return 'businessDays';
+    case 'specificDays':   return 'specificDays';
+    case 'daily':          return 'daily';
+    default:               return null;
+  }
+}
+
+const TIME_WORDS: Record<TimeShape, string> = {
+  interval: 'a repeating interval',
+  absolute: 'a fixed time of day',
+};
+
+const DAY_SHAPE_WORDS: Record<DayShape, string> = {
+  daily:          'every day',
+  businessDays:   'business days only',
+  specificDays:   'specific days of the week',
+  monthlyDay:     'a day of the month',
+  monthlyOrdinal: 'an ordinal weekday of the month',
+  everyNDays:     'every N days',
+};
 
 /** Example phrasings, for UI hints and for the "I didn't understand" reply. */
 export function scheduleExamples(): string[] {

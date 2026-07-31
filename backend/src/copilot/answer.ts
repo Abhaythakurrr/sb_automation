@@ -24,7 +24,8 @@ import {
   setFindings,
   rememberFact,
 } from './memory';
-import { callLlm, llmAvailable, LlmMessage } from './llm';
+import { classifyIntent, Intent as MlIntent } from './ml/intent';
+import { sentences, compose, Sentence } from './ml/summarize';
 import { analyzeUpload, buildPayloadSnapshots, analyzeCreationImpact, analyzeDeletionImpact } from './analyzers';
 import { explainField, explainPayload, explainError, explainFinding } from './explainer';
 import { interpretSchedule, scheduleExamples, describeTriggerPayload } from './scheduleAssistant';
@@ -32,39 +33,29 @@ import { KNOWLEDGE_STATS } from './knowledge';
 
 // ── Intent detection ─────────────────────────────────────────────────────────
 
-export type Intent =
-  | 'schedule'        // "run every weekday at 8pm"
-  | 'explain-field'   // "what does lfDuration mean"
-  | 'explain-payload' // "explain this payload"
-  | 'explain-error'   // "why did this fail"
-  | 'analyze-upload'  // "check my file"
-  | 'impact'          // "what happens if I execute"
-  | 'howto'           // "how do I delete a job"
-  | 'capability'      // "what can you do"
-  | 'general';
+export type Intent = MlIntent;
 
-const RE = {
-  schedule: /\b(every|each)\s+(day|weekday|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d+\s*(min|hour|sec))|\bschedule\b.*\b(want|need|should|how|set|make|change)|\b(run|runs|fire|trigger)\b.*\b(at|every|daily|weekly|monthly|weekday)\b|\bwhat cron\b|\bcron\b/i,
-  explainField: /\bwhat (does|is)\b.*\b(field|column|mean|do)\b|\bexplain\b.*\bfield\b|\bwhat is\s+`?[a-z_][a-z0-9_]{2,}`?\s*\??$/i,
-  explainPayload: /\bexplain\b.*\b(payload|json|task|trigger|this job)\b|\bwhat (does|will) this (payload|json)\b|\bwalk me through\b/i,
-  explainError: /\b(error|failed|failure|rejected|why did.*fail|what went wrong|exception)\b/i,
-  analyzeUpload: /\b(check|validate|analyz|analys|review|what'?s wrong|any (issues|problems|errors))\b.*\b(file|upload|rows|jobs|sheet|excel)\b|\bvalidate (my|the)\b|\bis (my|the) (file|upload|sheet) ok\b/i,
-  impact: /\bwhat (will|would) happen\b|\bimpact\b|\bif i (execute|run|delete|enable)\b|\bblast radius\b|\bwhat does (executing|deleting) .* do\b/i,
-  howto: /\bhow (do|can|should) i\b|\bhow to\b|\bsteps\b|\bprocedure\b|\bwalk me\b|\bwhere (do|can) i\b/i,
-  capability: /\bwhat can you (do|help)\b|\bwho are you\b|\bwhat do you know\b|\bhelp me\b$|^\s*(help|capabilities)\s*$/i,
-};
+/**
+ * Confidence a predicted specialism must reach before it is dispatched to.
+ *
+ * Higher than the classifier's own floor because a specialist commits to a
+ * shape of answer — "here is your payload", "here is your schedule" — and being
+ * wrong about that is worse than answering generically from retrieved knowledge.
+ */
+const SPECIALIST_FLOOR = 0.45;
 
+/**
+ * Routes a question to a specialism using the trained classifier.
+ *
+ * This was a regex chain. It became a model because paraphrases nobody wrote a
+ * pattern for were falling through to the generic path — "look over my sheet
+ * and tell me if anything is broken" is obviously an upload check to a human
+ * and matched nothing. The classifier keeps a small set of high-precision
+ * regexes as guardrails for phrasings where being wrong is costly; see
+ * ml/intent.ts.
+ */
 export function detectIntent(question: string): Intent {
-  const q = question.trim();
-  if (RE.capability.test(q)) return 'capability';
-  if (RE.analyzeUpload.test(q)) return 'analyze-upload';
-  if (RE.explainError.test(q) && /\b(error|exception|rejected|failed with|message)\b/i.test(q)) return 'explain-error';
-  if (RE.explainPayload.test(q)) return 'explain-payload';
-  if (RE.impact.test(q)) return 'impact';
-  if (RE.schedule.test(q)) return 'schedule';
-  if (RE.explainField.test(q)) return 'explain-field';
-  if (RE.howto.test(q)) return 'howto';
-  return 'general';
+  return classifyIntent(question).intent;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -415,6 +406,68 @@ function answerImpact(question: string, sessionId: string): Composed {
  * Builds an answer from retrieved chunks without a model. Used when no provider
  * is configured, and as the fallback whenever a model call fails.
  */
+/**
+ * Assembles an answer by selecting the most relevant, least redundant sentences
+ * from the retrieved chunks.
+ *
+ * This is what stands in for a language model. Because every sentence is lifted
+ * verbatim from the knowledge base, the answer cannot contain a claim the
+ * repository does not make — which is a stronger guarantee than prompting a
+ * model to stay grounded and hoping it complies.
+ */
+function composeExtractive(question: string, hits: ScoredChunk[], sessionId: string): string | null {
+  const pool: Sentence[] = [];
+  for (const h of hits.slice(0, 5)) {
+    pool.push(...sentences(h.chunk.body, h.chunk.id, h.chunk.title));
+  }
+  if (pool.length === 0) return null;
+
+  const { picked, sources } = compose(question, pool, { limit: 6, lambda: 0.72 });
+  // Too thin a selection means the sentences did not really address the
+  // question; the whole-chunk fallback reads better than three fragments.
+  if (picked.length < 2) return composeGrounded(question, hits, sessionId);
+
+  const parts: string[] = [];
+  const lead = hits[0];
+  parts.push(`**${lead.chunk.title}**`);
+
+  // Group by source so the answer does not jump between topics mid-paragraph.
+  const bySource = new Map<string, Sentence[]>();
+  for (const s of picked) {
+    if (!bySource.has(s.sourceId)) bySource.set(s.sourceId, []);
+    bySource.get(s.sourceId)!.push(s);
+  }
+
+  for (const [id, group] of bySource) {
+    if (id !== lead.chunk.id) {
+      const title = group[0].sourceTitle;
+      parts.push(`**${title}**`);
+    }
+    parts.push(group.map(s => (s.text.endsWith('.') || s.text.endsWith(':') ? s.text : s.text + '.')).join(' '));
+  }
+
+  const situational = situationalNote(sessionId);
+  if (situational) parts.push(situational);
+
+  if (sources.length > 1) {
+    parts.push(`_Drawn from ${sources.length} knowledge entries. Ask about any of them directly for the full detail._`);
+  }
+
+  return parts.join('\n\n');
+}
+
+/** Ties a general answer back to what the user is actually working on. */
+function situationalNote(sessionId: string): string {
+  const mem = getMemory(sessionId);
+  const bits: string[] = [];
+  if (mem.upload) {
+    bits.push(`You have **${mem.upload.filename}** loaded with ${mem.upload.rowCount} job(s), so I can apply this to your actual rows — just ask.`);
+  }
+  const errors = mem.findings.filter(f => f.severity === 'error').length;
+  if (errors) bits.push(`Note that ${errors} validation error(s) are outstanding on the current file.`);
+  return bits.join(' ');
+}
+
 function composeGrounded(question: string, hits: ScoredChunk[], sessionId: string): string {
   if (hits.length === 0) {
     return outOfScopeText(question);
@@ -473,11 +526,35 @@ export interface AskOptions {
 export async function ask({ sessionId, question, page }: AskOptions): Promise<CopilotAnswer> {
   const mem = getMemory(sessionId);
   const activePage = page || mem.context.page;
-  const intent = detectIntent(question);
 
   addTurn(sessionId, { role: 'user', content: question });
 
-  // Specialists first — these produce exact answers from real data.
+  const hits = retrieve(question, { page: activePage, limit: 6 });
+  const prediction = classifyIntent(question);
+
+  // ── Scope gate, before any specialist runs ────────────────────────────────
+  // This ordering matters. A classifier can misroute an off-topic question to a
+  // specialist, and a specialist answers confidently from session data — so
+  // "who won the world cup in 1998" came back as a statement about payloads.
+  // Checking scope first means an off-topic question can never reach a
+  // specialist, whatever the classifier thought.
+  const capabilityAsk = prediction.intent === 'capability';
+  if (isOutOfScope(hits) && !capabilityAsk) {
+    const text = outOfScopeText(question);
+    addTurn(sessionId, { role: 'assistant', content: text });
+    return {
+      answer: text, citations: [], findings: [], actions: [],
+      mode: 'grounded', outOfScope: true,
+    };
+  }
+
+  // A weakly-predicted specialism is not worth acting on: the generic
+  // retrieval-grounded answer is more useful than a confident wrong specialist.
+  const intent: Intent = (prediction.source === 'rule' || prediction.confidence >= SPECIALIST_FLOOR)
+    ? prediction.intent
+    : 'general';
+
+  // Specialists — these produce exact answers from real data.
   let composed: Composed = { final: false, findings: [], actions: [], answer: '' };
   switch (intent) {
     case 'capability':      composed = answerCapability(); break;
@@ -490,8 +567,7 @@ export async function ask({ sessionId, question, page }: AskOptions): Promise<Co
     default: break;
   }
 
-  const hits = retrieve(question, { page: activePage, limit: 6 });
-  const outOfScope = isOutOfScope(hits) && !composed.final;
+  const outOfScope = false;   // already handled by the gate above
 
   if (composed.final) {
     addTurn(sessionId, { role: 'assistant', content: composed.answer });
@@ -505,23 +581,12 @@ export async function ask({ sessionId, question, page }: AskOptions): Promise<Co
     };
   }
 
-  // General / how-to: let a model phrase the retrieved material if one is
-  // configured, otherwise compose it deterministically.
+  // General / how-to: assemble the answer from the retrieved knowledge itself.
   let answerText: string | null = null;
-  let mode: CopilotAnswer['mode'] = 'grounded';
+  const mode: CopilotAnswer['mode'] = 'grounded';
 
-  if (!outOfScope && llmAvailable()) {
-    const history: LlmMessage[] = recentTurns(sessionId, 6)
-      .slice(0, -1) // the current question is passed separately
-      .map(t => ({ role: t.role, content: t.content }));
-
-    answerText = await callLlm({
-      context: buildContextBlock(hits),
-      session: describeMemory(sessionId),
-      history,
-      question,
-    });
-    if (answerText) mode = 'llm';
+  if (!outOfScope) {
+    answerText = composeExtractive(question, hits, sessionId);
   }
 
   if (!answerText) {

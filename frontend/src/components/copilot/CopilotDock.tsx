@@ -183,8 +183,8 @@ function Message({ msg, onRun, onExplainFinding }: {
         <div className="flex items-center gap-1.5 flex-wrap mt-2 pt-1.5"
           style={{ borderTop: '1px solid rgba(148,163,184,0.08)' }}>
           <span className="text-[8px] font-mono uppercase tracking-[0.1em]"
-            style={{ color: msg.outOfScope ? '#94a3b8' : msg.mode === 'llm' ? '#c4b5fd' : '#6ee7b7' }}>
-            {msg.outOfScope ? 'not in knowledge base' : msg.mode === 'llm' ? 'model-phrased, app-grounded' : 'app knowledge'}
+            style={{ color: msg.outOfScope ? '#94a3b8' : '#6ee7b7' }}>
+            {msg.outOfScope ? 'not in knowledge base' : 'app knowledge · on-device ML'}
           </span>
           {msg.citations?.slice(0, 3).map(c => (
             <span key={c.id} className="text-[8px] font-mono text-slate-700" title={c.source || c.id}>
@@ -367,7 +367,7 @@ export default function CopilotDock() {
                 <p className="text-[9px] text-slate-500 font-mono truncate">
                   {context.page}{context.step ? ` · ${context.step}` : ''}
                   {connected && environment ? ` · ${environment}` : ''}
-                  {health?.model.mode === 'llm' ? ` · ${health.model.provider}` : ' · app knowledge'}
+                  {health?.ml?.selfContained ? ' · self-contained ML' : ' · app knowledge'}
                 </p>
               </div>
 

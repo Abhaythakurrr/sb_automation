@@ -305,6 +305,19 @@ export interface RetrieveOptions {
 
 const index = new KnowledgeIndex(KNOWLEDGE);
 
+/** Position of each chunk in KNOWLEDGE, so LSA scores can be joined by index. */
+const CHUNK_ORDER = new Map(KNOWLEDGE.map((c, i) => [c.id, i]));
+
+/**
+ * Weight of the learned semantic channel in the blended score.
+ *
+ * BM25 stays dominant because exact term matches on field names and endpoint
+ * paths are the highest-precision signal this corpus offers. LSA is additive:
+ * it rescues questions that share meaning but no vocabulary with the answer,
+ * which is precisely where lexical search fails.
+ */
+const SEMANTIC_WEIGHT = 6.0;
+
 /**
  * Minimum score for a chunk to count as a real hit. Tuned so a genuine
  * question about the app clears it while "what's the weather" does not.
@@ -314,7 +327,41 @@ export const RELEVANCE_FLOOR = 2.2;
 export function retrieve(query: string, opts: RetrieveOptions = {}): ScoredChunk[] {
   const limit = opts.limit ?? 6;
   const minScore = opts.minScore ?? 0;
-  const hits = index.search(query, opts).filter(h => h.score >= minScore);
+  let hits = index.search(query, opts).filter(h => h.score >= minScore);
+
+  // Blend in the learned semantic channel. Imported lazily so the retriever has
+  // no load-time dependency on the ML layer and a caller that only ever does
+  // lexical search never pays for training.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { semanticSimilarities } = require('./ml') as typeof import('./ml');
+    const sims = semanticSimilarities(query);
+
+    const seen = new Set(hits.map(h => h.chunk.id));
+    for (const h of hits) {
+      const i = CHUNK_ORDER.get(h.chunk.id);
+      if (i !== undefined) h.score += SEMANTIC_WEIGHT * Math.max(0, sims[i]);
+    }
+
+    // Chunks the lexical pass missed entirely, but that are semantically close.
+    // Gated hard: only a strong cosine earns a place, or this floods results.
+    KNOWLEDGE.forEach((chunk, i) => {
+      if (seen.has(chunk.id) || sims[i] < 0.42) return;
+      if (opts.kinds && !opts.kinds.includes(chunk.kind)) return;
+      hits.push({
+        chunk,
+        score: SEMANTIC_WEIGHT * sims[i],
+        matched: [],
+        // Semantic-only hits cannot claim lexical coverage; they are support,
+        // never the sole basis for declaring a question in scope.
+        coverage: 0,
+      });
+    });
+
+    hits.sort((a, b) => b.score - a.score);
+  } catch {
+    // ML layer unavailable — lexical retrieval alone is a complete fallback.
+  }
 
   if (hits.length > 0) return hits.slice(0, limit);
 
