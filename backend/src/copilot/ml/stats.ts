@@ -70,18 +70,69 @@ export function dice(a: string, b: string): number {
   return (2 * inter) / (ga.size + gb.size);
 }
 
+/** Trailing digit run, e.g. "PAY_JOB_007" -> "007". */
+function trailingDigits(name: string): string {
+  const m = name.match(/(\d+)\s*$/);
+  return m ? m[1] : '';
+}
+
+/** The name with its trailing number removed, lowercased. */
+function stem(name: string): string {
+  return name.replace(/\d+\s*$/, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * True when two names look like members of a deliberate numbered series rather
+ * than a typo.
+ *
+ * This matters more than it sounds. Sequential names are the norm in job
+ * estates — PAY_LOAD_001 through PAY_LOAD_120 — and by character bigrams they
+ * are 90%+ similar to each other, so a naive check reported tens of thousands of
+ * "near duplicates" on a single upload. A series is identified by both names
+ * carrying a trailing number of the same width; a typo is one name carrying a
+ * suffix the other lacks, which is still reported.
+ */
+function isNumberedSeries(a: string, b: string): boolean {
+  const da = trailingDigits(a), db = trailingDigits(b);
+  if (!da || !db) return false;             // one has no number: not a series
+  if (da.length !== db.length) return false; // 001 vs 1: inconsistent, suspicious
+  return stem(a) === stem(b);
+}
+
 /**
  * Groups names that are suspiciously similar without being identical.
- * Catches PAY_DAILY_LOAD vs PAY_DAILY_LOAD2 vs PAY-DAILY-LOAD, which the exact
- * duplicate check misses and which is almost always a copy/paste slip.
+ *
+ * Catches PAY_DAILY_LOAD vs PAY_DAILY_LOAD2 and PAY-DAILY-LOAD, which the exact
+ * duplicate check misses and which is usually a copy/paste slip. Deliberate
+ * numbered series are excluded.
+ *
+ * Candidates are bucketed by stem first. A Dice score above the threshold
+ * effectively requires a shared stem, so comparing across buckets is wasted
+ * work — and the all-pairs version was the slowest part of a bulk analysis.
  */
 export function nearDuplicates(names: string[], threshold = 0.86): { a: string; b: string; score: number }[] {
+  const buckets = new Map<string, string[]>();
+  for (const n of names) {
+    const key = stem(n).slice(0, 12);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(n);
+  }
+
   const out: { a: string; b: string; score: number }[] = [];
-  for (let i = 0; i < names.length; i++) {
-    for (let j = i + 1; j < names.length; j++) {
-      if (names[i].toLowerCase() === names[j].toLowerCase()) continue; // exact dupes handled elsewhere
-      const s = dice(names[i], names[j]);
-      if (s >= threshold) out.push({ a: names[i], b: names[j], score: Number(s.toFixed(3)) });
+  const seen = new Set<string>();
+
+  for (const group of buckets.values()) {
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        const a = group[i], b = group[j];
+        if (a.toLowerCase() === b.toLowerCase()) continue;  // exact dupes handled elsewhere
+        if (isNumberedSeries(a, b)) continue;
+        const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const s = dice(a, b);
+        if (s >= threshold) out.push({ a, b, score: Number(s.toFixed(3)) });
+      }
     }
   }
   return out.sort((x, y) => y.score - x.score);

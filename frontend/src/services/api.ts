@@ -386,4 +386,29 @@ export class ApiClient {
   async copilotClearMemory(): Promise<any> {
     return this.http.delete('/api/copilot/memory');
   }
+
+  /**
+   * Records a verdict on an answer.
+   *
+   * A bare thumbs-down is recorded but teaches nothing — it says an answer was
+   * wrong without saying what right looks like. `expected` carries a checkable
+   * label, and only those reach the model.
+   */
+  async copilotFeedback(body: {
+    verdict: 'up' | 'down';
+    text: string;
+    mode?: string;
+    intent?: string;
+    page?: string;
+    correction?: string;
+    expected?: { kind: 'timeShape' | 'dayShape' | 'intent'; value: string }[];
+    predicted?: string;
+  }): Promise<any> {
+    return this.http.post('/api/copilot/feedback', body);
+  }
+
+  /** The Copilot's own scorecard, model state, and what it has learned so far. */
+  async copilotScore(): Promise<any> {
+    return this.http.get('/api/copilot/score');
+  }
 }

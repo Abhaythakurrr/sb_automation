@@ -13,14 +13,31 @@
  */
 
 interface ScheduleIntent {
-  type: 'daily' | 'business_days' | 'specific_days' | 'monthly' | 'interval' | 'unknown';
+  type: 'daily' | 'business_days' | 'specific_days' | 'monthly' | 'monthly_ordinal' | 'interval' | 'unknown';
   days?: string[];
   time?: string;
   interval?: { amount: number; unit: string };
   window?: { start: string; end: string };
   monthDay?: number;
+  /** For monthly_ordinal: 1st | 2nd | 3rd | 4th | Last. */
+  ordinal?: string;
+  /** For monthly_ordinal: the weekday or "Business Day" being counted. */
+  ordinalNoun?: string;
   confidence: number;
 }
+
+const ORDINAL_WORDS: Record<string, string> = {
+  first: '1st', '1st': '1st',
+  second: '2nd', '2nd': '2nd',
+  third: '3rd', '3rd': '3rd',
+  fourth: '4th', '4th': '4th',
+  fifth: 'Nth', last: 'Last', final: 'Last',
+};
+
+const DAY_TITLES: Record<string, string> = {
+  mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday',
+  fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
+};
 
 const DAY_ALIASES: Record<string, string> = {
   mon: 'mon', monday: 'mon',
@@ -49,7 +66,7 @@ function extractScheduleIntent(description: string): ScheduleIntent {
   const lower = description.toLowerCase();
 
   // ── Business days ──
-  if (/\bbusiness\s*days?\b|\bweekdays?\b|\bmon\s*[-–]?\s*fri\b/i.test(lower)) {
+  if (/\bbusiness\s*days?\b|\bweekdays?\b|\bworking\s*days?\b|\bmon\s*[-–]?\s*fri\b|\bmon(day)?\s*(?:to|through|thru|[-–])\s*fri(day)?\b/i.test(lower)) {
     return { type: 'business_days', confidence: 0.95 };
   }
 
@@ -89,9 +106,43 @@ function extractScheduleIntent(description: string): ScheduleIntent {
     return { type: 'monthly', confidence: 0.85 };
   }
 
+  // ── Ordinal weekday of the month ──
+  //
+  // This check MUST precede the specific-days check. "The first Wednesday of
+  // every month" contains a weekday name, so the specific-days branch used to
+  // claim it and rewrite the trigger to fire every Wednesday — turning a monthly
+  // job into a weekly one, roughly a 4x over-execution, with the description
+  // still reading correctly. Found by the bulk simulation.
+  const ordinalMatch = lower.match(/\b(first|second|third|fourth|fifth|last|final|1st|2nd|3rd|4th)\s+(?:(mon|tue|wed|thu|fri|sat|sun)[a-z]*|(business\s*day|working\s*day|day))\b/);
+  if (ordinalMatch && /\bmonth\b|\bmonthly\b/.test(lower)) {
+    const ordinal = ORDINAL_WORDS[ordinalMatch[1]] || 'Every';
+    const noun = ordinalMatch[2]
+      ? DAY_TITLES[ordinalMatch[2]]
+      : /business|working/.test(ordinalMatch[3] || '') ? 'Business Day' : 'Day';
+    return { type: 'monthly_ordinal', ordinal, ordinalNoun: noun, confidence: 0.94 };
+  }
+
   // ── Specific days ──
   const days = extractDayNames(lower);
+
+  // All five weekdays and no weekend day means business days, however the
+  // description spells it out. Treating "Monday, Tuesday, Wednesday, Thursday,
+  // Friday" as five individual flags looks equivalent but is not: individual
+  // flags fire on public holidays, whereas Business Days consults the calendar
+  // and skips them. The bulk simulation caught this downgrading a correctly
+  // parsed Business Days trigger.
+  const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri'];
+  if (WEEKDAYS.every(d => days.includes(d)) && !days.includes('sat') && !days.includes('sun')) {
+    return { type: 'business_days', confidence: 0.95 };
+  }
+
   if (days.length > 0) {
+    // A weekday name alongside month wording is a monthly pattern the ordinal
+    // branch above did not recognise. Correcting day flags here would again
+    // produce a weekly trigger, so leave it to the parser and stay silent.
+    if (/\bmonth\b|\bmonthly\b/.test(lower)) {
+      return { type: 'unknown', confidence: 0 };
+    }
     return {
       type: 'specific_days',
       days,
@@ -143,19 +194,33 @@ export function verifySchedule(
 
   // ── Check Business Days match ──
   if (intent.type === 'business_days') {
-    if (parsedSimpleDateType === 'Business Days') {
+    if (parsedSimpleDateType === 'Business Days' || (parsedFields as any).businessDays) {
       return { match: true, intent, confidence: intent.confidence };
     }
-    // Parser produced day flags instead of Business Days — correct it
-    if (parsedDays.length > 0 && !parsedSimpleDateType) {
+
+    // Correct when the parser produced the five weekday flags, or no day
+    // pattern at all.
+    //
+    // The previous guard also required simpleDateType to be unset, which meant a
+    // frequency column spelling out "Monday,Tuesday,Wednesday,Thursday,Friday"
+    // was left as five literal flags even though the description said business
+    // days. The two are not equivalent: literal flags fire on public holidays,
+    // Business Days consults the calendar and skips them.
+    const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri'];
+    const isWeekdaySet = WEEKDAYS.every(d => parsedDays.includes(d))
+      && !parsedDays.includes('sat') && !parsedDays.includes('sun');
+
+    if (isWeekdaySet || parsedDays.length === 0) {
       corrections.push({
         field: 'simpleDateType',
-        from: undefined,
+        from: parsedSimpleDateType ?? (parsedDays.join(',') || undefined),
         to: 'Business Days',
-        reason: `Description says "${description}" → should be Business Days, not individual flags`,
+        reason: `Description says "${description}" → Business Days, which skips calendar holidays, rather than literal day flags which do not`,
       });
     }
-    return { match: false, intent, corrections, confidence: intent.confidence };
+    // A partial weekday set (Mon,Wed,Fri) is left alone: the description saying
+    // "weekdays" is weaker evidence than an explicit list of days.
+    return { match: corrections.length === 0, intent, corrections, confidence: intent.confidence };
   }
 
   // ── Check specific days match ──
@@ -178,6 +243,27 @@ export function verifySchedule(
         reason: `Description specifies "${intent.days.join(', ')}", overriding parser result`,
       });
     }
+    return { match: false, intent, corrections, confidence: intent.confidence };
+  }
+
+  // ── Check ordinal-weekday-of-month match ──
+  // The Scheduled Frequency column has no syntax for this pattern, so the
+  // parser can only ever produce "Monthly day 1" from it. The description is the
+  // only place the real intent exists, which makes this the one case where the
+  // verifier adds a capability rather than just catching a mistake.
+  if (intent.type === 'monthly_ordinal') {
+    const nouns = parsedFields.dateNouns?.map(n => n.value) ?? [];
+    const alreadyRight = parsedDayStyle === 'Complex'
+      && (parsedFields as any).dateAdjective === intent.ordinal
+      && nouns.length === 1 && nouns[0] === intent.ordinalNoun;
+    if (alreadyRight) return { match: true, intent, confidence: intent.confidence };
+
+    corrections.push({
+      field: 'complexOrdinal',
+      from: `${parsedDayStyle ?? 'Simple'} / ${nouns.join(',') || parsedSimpleDateType || 'none'}`,
+      to: `${intent.ordinal} ${intent.ordinalNoun} of every Month`,
+      reason: `Description says "${intent.ordinal} ${intent.ordinalNoun} of every month", which the frequency column cannot express`,
+    });
     return { match: false, intent, corrections, confidence: intent.confidence };
   }
 
@@ -234,6 +320,18 @@ export function correctScheduleFields(
       }
     } else if (c.field === 'dayStyle') {
       corrected.dayStyle = 'Complex';
+    } else if (c.field === 'complexOrdinal') {
+      // Build the real ordinal pattern from the description.
+      corrected.dayStyle = 'Complex';
+      corrected.dateAdjective = verification.intent.ordinal;
+      corrected.dateNouns = [{ value: verification.intent.ordinalNoun }];
+      corrected.dateQualifiers = [{ value: 'Month' }];
+      // Complex day style and simpleDateType are mutually exclusive, and a
+      // stray day flag here would make the trigger fire weekly as well.
+      delete corrected.simpleDateType;
+      delete corrected.mon; delete corrected.tue; delete corrected.wed;
+      delete corrected.thu; delete corrected.fri; delete corrected.sat;
+      delete corrected.sun;
     }
   }
 

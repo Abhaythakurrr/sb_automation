@@ -20,6 +20,8 @@ import { LSA } from './models';
 import { features } from './core';
 import { intentModelStats } from './intent';
 import { schedulePatternStats } from './schedulePattern';
+import { weightsStatus } from './weights';
+import { replayOnline, onlineStatus } from './online';
 import { createModuleLogger } from '../../config/logger';
 
 const log = createModuleLogger('copilot:ml');
@@ -30,6 +32,8 @@ export * from './intent';
 export * from './schedulePattern';
 export * from './summarize';
 export * from './stats';
+export * from './weights';
+export * from './online';
 
 // ── Semantic index over the knowledge base ───────────────────────────────────
 
@@ -80,9 +84,18 @@ export function warmUp(): { ms: number } {
   semanticIndex();
   intentModelStats();
   schedulePatternStats();
+
+  // Re-apply anything learned from users since the artifact was built. The
+  // gradient steps live in memory, so without this a restart silently reverts to
+  // the shipped weights and every correction has to be made again.
+  const replay = replayOnline();
+  if (replay.corrections > 0) {
+    log.info('Restored runtime learning', replay);
+  }
+
   const ms = Date.now() - t0;
   warmed = true;
-  log.info('Copilot ML layer ready', { ms });
+  log.info('Copilot ML layer ready', { ms, weights: weightsStatus().loaded ? 'frozen' : 'trained at boot' });
   return { ms };
 }
 
@@ -92,7 +105,9 @@ export function mlStatus() {
   return {
     selfContained: true,
     externalCalls: 'none — no model download, no inference API, no telemetry',
-    deterministic: 'seeded PRNG; identical weights and answers on every boot',
+    deterministic: 'shipped weights, so every deployment of a build answers identically',
+    weights: weightsStatus(),
+    runtimeLearning: onlineStatus(),
     models: {
       intent: intentModelStats(),
       schedulePattern: schedulePatternStats(),

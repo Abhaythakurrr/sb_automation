@@ -31,8 +31,20 @@ import { explainField, explainPayload, explainError, explainFinding, explainDest
 import { interpretSchedule, describeTriggerPayload, scheduleExamples } from '../copilot/scheduleAssistant';
 import { advanceWizard, WizardAction } from '../copilot/wizard';
 import { mlStatus, warmUp } from '../copilot/ml';
+import { weightsStatus } from '../copilot/ml/weights';
 import { KNOWLEDGE_STATS } from '../copilot/knowledge';
 import { retrieverStats } from '../copilot/retriever';
+import {
+  record as recordFeedback,
+  recordOutcome,
+  summary as feedbackSummary,
+  FeedbackEntry,
+} from '../copilot/feedback';
+import {
+  learnShape, learnIntent, onlineStatus, forgetOnline, LearnResult,
+} from '../copilot/ml/online';
+import { TimeShape, DayShape, TIME_SHAPES, DAY_SHAPES } from '../copilot/ml/schedulePattern';
+import { Intent, INTENT_LABELS } from '../copilot/ml/intent';
 import {
   PageId,
   CopilotContext,
@@ -521,6 +533,175 @@ router.post('/impact', (req: AuthRequest, res: Response, next: NextFunction): vo
   } catch (e) { next(e); }
 });
 
+// ── Feedback ─────────────────────────────────────────────────────────────────
+// Everything is recorded. A correction that names a checkable label is also
+// LEARNED — applied to the live network by gradient descent, then rolled back if
+// it costs accuracy on the cases the model already handled. See ml/online.ts for
+// why the rollback is the part that makes this safe to enable at all.
+//
+// A bare thumbs-down cannot be learned from: it says an answer was wrong without
+// saying what right looks like. Those are kept as a signal about where to look.
+router.post('/feedback', (req: AuthRequest, res: Response, next: NextFunction): void => {
+  if (!guardEnabled(res)) return;
+  try {
+    const schema = z.object({
+      verdict: z.enum(['up', 'down']),
+      /** What the Copilot was asked or shown. */
+      text: z.string().min(1).max(2000),
+      mode: z.string().max(60).optional(),
+      intent: z.string().max(60).optional(),
+      page: PageSchema.optional(),
+      /** Free text: what the right answer would have been. */
+      correction: z.string().max(2000).optional(),
+      /** Structured label, when the user can name what was wrong. */
+      expected: z.array(z.object({
+        kind: z.enum(['timeShape', 'dayShape', 'intent']),
+        value: z.string().max(40),
+      })).max(4).optional(),
+      predicted: z.string().max(200).optional(),
+    });
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        success: false,
+        error: 'Feedback needs a verdict ("up" or "down") and the text it refers to.',
+        details: parsed.error.flatten().fieldErrors,
+      });
+      return;
+    }
+
+    const key = sessionKey(req);
+    const d = parsed.data;
+    const entry: FeedbackEntry = recordFeedback({
+      source: 'user',
+      verdict: d.verdict,
+      text: d.text,
+      mode: d.mode,
+      intent: d.intent,
+      page: d.page,
+      correction: d.correction,
+      expected: d.expected as FeedbackEntry['expected'],
+      predicted: d.predicted,
+      sessionKey: key,
+    });
+
+    // ── Learn from it, where the correction is checkable ─────────────────────
+    const labels = new Map<string, string>();
+    for (const x of d.expected || []) labels.set(x.kind, x.value);
+
+    const timeLabel = labels.get('timeShape');
+    const dayLabel = labels.get('dayShape');
+    const intentLabel = labels.get('intent');
+
+    const learned: LearnResult[] = [];
+    const rejectedLabels: string[] = [];
+
+    if (timeLabel || dayLabel) {
+      // Validate against the model's own label sets. An unknown label would
+      // otherwise be turned into an index of -1 and train the net on nothing.
+      if (timeLabel && !TIME_SHAPES.includes(timeLabel as TimeShape)) rejectedLabels.push(`timeShape "${timeLabel}"`);
+      if (dayLabel && !DAY_SHAPES.includes(dayLabel as DayShape)) rejectedLabels.push(`dayShape "${dayLabel}"`);
+      if (rejectedLabels.length === 0) {
+        learned.push(learnShape(
+          d.text,
+          timeLabel as TimeShape | undefined,
+          dayLabel as DayShape | undefined,
+          key,
+        ));
+      }
+    }
+
+    if (intentLabel) {
+      if (!INTENT_LABELS.includes(intentLabel as Intent)) rejectedLabels.push(`intent "${intentLabel}"`);
+      else learned.push(learnIntent(d.text, intentLabel as Intent, key));
+    }
+
+    const applied = learned.filter(l => l.applied);
+
+    // Close the loop on the ledger entry: a record of corrections with no record
+    // of which ones took is barely better than no record.
+    if (rejectedLabels.length) {
+      recordOutcome(entry.id, 'refused', `unrecognised label: ${rejectedLabels.join(', ')}`);
+    } else if (learned.length === 0) {
+      recordOutcome(entry.id, 'not-applicable', 'no checkable label supplied');
+    } else {
+      recordOutcome(
+        entry.id,
+        applied.length > 0 ? 'learned' : 'refused',
+        learned.map(l => l.reason).join(' '),
+      );
+    }
+
+    log.info('Copilot feedback recorded', {
+      verdict: entry.verdict,
+      intent: entry.intent,
+      page: entry.page,
+      hasCorrection: !!entry.correction,
+      hasLabel: !!entry.expected?.length,
+      learnedNow: applied.length,
+      rejectedLabels: rejectedLabels.length,
+    });
+
+    // The acknowledgement says what actually happened, including when nothing
+    // did. Claiming to have learned something and then behaving identically is
+    // worse than admitting the update was refused.
+    let acknowledgement: string;
+    if (rejectedLabels.length) {
+      acknowledgement = `I do not recognise ${rejectedLabels.join(' or ')}, so I have recorded the feedback without changing anything.`;
+    } else if (learned.length === 0) {
+      acknowledgement = d.verdict === 'up'
+        ? 'Noted, thanks.'
+        : 'Recorded. Tell me what the right answer was and I can actually learn from it.';
+    } else {
+      acknowledgement = learned.map(l => l.reason).join(' ');
+    }
+
+    res.json({
+      success: true,
+      data: {
+        recorded: true,
+        id: entry.id,
+        acknowledgement,
+        learned: applied.length > 0,
+        changes: learned.map(l => ({
+          applied: l.applied,
+          before: l.before,
+          after: l.after,
+          reason: l.reason,
+          guard: l.guard,
+        })),
+        note: 'Corrections are applied to the live model and kept across restarts. Any update that would reduce accuracy on cases already handled correctly is rolled back.',
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+// ── Score ────────────────────────────────────────────────────────────────────
+// What the models were measured at, and what has changed since through use.
+router.get('/score', (_req: AuthRequest, res: Response, next: NextFunction): void => {
+  if (!guardEnabled(res)) return;
+  try {
+    const w = weightsStatus();
+    res.json({
+      success: true,
+      data: {
+        // Frozen at build time from the artifact, so these are the numbers the
+        // shipped weights were signed off against rather than something
+        // recomputed per request.
+        measured: !!w.metrics,
+        weights: w,
+        metrics: w.metrics,
+        runtimeLearning: onlineStatus(),
+        feedback: feedbackSummary(),
+        note: w.metrics
+          ? 'Accuracy figures describe the shipped weights. Runtime corrections are reported separately and are not folded into them.'
+          : 'No frozen metrics in this build — the models trained from their corpora at boot.',
+      },
+    });
+  } catch (e) { next(e); }
+});
+
 // ── Session memory introspection ─────────────────────────────────────────────
 // Lets a user see exactly what the Copilot knows about them. Deliberately
 // exposed: an assistant that remembers things should be able to show its work.
@@ -554,6 +735,28 @@ router.delete('/memory', (req: AuthRequest, res: Response, next: NextFunction): 
   try {
     clearWorkContext(sessionKey(req));
     res.json({ success: true, data: { cleared: true } });
+  } catch (e) { next(e); }
+});
+
+// ── Reset runtime learning ───────────────────────────────────────────────────
+// Discards every correction and returns to the shipped weights.
+//
+// Deliberately available. Runtime learning is guarded, but a guard bounds the
+// damage rather than eliminating it — corrections can still accumulate into a
+// model nobody intended. Being able to say "go back to the version that was
+// tested" is what makes enabling the feature defensible.
+router.delete('/learning', (_req: AuthRequest, res: Response, next: NextFunction): void => {
+  if (!guardEnabled(res)) return;
+  try {
+    const { cleared } = forgetOnline();
+    log.warn('Runtime learning reset', { cleared });
+    res.json({
+      success: true,
+      data: {
+        cleared,
+        note: 'Back to the shipped weights. This takes effect for new predictions immediately; corrections already applied in this process are dropped at the next restart.',
+      },
+    });
   } catch (e) { next(e); }
 });
 

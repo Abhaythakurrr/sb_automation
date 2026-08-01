@@ -25,6 +25,7 @@ import {
   rememberFact,
 } from './memory';
 import { classifyIntent, Intent as MlIntent } from './ml/intent';
+import { routeIntent } from './ml/route';
 import { sentences, compose, Sentence } from './ml/summarize';
 import { analyzeUpload, buildPayloadSnapshots, analyzeCreationImpact, analyzeDeletionImpact } from './analyzers';
 import { explainField, explainPayload, explainError, explainFinding } from './explainer';
@@ -530,7 +531,10 @@ export async function ask({ sessionId, question, page }: AskOptions): Promise<Co
   addTurn(sessionId, { role: 'user', content: question });
 
   const hits = retrieve(question, { page: activePage, limit: 6 });
-  const prediction = classifyIntent(question);
+  // routeIntent, not classifyIntent: this is the live routing decision, so it
+  // honours corrections made at runtime. classifyIntent stays the base model, so
+  // the accuracy the Copilot reports about itself is not inflated by them.
+  const prediction = routeIntent(question);
 
   // ── Scope gate, before any specialist runs ────────────────────────────────
   // This ordering matters. A classifier can misroute an off-topic question to a
@@ -550,7 +554,11 @@ export async function ask({ sessionId, question, page }: AskOptions): Promise<Co
 
   // A weakly-predicted specialism is not worth acting on: the generic
   // retrieval-grounded answer is more useful than a confident wrong specialist.
-  const intent: Intent = (prediction.source === 'rule' || prediction.confidence >= SPECIALIST_FLOOR)
+  // An exemplar match is exempt from the floor — someone stated outright that this
+  // phrasing routes here, which is stronger evidence than the model's own score.
+  const intent: Intent = (prediction.source === 'rule'
+    || prediction.source === 'exemplar'
+    || prediction.confidence >= SPECIALIST_FLOOR)
     ? prediction.intent
     : 'general';
 

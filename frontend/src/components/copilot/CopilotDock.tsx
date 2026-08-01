@@ -21,6 +21,7 @@ import { CopilotFinding, CopilotMessage, QuickAction } from '@/types/copilot';
 import { playClick, playHover, playWhoosh, setSoundEnabled, isSoundEnabled } from '@/utils/soundEffects';
 import CopilotMarkdown from './CopilotMarkdown';
 import InlineAssistant from './InlineAssistant';
+import MessageFeedback from './MessageFeedback';
 
 type Tab = 'chat' | 'guidance' | 'wizard';
 
@@ -192,6 +193,10 @@ function Message({ msg, onRun, onExplainFinding }: {
             </span>
           ))}
         </div>
+
+        {/* Not offered on an out-of-scope reply: "I don't know that" is the correct
+            answer, so a correction would have nothing to teach. */}
+        {!msg.outOfScope && <MessageFeedback msg={msg} />}
       </div>
     </motion.div>
   );
@@ -203,7 +208,7 @@ export default function CopilotDock() {
   const {
     enabled, health, checkHealth, open, setOpen, toggle, badge,
     messages, thinking, ask, runAction, guidance, loadGuidance, guidanceLoading,
-    context, wizardOpen, wizard, explainField, reset,
+    context, wizardOpen, wizard, explainField, reset, score, loadScore,
   } = useCopilotStore();
   const { connected, environment } = useConnectionStore();
   const { openTab } = useWorkspaceStore();
@@ -229,6 +234,13 @@ export default function CopilotDock() {
     if (open && connected) loadGuidance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, connected, context.page]);
+
+  // Only when the panel opens: the counter is context, not something worth
+  // polling for.
+  useEffect(() => {
+    if (open && connected) loadScore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, connected]);
 
   // The Copilot appears in the automation catalogue with route '#copilot'.
   useEffect(() => {
@@ -291,6 +303,8 @@ export default function CopilotDock() {
 
   const findings = guidance?.findings ? sortFindings(guidance.findings) : [];
   const errorCount = findings.filter(f => f.severity === 'error').length;
+  const learnedCount = (score?.runtimeLearning?.shapeCorrections ?? 0)
+    + (score?.runtimeLearning?.intentExemplars ?? 0);
 
   const TABS: [Tab, string][] = [
     ['chat', 'Ask'],
@@ -340,15 +354,27 @@ export default function CopilotDock() {
       <AnimatePresence>
         {open && (
           <motion.aside
-            initial={{ opacity: 0, y: 28, scale: 0.94, filter: 'blur(8px)' }}
-            animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, y: 20, scale: 0.96, filter: 'blur(6px)' }}
-            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-            className="lq-glass lq-rim lq-specular fixed bottom-5 right-5 z-[70] flex flex-col rounded-2xl overflow-hidden"
+            // Slides in from the edge it lives on. The panel used to rise from the
+            // bottom corner, which was the right gesture when it was anchored
+            // there and the wrong one now.
+            initial={{ opacity: 0, x: 44, scale: 0.985, filter: 'blur(6px)' }}
+            animate={{ opacity: 1, x: 0, scale: 1, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, x: 36, scale: 0.99, filter: 'blur(4px)' }}
+            transition={{ type: 'spring', damping: 30, stiffness: 280 }}
+            // Anchored to the right edge and running the full height of the
+            // viewport, rather than a box floating in the bottom corner. Two
+            // reasons: a panel that reaches top and bottom reads as part of the
+            // application instead of a widget dropped on top of it, and the extra
+            // vertical run is what a long answer with findings actually needs —
+            // the old fixed 660px scrolled almost immediately.
+            className="lq-glass lq-rim lq-specular fixed z-[70] flex flex-col overflow-hidden"
             style={{
-              width: expanded ? 'min(720px, calc(100vw - 2.5rem))' : 'min(430px, calc(100vw - 2.5rem))',
-              height: expanded ? 'min(820px, calc(100vh - 4rem))' : 'min(660px, calc(100vh - 6rem))',
-              transition: 'width 0.4s cubic-bezier(0.22,1,0.36,1), height 0.4s cubic-bezier(0.22,1,0.36,1)',
+              top: '0.75rem',
+              bottom: '0.75rem',
+              right: '0.75rem',
+              width: expanded ? 'min(760px, calc(100vw - 1.5rem))' : 'min(438px, calc(100vw - 1.5rem))',
+              borderRadius: '20px',
+              transition: 'width 0.42s cubic-bezier(0.22,1,0.36,1)',
             }}
             role="dialog"
             aria-label="AI Operations Copilot"
@@ -367,9 +393,29 @@ export default function CopilotDock() {
                 <p className="text-[9px] text-slate-500 font-mono truncate">
                   {context.page}{context.step ? ` · ${context.step}` : ''}
                   {connected && environment ? ` · ${environment}` : ''}
-                  {health?.ml?.selfContained ? ' · self-contained ML' : ' · app knowledge'}
+                  {health?.ml?.selfContained ? ' · on-device ML' : ' · app knowledge'}
                 </p>
               </div>
+
+              {/* What it has learned from this deployment's users. Shown only once
+                  there is something to show, so it reads as a fact rather than a
+                  permanently-zero counter. */}
+              {learnedCount > 0 && (
+                <motion.span
+                  initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={spring}
+                  title={`${learnedCount} correction${learnedCount === 1 ? '' : 's'} learned from users and kept across restarts. Each one was checked against ${score?.runtimeLearning?.guardCases ?? 0} schedules already read correctly before being accepted.`}
+                  className="hidden sm:flex items-center gap-1 px-1.5 py-[3px] rounded-md shrink-0"
+                  style={{
+                    background: 'rgba(16,185,129,0.10)',
+                    border: '1px solid rgba(16,185,129,0.26)',
+                  }}
+                >
+                  <span className="w-1 h-1 rounded-full" style={{ background: '#6ee7b7' }} />
+                  <span className="text-[8px] font-black tracking-[0.08em]" style={{ color: '#6ee7b7' }}>
+                    {learnedCount} learned
+                  </span>
+                </motion.span>
+              )}
 
               {/* Sound toggle — audio is a preference, not a decision made for you. */}
               <button onMouseEnter={playHover} onClick={toggleMute}
@@ -491,10 +537,20 @@ export default function CopilotDock() {
                                 </motion.button>
                               ))}
                             </div>
-                            <p className="text-[9px] text-slate-600 leading-relaxed pt-1">
-                              I answer only from this application&apos;s knowledge and your current session. If something
-                              is outside that, I&apos;ll say so rather than guess.
-                            </p>
+                            <div className="pt-1 space-y-1.5">
+                              <p className="text-[9px] text-slate-600 leading-relaxed">
+                                I answer only from this application&apos;s knowledge and your current session. If something
+                                is outside that, I&apos;ll say so rather than guess.
+                              </p>
+                              <p className="text-[9px] text-slate-600 leading-relaxed">
+                                If I read a schedule wrongly, tell me with the thumbs-down under any answer. I retrain
+                                on the correction there and then, and check it against{' '}
+                                {score?.runtimeLearning?.guardCases
+                                  ? `${score.runtimeLearning.guardCases} schedules`
+                                  : 'the schedules'}{' '}
+                                I already get right before keeping it.
+                              </p>
+                            </div>
                           </motion.div>
                         ) : (
                           messages.map(m => (

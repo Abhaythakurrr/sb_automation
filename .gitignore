@@ -113,3 +113,18 @@ themes/
 **/themes/
 
 SELF_SERVICE/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Copilot runtime state
+# ─────────────────────────────────────────────────────────────────────────────
+# These are per-deployment, not source. The shipped model lives in
+# backend/src/copilot/ml/weights.generated.json, which IS committed.
+#
+# Feedback ledger — records what real users typed.
+copilot_feedback.json
+**/copilot_feedback.json
+# Corrections learned at runtime, plus the gradient steps they represent. A
+# deployment's accumulated learning belongs to that deployment; committing it
+# would push one environment's corrections onto every other.
+copilot_online.json
+**/copilot_online.json

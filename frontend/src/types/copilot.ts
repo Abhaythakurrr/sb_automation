@@ -203,6 +203,62 @@ export interface ErrorExplanation {
   text: string;
 }
 
+// ── Feedback and runtime learning ────────────────────────────────────────────
+
+export type TimeShape = 'interval' | 'absolute';
+export type DayShape =
+  | 'daily' | 'businessDays' | 'specificDays'
+  | 'monthlyDay' | 'monthlyOrdinal' | 'everyNDays';
+
+/** A label the Copilot can actually be corrected on. */
+export interface ExpectedLabel {
+  kind: 'timeShape' | 'dayShape' | 'intent';
+  value: string;
+}
+
+export interface FeedbackResult {
+  recorded: boolean;
+  id: string;
+  acknowledgement: string;
+  /** True when the correction changed the live model, not just the ledger. */
+  learned: boolean;
+  changes?: {
+    applied: boolean;
+    before?: string;
+    after?: string;
+    reason: string;
+    guard?: { timeBefore: number; timeAfter: number; dayBefore: number; dayAfter: number; cases: number };
+  }[];
+}
+
+/** What the Copilot has learned since it was deployed. */
+export interface CopilotScore {
+  measured: boolean;
+  weights: {
+    loaded: boolean;
+    version: number;
+    generatedAt: string | null;
+    parameters: number;
+    reason: string;
+    invariantCount: number;
+  };
+  metrics: Record<string, any> | null;
+  runtimeLearning: {
+    mechanism: string;
+    shapeCorrections: number;
+    intentExemplars: number;
+    refused: number;
+    stats: { applied: number; refused: number; rolledBack: number; replays: number };
+    guardCases: number;
+    guardAccuracy: { time: number; day: number } | null;
+    persistedAt: string;
+  };
+  feedback: {
+    total: number; up: number; down: number; disagreements: number;
+    approval: number | null; learned: number; refused: number;
+  };
+}
+
 /** A message in the Copilot conversation. */
 export interface CopilotMessage {
   id: string;
@@ -216,4 +272,12 @@ export interface CopilotMessage {
   outOfScope?: boolean;
   /** Set while an assistant reply is in flight. */
   pending?: boolean;
+  /** The question this reply answered, which is what a correction refers to. */
+  question?: string;
+  /** Local record of a verdict already given, so the control does not reset. */
+  vote?: 'up' | 'down';
+  /** What the backend said when it tried to learn from a correction. */
+  feedbackNote?: string;
+  /** True when a correction actually moved the model. */
+  didLearn?: boolean;
 }

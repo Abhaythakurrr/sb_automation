@@ -28,6 +28,8 @@
  */
 import { MLP } from './models';
 import { features, Vocabulary, vectorise, prng, normalise, FeatureOptions, evaluate, EvalResult } from './core';
+import { learnedScheduleSamples } from './corpus';
+import { weights, ScheduleWeights } from './weights';
 
 /** When in the day the trigger fires. */
 export type TimeShape = 'interval' | 'absolute';
@@ -54,6 +56,7 @@ const pick = <T>(r: () => number, xs: T[]): T => xs[Math.floor(r() * xs.length)]
 
 const FULL_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const SHORT_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const PLURAL_DAYS = FULL_DAYS.map(d => d + 's');
 const ZONES = ['', ' UTC', ' Asia/Kolkata', ' America/New_York', ' IST', ' EST', ' Europe/London'];
 const CLOCKS = ['8pm', '06:30', '0900', 'midnight', '5 am', '22:00', 'noon', '7:15am', '1800'];
 
@@ -87,7 +90,11 @@ function dayPhrase(r: () => number): { text: string; label: DayShape } {
 
     case 'specificDays': {
       if (r() < 0.14) return { text: pick(r, ['at the weekend', 'weekends only', 'on weekends']), label: 'specificDays' };
-      const pool = r() < 0.5 ? FULL_DAYS : SHORT_DAYS;
+      // Plural forms are how this is usually said out loud — "on tuesdays and
+      // thursdays" — and were absent from the corpus, so the classifier had only
+      // the singular to go on.
+      const roll = r();
+      const pool = roll < 0.4 ? FULL_DAYS : roll < 0.7 ? SHORT_DAYS : PLURAL_DAYS;
       const k = 1 + Math.floor(r() * 3);
       const days: string[] = [];
       while (days.length < k) {
@@ -138,7 +145,7 @@ function dayPhrase(r: () => number): { text: string; label: DayShape } {
   }
 }
 
-interface Sample { text: string; time: TimeShape; day: DayShape }
+export interface Sample { text: string; time: TimeShape; day: DayShape }
 
 /**
  * Deterministically generates the corpus by pairing a time phrase with a day
@@ -159,6 +166,44 @@ function generateCorpus(count = 2600, seed = 91750): Sample[] {
   return out;
 }
 
+/**
+ * The fixed held-out split: the tail of the generated corpus.
+ *
+ * Held constant on purpose. Learned samples are only ever added to the training
+ * side, so held-out accuracy stays comparable across training iterations — a
+ * moving test set would make the iteration-to-iteration delta meaningless. The
+ * loop measures generalisation separately, against freshly generated job rows
+ * from a seed the model has never been trained on.
+ */
+function splitCorpus(): { train: Sample[]; heldOut: Sample[] } {
+  const corpus = generateCorpus();
+  const at = Math.floor(corpus.length * 0.85);
+  return { train: corpus.slice(0, at), heldOut: corpus.slice(at) };
+}
+
+/**
+ * The held-out phrases, for the freeze step's guard set.
+ *
+ * These are measured on rather than fitted to, which is what makes them worth
+ * protecting against a runtime update.
+ */
+export function heldOutShapeSamples(): Sample[] {
+  return splitCorpus().heldOut;
+}
+
+/**
+ * Discards the loaded nets so the next call rebuilds them.
+ *
+ * Two callers. The freeze step, which must train from the corpus rather than
+ * re-freeze an existing artifact. And the runtime learner, which uses it to throw
+ * away accumulated gradient steps and return to the shipped weights — clearing
+ * the correction store alone would not do that, because the steps were applied to
+ * the networks in memory.
+ */
+export function resetSchedulePattern(): void {
+  trained = null;
+}
+
 // ── Training ─────────────────────────────────────────────────────────────────
 
 interface Trained {
@@ -168,6 +213,8 @@ interface Trained {
   timeTrain: number; timeHeldOut: number;
   dayTrain: number; dayHeldOut: number;
   corpusSize: number;
+  generatedSamples: number;
+  learnedSamples: number;
   epochs: number;
   trainMs: number;
 }
@@ -175,14 +222,52 @@ interface Trained {
 let trained: Trained | null = null;
 const EPOCHS = 70;
 
+/** Where the current weights came from, for the health endpoint. */
+let source: 'frozen' | 'trained' = 'trained';
+
+/** Rebuilds the nets from the shipped artifact, or null if it is unusable. */
+function fromFrozen(): Trained | null {
+  const w = weights();
+  if (!w?.schedule) return null;
+  const s: ScheduleWeights = w.schedule;
+  // The artifact carries its own label order. Reading it rather than assuming
+  // ours matches means a reordered enum is caught here instead of quietly
+  // relabelling every prediction.
+  if (s.timeShapes.join(',') !== TIME_SHAPES.join(',')) return null;
+  if (s.dayShapes.join(',') !== DAY_SHAPES.join(',')) return null;
+
+  const t0 = Date.now();
+  const vocab = Vocabulary.fromTerms(s.vocabulary);
+  const timeNet = MLP.fromJSON(s.timeNet);
+  const dayNet = MLP.fromJSON(s.dayNet);
+  source = 'frozen';
+  return {
+    timeNet, dayNet, vocab,
+    timeTrain: s.accuracy.timeTrain, timeHeldOut: s.accuracy.timeHeldOut,
+    dayTrain: s.accuracy.dayTrain, dayHeldOut: s.accuracy.dayHeldOut,
+    corpusSize: s.corpus.generated + s.corpus.learned,
+    generatedSamples: s.corpus.generated,
+    learnedSamples: s.corpus.learned,
+    epochs: s.epochs,
+    trainMs: Date.now() - t0,
+  };
+}
+
 function ensure(): Trained {
   if (trained) return trained;
+
+  const frozen = fromFrozen();
+  if (frozen) { trained = frozen; return trained; }
+
+  source = 'trained';
   const t0 = Date.now();
 
-  const corpus = generateCorpus();
-  const split = Math.floor(corpus.length * 0.85);
-  const trainSet = corpus.slice(0, split);
-  const testSet = corpus.slice(split);
+  const { train: generated, heldOut: testSet } = splitCorpus();
+
+  // Learned samples join the training side only, so the held-out split stays a
+  // set of phrases the model was never fitted to.
+  const learned: Sample[] = learnedScheduleSamples().map(s => ({ text: s.text, time: s.time, day: s.day }));
+  const trainSet = [...generated, ...learned];
 
   // Vocabulary from the training split only — never the test split.
   const vocab = new Vocabulary();
@@ -210,7 +295,10 @@ function ensure(): Trained {
   trained = {
     timeNet, dayNet, vocab,
     timeTrain: 0, timeHeldOut: 0, dayTrain: 0, dayHeldOut: 0,
-    corpusSize: corpus.length, epochs: EPOCHS, trainMs: Date.now() - t0,
+    corpusSize: trainSet.length + testSet.length,
+    generatedSamples: generated.length + testSet.length,
+    learnedSamples: learned.length,
+    epochs: EPOCHS, trainMs: Date.now() - t0,
   };
 
   trained.timeTrain = evaluate(trainSet.map(s => ({ text: s.text, label: s.time })), t => classifyShape(t).time).accuracy;
@@ -252,10 +340,44 @@ export function classifyShape(text: string): ShapePrediction {
  */
 export const DISAGREEMENT_FLOOR = 0.90;
 
+/** Everything the freeze step needs to write an artifact. */
+export function exportScheduleWeights(): ScheduleWeights {
+  const t = ensure();
+  return {
+    vocabulary: t.vocab.toTerms(),
+    timeShapes: [...TIME_SHAPES],
+    dayShapes: [...DAY_SHAPES],
+    timeNet: t.timeNet.toJSON(),
+    dayNet: t.dayNet.toJSON(),
+    corpus: { generated: t.generatedSamples, learned: t.learnedSamples },
+    accuracy: {
+      timeTrain: Number(t.timeTrain.toFixed(6)),
+      timeHeldOut: Number(t.timeHeldOut.toFixed(6)),
+      dayTrain: Number(t.dayTrain.toFixed(6)),
+      dayHeldOut: Number(t.dayHeldOut.toFixed(6)),
+    },
+    epochs: t.epochs,
+  };
+}
+
+/** The live nets, for the online learner. */
+export function scheduleNets(): { timeNet: MLP; dayNet: MLP; vocab: Vocabulary } {
+  const t = ensure();
+  return { timeNet: t.timeNet, dayNet: t.dayNet, vocab: t.vocab };
+}
+
+/** Feature vector for text, in exactly the form the nets were trained on. */
+export function shapeVector(text: string, vocab: Vocabulary): Float64Array {
+  return normalise(vectorise(features(text, FEATS), vocab));
+}
+
 export function schedulePatternStats() {
   const t = ensure();
   return {
     algorithm: 'Two multi-layer perceptrons (1 hidden layer, leaky ReLU, softmax)',
+    weightSource: source === 'frozen'
+      ? 'frozen artifact — no training at boot'
+      : 'trained in-process from the repository corpus',
     rationale: 'time-of-day and day-of-week are independent dimensions; one label per dimension',
     features: 'word 1-2 grams + char 3-4 grams + shape, unit-normalised',
     inputs: t.vocab.size,
@@ -263,6 +385,10 @@ export function schedulePatternStats() {
     dayHead: { hidden: 32, classes: DAY_SHAPES.length, parameters: t.dayNet.parameterCount },
     epochs: t.epochs,
     trainingExamples: t.corpusSize,
+    corpus: {
+      generated: t.generatedSamples,
+      learned: t.learnedSamples,
+    },
     trainMs: t.trainMs,
     timeAccuracy: { train: Number(t.timeTrain.toFixed(4)), heldOut: Number(t.timeHeldOut.toFixed(4)) },
     dayAccuracy: { train: Number(t.dayTrain.toFixed(4)), heldOut: Number(t.dayHeldOut.toFixed(4)) },
@@ -278,9 +404,7 @@ export function evaluateShapes(): {
   day: { train: EvalResult; heldOut: EvalResult };
 } {
   ensure();
-  const corpus = generateCorpus();
-  const split = Math.floor(corpus.length * 0.85);
-  const tr = corpus.slice(0, split), te = corpus.slice(split);
+  const { train: tr, heldOut: te } = splitCorpus();
   return {
     time: {
       train: evaluate(tr.map(s => ({ text: s.text, label: s.time })), t => classifyShape(t).time),

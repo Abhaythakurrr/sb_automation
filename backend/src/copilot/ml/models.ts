@@ -17,6 +17,41 @@
 import { Vocabulary, prng, gaussian, softmax, cosine, normalise } from './core';
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Weight encoding
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Float arrays as base64 little-endian Float32.
+ *
+ * Float32 rather than Float64 because these weights are only ever consumed by an
+ * argmax over a softmax: seven significant digits is far more precision than the
+ * decision needs, and it halves an artifact that has to live in the repository.
+ * The round-trip is verified by comparing predictions before and after export —
+ * not assumed.
+ *
+ * Explicit little-endian, rather than a view over the raw buffer, so a saved
+ * artifact stays readable on any host. The byte-level loop costs a few
+ * milliseconds once at boot.
+ */
+export function encodeFloats(a: Float64Array | number[]): string {
+  const n = a.length;
+  const buf = Buffer.allocUnsafe(n * 4);
+  for (let i = 0; i < n; i++) buf.writeFloatLE(a[i], i * 4);
+  return buf.toString('base64');
+}
+
+export function decodeFloats(s: string, expected?: number): Float64Array {
+  const buf = Buffer.from(s, 'base64');
+  const n = buf.byteLength / 4;
+  if (expected !== undefined && n !== expected) {
+    throw new Error(`weight block length ${n} does not match the expected ${expected}`);
+  }
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i++) out[i] = buf.readFloatLE(i * 4);
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Multinomial Naive Bayes
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -116,6 +151,36 @@ export class MultinomialNB {
 
   get vocabSize(): number { return this.vocab.size; }
   get labelCount(): number { return this.labels.length; }
+
+  // ── Serialisation ──────────────────────────────────────────────────────────
+
+  toJSON(): NBWeights {
+    return {
+      alpha: this.alpha,
+      labels: [...this.labels],
+      terms: this.vocab.toTerms(),
+      logPrior: [...this.logPrior],
+      logLik: this.logLik.map(encodeFloats),
+    };
+  }
+
+  static fromJSON(w: NBWeights): MultinomialNB {
+    const m = new MultinomialNB(w.alpha);
+    m.labels = [...w.labels];
+    m.vocab = Vocabulary.fromTerms(w.terms);
+    m.logPrior = [...w.logPrior];
+    m.logLik = w.logLik.map(s => decodeFloats(s, m.vocab.size));
+    return m;
+  }
+}
+
+export interface NBWeights {
+  alpha: number;
+  labels: string[];
+  terms: string[];
+  logPrior: number[];
+  /** One base64 Float32 block per label. */
+  logLik: string[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -296,6 +361,130 @@ export class MLP {
 
   get finalLoss(): number { return this.lossHistory[this.lossHistory.length - 1] ?? NaN; }
   get parameterCount(): number { return this.w1.length + this.b1.length + this.w2.length + this.b2.length; }
+  get shape(): { inputSize: number; hiddenSize: number; outputSize: number } {
+    return { inputSize: this.cfg.inputSize, hiddenSize: this.cfg.hiddenSize, outputSize: this.cfg.outputSize };
+  }
+
+  // ── Serialisation ──────────────────────────────────────────────────────────
+
+  toJSON(): MLPWeights {
+    return {
+      inputSize: this.cfg.inputSize,
+      hiddenSize: this.cfg.hiddenSize,
+      outputSize: this.cfg.outputSize,
+      finalLoss: this.finalLoss,
+      w1: encodeFloats(this.w1), b1: encodeFloats(this.b1),
+      w2: encodeFloats(this.w2), b2: encodeFloats(this.b2),
+    };
+  }
+
+  static fromJSON(w: MLPWeights): MLP {
+    const net = new MLP({ inputSize: w.inputSize, hiddenSize: w.hiddenSize, outputSize: w.outputSize });
+    net.w1 = decodeFloats(w.w1, w.inputSize * w.hiddenSize);
+    net.b1 = decodeFloats(w.b1, w.hiddenSize);
+    net.w2 = decodeFloats(w.w2, w.hiddenSize * w.outputSize);
+    net.b2 = decodeFloats(w.b2, w.outputSize);
+    // Momentum buffers start clean. They are optimiser state, not model state —
+    // carrying stale velocity into a fine-tune would apply a step the new data
+    // never asked for.
+    net.vw1.fill(0); net.vb1.fill(0); net.vw2.fill(0); net.vb2.fill(0);
+    if (Number.isFinite(w.finalLoss)) net.lossHistory = [w.finalLoss];
+    return net;
+  }
+
+  // ── Online learning ────────────────────────────────────────────────────────
+
+  /** Full weight copy, for rolling back an online update that made things worse. */
+  snapshot(): MLPSnapshot {
+    return {
+      w1: Float64Array.from(this.w1), b1: Float64Array.from(this.b1),
+      w2: Float64Array.from(this.w2), b2: Float64Array.from(this.b2),
+    };
+  }
+
+  restore(s: MLPSnapshot): void {
+    this.w1.set(s.w1); this.b1.set(s.b1);
+    this.w2.set(s.w2); this.b2.set(s.b2);
+    this.vw1.fill(0); this.vb1.fill(0); this.vw2.fill(0); this.vb2.fill(0);
+  }
+
+  /**
+   * A few gradient steps on new examples, starting from the current weights.
+   *
+   * This is the runtime learning path: same backward pass as `train`, but the
+   * step size is small and the epoch count is low, because the goal is to bend
+   * the decision boundary around a handful of corrections rather than to refit
+   * the model. A full-strength update on one example would overwrite what the
+   * offline corpus taught — catastrophic forgetting, and it happens fast at
+   * lr 0.3.
+   *
+   * No momentum. Momentum accumulates direction across many samples, which is
+   * what you want over an epoch of thousands and exactly what you do not want
+   * when the batch is three items: it turns a small correction into a lurch.
+   *
+   * Weight decay is kept so a repeatedly-submitted correction cannot grow a
+   * single weight without bound.
+   */
+  fineTune(X: Float64Array[], Y: number[], opts: { epochs?: number; learningRate?: number; l2?: number } = {}): number {
+    const { hiddenSize: H, outputSize: O } = this.cfg;
+    const epochs = opts.epochs ?? 8;
+    const lr = opts.learningRate ?? 0.02;
+    const l2 = opts.l2 ?? this.cfg.l2;
+    const NZ = X.map(x => MLP.nonZero(x));
+    let loss = 0;
+
+    for (let ep = 0; ep < epochs; ep++) {
+      loss = 0;
+      // Fixed order. There is no shuffling because the batch is tiny and a
+      // deterministic pass keeps the same feedback producing the same update.
+      for (let idx = 0; idx < X.length; idx++) {
+        const x = X[idx], y = Y[idx], nz = NZ[idx];
+        const { h, pre, p } = this.forward(x, nz);
+        loss -= Math.log(Math.max(1e-12, p[y]));
+
+        const dz = new Float64Array(O);
+        for (let k = 0; k < O; k++) dz[k] = p[k] - (k === y ? 1 : 0);
+
+        const dh = new Float64Array(H);
+        for (let j = 0; j < H; j++) {
+          let s = 0;
+          for (let k = 0; k < O; k++) s += dz[k] * this.w2[j * O + k];
+          dh[j] = s * (pre[j] > 0 ? 1 : LEAK);
+        }
+
+        for (let j = 0; j < H; j++) {
+          for (let k = 0; k < O; k++) {
+            const vi = j * O + k;
+            this.w2[vi] -= lr * (h[j] * dz[k] + l2 * this.w2[vi]);
+          }
+        }
+        for (let k = 0; k < O; k++) this.b2[k] -= lr * dz[k];
+        for (let t = 0; t < nz.length; t++) {
+          const i = nz[t];
+          for (let j = 0; j < H; j++) {
+            const vi = i * H + j;
+            this.w1[vi] -= lr * (x[i] * dh[j] + l2 * this.w1[vi]);
+          }
+        }
+        for (let j = 0; j < H; j++) this.b1[j] -= lr * dh[j];
+      }
+      loss /= Math.max(1, X.length);
+    }
+    return loss;
+  }
+}
+
+export interface MLPWeights {
+  inputSize: number;
+  hiddenSize: number;
+  outputSize: number;
+  finalLoss: number;
+  /** base64 little-endian Float32 blocks. */
+  w1: string; b1: string; w2: string; b2: string;
+}
+
+export interface MLPSnapshot {
+  w1: Float64Array; b1: Float64Array; w2: Float64Array; b2: Float64Array;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

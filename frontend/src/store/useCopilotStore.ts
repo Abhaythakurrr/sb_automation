@@ -18,6 +18,9 @@ import {
   CopilotHealth,
   CopilotMessage,
   CopilotPageId,
+  CopilotScore,
+  ExpectedLabel,
+  FeedbackResult,
   PageGuidance,
   QuickAction,
   ScheduleInterpretation,
@@ -51,6 +54,9 @@ interface CopilotState {
   // ── Analysis ──
   analysis: UploadAnalysis | null;
 
+  // ── Self-assessment ──
+  score: CopilotScore | null;
+
   // ── Inline Assistant ──
   wizardOpen: boolean;
   wizardStep: WizardStep | null;
@@ -83,6 +89,13 @@ interface CopilotState {
   explainField: (field: string, payload?: { task?: any; trigger?: any }) => Promise<void>;
   explainPayload: (name?: string, payload?: { name?: string; task?: any; trigger?: any }) => Promise<void>;
   suggestSchedule: (input: string) => Promise<ScheduleInterpretation | null>;
+
+  /** Records a verdict, and where a checkable label is given, teaches the model. */
+  sendFeedback: (messageId: string, verdict: 'up' | 'down', opts?: {
+    correction?: string;
+    expected?: ExpectedLabel[];
+  }) => Promise<void>;
+  loadScore: () => Promise<void>;
 
   wizard: (action: string, answer?: string) => Promise<void>;
   closeWizard: () => void;
@@ -136,6 +149,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   guidanceLoading: false,
 
   analysis: null,
+  score: null,
 
   wizardOpen: false,
   wizardStep: null,
@@ -278,6 +292,9 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
             actions: answer?.actions,
             mode: answer?.mode,
             outOfScope: answer?.outOfScope,
+            // Kept on the reply because a correction is about the question that
+            // was asked, not about the prose that came back.
+            question: q,
           }
           : m),
       });
@@ -413,6 +430,66 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
     } catch {
       return null;
     }
+  },
+
+  // ── Feedback ───────────────────────────────────────────────────────────────
+  // A thumbs-up or a bare thumbs-down is recorded and nothing more. A correction
+  // that names a shape is applied to the live model straight away, under a guard
+  // that rolls it back if it would break schedules the Copilot already reads
+  // correctly — so the acknowledgement it returns is the truth about what
+  // happened, and it gets shown verbatim rather than replaced with "thanks!".
+  sendFeedback: async (messageId, verdict, opts = {}) => {
+    const msg = get().messages.find(m => m.id === messageId);
+    if (!msg || msg.role !== 'assistant') return;
+
+    // The question is what the model was reasoning about; fall back to the reply
+    // only if it was not captured.
+    const subject = msg.question || msg.content.slice(0, 500);
+
+    // Optimistic, because the vote is the user's own action and should not appear
+    // to hesitate. The acknowledgement arrives separately.
+    set({
+      messages: get().messages.map(m => m.id === messageId ? { ...m, vote: verdict } : m),
+    });
+    verdict === 'up' ? playSuccess() : playClick();
+
+    if (!globalApi.hasSession()) return;
+    try {
+      const res = await globalApi.copilotFeedback({
+        verdict,
+        text: subject,
+        mode: msg.mode,
+        page: get().context.page,
+        correction: opts.correction,
+        expected: opts.expected,
+        predicted: msg.mode,
+      });
+      const data: FeedbackResult = res.data?.data;
+      set({
+        messages: get().messages.map(m => m.id === messageId
+          ? { ...m, feedbackNote: data?.acknowledgement, didLearn: !!data?.learned }
+          : m),
+      });
+      if (data?.learned) {
+        playComplete();
+        // The counters on the header are now stale.
+        get().loadScore().catch(() => {});
+      }
+    } catch (e) {
+      set({
+        messages: get().messages.map(m => m.id === messageId
+          ? { ...m, feedbackNote: errText(e) }
+          : m),
+      });
+    }
+  },
+
+  loadScore: async () => {
+    if (!globalApi.hasSession()) return;
+    try {
+      const res = await globalApi.copilotScore();
+      set({ score: (res.data?.data as CopilotScore) ?? null });
+    } catch { /* the badge is optional; never block on it */ }
   },
 
   // ── Inline Assistant ───────────────────────────────────────────────────────

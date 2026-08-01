@@ -11,6 +11,8 @@
  */
 import { MultinomialNB } from './models';
 import { features, FeatureOptions, evaluate, EvalResult } from './core';
+import { learnedIntentSamples } from './corpus';
+import { weights, IntentWeights } from './weights';
 
 export type Intent =
   | 'schedule'
@@ -181,22 +183,79 @@ const RULES: { re: RegExp; intent: Intent }[] = [
 
 let model: MultinomialNB | null = null;
 
+/** The corpus the shipped model was fitted to, and the fallback if none shipped. */
+function trainingSet(): { text: string; label: Intent }[] {
+  return [...CORPUS, ...learnedIntentSamples().map(s => ({ text: s.text, label: s.intent }))];
+}
+
+/** Where the current model came from, for the health endpoint. */
+let source: 'frozen' | 'trained' = 'trained';
+/** Corpus sizes recorded in the artifact, so stats stay accurate when frozen. */
+let frozenCorpus: IntentWeights['corpus'] | null = null;
+
 function ensure(): MultinomialNB {
   if (model) return model;
+
+  const w = weights();
+  if (w?.intent) {
+    model = MultinomialNB.fromJSON(w.intent.nb);
+    frozenCorpus = w.intent.corpus;
+    source = 'frozen';
+    return model;
+  }
+
+  source = 'trained';
+  frozenCorpus = null;
   const m = new MultinomialNB(0.35);
-  m.train(CORPUS.map(s => ({ bag: features(s.text, FEATS), label: s.label })));
+  m.train(trainingSet().map(s => ({ bag: features(s.text, FEATS), label: s.label })));
   model = m;
   return m;
+}
+
+/** Everything the freeze step needs to write an artifact. */
+export function exportIntentWeights(): IntentWeights {
+  const m = ensure();
+  const all = trainingSet();
+  return {
+    nb: m.toJSON(),
+    corpus: { handWritten: CORPUS.length, learned: all.length - CORPUS.length },
+    guardrailRules: RULES.length,
+  };
+}
+
+/** The feature options the intent model was trained with, for the online learner. */
+export const INTENT_FEATURES = FEATS;
+/** Label set, in the order the model uses. */
+export const INTENT_LABELS: Intent[] = [
+  'schedule', 'explain-field', 'explain-payload', 'explain-error',
+  'analyze-upload', 'impact', 'howto', 'capability', 'general',
+];
+
+/**
+ * Discards the loaded model so the next call rebuilds it.
+ *
+ * Used by the freeze step, which has to fit the corpus rather than re-freeze an
+ * artifact that may already contain a mistake.
+ */
+export function resetIntent(): void {
+  model = null;
+  frozenCorpus = null;
+  source = 'trained';
 }
 
 export interface IntentPrediction {
   intent: Intent;
   confidence: number;
-  /** 'rule' when a guardrail fired, 'model' otherwise. */
-  source: 'rule' | 'model';
+  /**
+   * How the decision was reached. 'exemplar' means a correction someone made at
+   * runtime matched closely enough to override the model — see ml/route.ts.
+   */
+  source: 'rule' | 'model' | 'exemplar';
   /** Features that drove a model decision, for explainability. */
   evidence: { feature: string; weight: number }[];
   runnerUp?: { intent: Intent; confidence: number };
+  /** Set when an exemplar overrode the model, naming what it matched. */
+  exemplar?: { matched: string; similarity: number; overrode: Intent };
 }
 
 /** Below this the question is treated as open-ended rather than a specialism. */
@@ -252,17 +311,25 @@ export const HELD_OUT: { text: string; label: Intent }[] = [
 export function evaluateIntent(): { train: EvalResult; heldOut: EvalResult } {
   const predict = (t: string) => classifyIntent(t).intent;
   return {
-    train: evaluate(CORPUS, predict),
+    train: evaluate(trainingSet(), predict),
     heldOut: evaluate(HELD_OUT, predict),
   };
 }
 
 export function intentModelStats() {
   const m = ensure();
+  const corpus = frozenCorpus ?? {
+    handWritten: CORPUS.length,
+    learned: trainingSet().length - CORPUS.length,
+  };
   return {
     algorithm: 'Multinomial Naive Bayes',
     features: 'word 1-2 grams + char 3-5 grams + shape',
-    trainingExamples: CORPUS.length,
+    weightSource: source === 'frozen'
+      ? 'frozen artifact — no training at boot'
+      : 'trained in-process from the repository corpus',
+    trainingExamples: corpus.handWritten + corpus.learned,
+    corpus,
     classes: m.labelCount,
     vocabulary: m.vocabSize,
     guardrailRules: RULES.length,

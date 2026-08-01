@@ -174,8 +174,25 @@ function triggerName(taskName: string): string {
   return `${taskName}-TR001`;
 }
 
+/**
+ * Types that get the exit-code, output and retry processing defaults.
+ * All of these accept those fields per the controller's OpenAPI schema.
+ */
 const SCRIPT_TASK_TYPES = new Set([
   'taskUnix','taskWindows','taskUcmd','taskIbmi','taskZos',
+]);
+
+/**
+ * Types that actually accept `command` and `commandOrScript`.
+ *
+ * taskZos is deliberately absent. The controller schema (TaskZosWsData) defines
+ * no command, commandOrScript or script field at all — z/OS work is driven by
+ * JCL via jclLocation / overrideJclLocation — so setting them produced a payload
+ * carrying fields the controller does not define. Found by cross-checking the
+ * generated payloads against openapi.json during bulk simulation.
+ */
+const COMMAND_TASK_TYPES = new Set([
+  'taskUnix','taskWindows','taskUcmd','taskIbmi',
 ]);
 const AGENT_TASK_TYPES = new Set([
   'taskUnix','taskWindows','taskUcmd','taskIbmi','taskZos',
@@ -204,8 +221,11 @@ export function buildTaskPayload(
   if (row.description) payload.summary      = row.description;
 
   if (isScriptTask) {
-    if (row.command) payload.command = row.command;
-    payload.commandOrScript    = 'Command';
+    // Command fields only where the controller defines them.
+    if (COMMAND_TASK_TYPES.has(taskType)) {
+      if (row.command) payload.command = row.command;
+      payload.commandOrScript  = 'Command';
+    }
     payload.exitCodes          = '0';
     payload.exitCodeProcessing = 'Success Exitcode Range';
     payload.outputType         = 'STDOUT';

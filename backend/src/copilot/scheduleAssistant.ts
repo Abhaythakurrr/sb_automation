@@ -16,6 +16,7 @@ import { SCHEDULE_EXAMPLES } from './knowledge/scheduling';
 import {
   classifyShape, TimeShape, DayShape, DISAGREEMENT_FLOOR,
 } from './ml/schedulePattern';
+import { recordDisagreement } from './feedback';
 
 // ── Plain-English rendering ──────────────────────────────────────────────────
 
@@ -724,6 +725,17 @@ export function interpretSchedule(input: string, fallbackTz?: string): ScheduleI
     const pred = classifyShape(text);
     const ruleTime: TimeShape = fields.timeStyle === 'Interval' ? 'interval' : 'absolute';
     const ruleDay = ruleDayShape(dayPattern);
+    // A confident disagreement is the most valuable training signal the Copilot
+    // ever sees: a phrasing sitting exactly on the edge of what it understands.
+    // It used to be shown to the user and then thrown away. Recording it does not
+    // change any model — promotion into a corpus is a separate, explicit step —
+    // but it means the next training round starts from real phrasings rather than
+    // only generated ones.
+    const remember = (dimension: string, rule: string, model: string, conf: number) => {
+      try {
+        recordDisagreement({ text, ruleShape: `${dimension} ${rule}`, modelShape: `${dimension} ${model}`, confidence: conf });
+      } catch { /* the ledger is best-effort; never fail a request over it */ }
+    };
 
     // Each dimension is checked on its own. Checking a single combined label
     // produced false alarms on requests that legitimately have both an interval
@@ -733,12 +745,14 @@ export function interpretSchedule(input: string, fallbackTz?: string): ScheduleI
       confidence -= 0.18;
       reasoning.push(`Cross-check: the timing classifier reads this as ${TIME_WORDS[pred.time]} (${Math.round(pred.timeConfidence * 100)}% confident) while the parser produced ${TIME_WORDS[ruleTime]}. The parser's fields below are what would be created — please confirm they match your intent.`);
       questions.push(`Did you mean ${TIME_WORDS[pred.time]}?`);
+      remember('time', ruleTime, pred.time, pred.timeConfidence);
     }
     if (ruleDay && pred.day !== ruleDay && pred.dayConfidence >= DISAGREEMENT_FLOOR) {
       modelAgrees = false;
       confidence -= 0.18;
       reasoning.push(`Cross-check: the day-pattern classifier reads this as ${DAY_SHAPE_WORDS[pred.day]} (${Math.round(pred.dayConfidence * 100)}% confident) while the parser produced ${DAY_SHAPE_WORDS[ruleDay]}. Please confirm the day pattern below.`);
       questions.push(`Did you mean ${DAY_SHAPE_WORDS[pred.day]}?`);
+      remember('day', ruleDay, pred.day, pred.dayConfidence);
     }
   } catch {
     // Classifier unavailable — the rule parse stands on its own.

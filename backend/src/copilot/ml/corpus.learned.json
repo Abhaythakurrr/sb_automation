@@ -1,0 +1,2009 @@
+{
+  "version": 8,
+  "generatedAt": "2026-08-01T01:15:44.098Z",
+  "generator": "backend/src/copilot/training/iterate.ts",
+  "note": "Hard negatives mined from generated intake rows. Labels are simulator ground truth: the generator chose the schedule shape before it wrote the text. \"was\" records what the model predicted before this sample was added. Regenerate with: npx tsx src/copilot/training/iterate.ts",
+  "schedule": [
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=HOURS;byday=Tue,Wed,Fri 09:00:00 AM to AT 2000",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=MINUTES;byday=Daily AT 0900 TIMEZONE Europe/London to 19:00",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri 06:00:00 AM to AT 2100",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri 08:00:00 AM to AT 2300",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0500 TIMEZONE UTC to 09:00:00 PM",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0700 TIMEZONE America/New_York to 10:00:00 PM",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=MINUTES;byday=Tue,Fri AT 0800 TIMEZONE Asia/Seoul to AT 2300",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=MINUTES;byday=Tue,Thu 05:00:00 AM to AT 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=MINUTES;byday=Tue,Thu,Sat 0600 to AT 2300",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=MINUTES;byday=Wed,Thu,Sat AT 0500 TIMEZONE America/Los_Angeles to AT 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=hours;byday=Mon,Tue,Wed,Thu,Fri 7:00 am to AT 2000",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=hours;byday=Thu,Sun AT 0600 TIMEZONE Europe/London to 10:00:00 PM",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=minutes;byday=Daily AT 0600 TIMEZONE UTC to AT 2000",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=minutes;byday=Mon,Tue,Wed,Thu,Fri AT 0700 TIMEZONE UTC to 03:00:00 AM",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=minutes;byday=Mon,Tue,Wed,Thu,Fri AT 0900 TIMEZONE Asia/Shanghai to 07:00:00 PM",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=10;units=minutes;byday=Mon,Tue,Wed,Thu,Fri AT 0900 TIMEZONE UTC to AT 1800",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=HOURS;byday=Mon,Fri,Sat 0800 to AT 2000",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=HOURS;byday=Mon,Tue,Wed,Thu,Fri 07:00:00 AM to AT 2000",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=HOURS;byday=Mon,Tue,Wed,Thu,Fri AT 0500 TIMEZONE Asia/Jakarta to 22:00",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=HOURS;byday=Mon,Tue,Wed,Thu,Fri AT 0600 TIMEZONE Asia/Jakarta to 2000",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=HOURS;byday=Tue 06:00 to AT 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=HOURS;byday=Tue,Sat 6:00 am to AT 2100",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0500 TIMEZONE Europe/Berlin to 6:00 pm",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0600 TIMEZONE America/Los_Angeles to 11:00:00 PM",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=MINUTES;byday=Wed,Thu,Fri 05:00:00 AM to AT 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=hours;byday=Fri,Sat AT 0900 TIMEZONE UTC to 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=hours;byday=Wed,Sat,Sun 8:00 am to AT 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=minutes;byday=Mon,Tue,Wed,Thu,Fri AT 0800 TIMEZONE UTC to 9:00 pm",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=minutes;byday=Mon,Tue,Wed,Thu,Fri AT 0900 TIMEZONE Asia/Jakarta to AT 2200",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=15;units=minutes;byday=Sat AT 0600 TIMEZONE America/Chicago to AT 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=HOURS;byday=Daily AT 0700 TIMEZONE UTC to AT 1800",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=HOURS;byday=Fri,Sat 0900 to AT 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=HOURS;byday=Mon,Tue,Wed,Thu,Fri AT 0900 TIMEZONE America/Los_Angeles to AT 1900",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=HOURS;byday=Tue AT 0600 TIMEZONE Asia/Shanghai to 03:00:00 AM",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=MINUTES;byday=Daily 06:00:00 AM to AT 2200",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=MINUTES;byday=Daily AT 0500 TIMEZONE Europe/Berlin to AT 2000",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=MINUTES;byday=Daily AT 0700 TIMEZONE America/Chicago to 07:00:00 PM",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=MINUTES;byday=Daily AT 0900 TIMEZONE Asia/Kolkata to 22:00",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=MINUTES;byday=Fri AT 0500 TIMEZONE Asia/Jakarta to 06:00:00 PM",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=MINUTES;byday=Fri,Sun AT 0800 TIMEZONE America/Chicago to 2000",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=MINUTES;byday=Mon,Fri AT 0700 TIMEZONE Asia/Seoul to 6:00 pm",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri 9:00 am to AT 1800",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0500 TIMEZONE UTC to 8:00 pm",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=MINUTES;byday=Thu,Sat AT 0600 TIMEZONE Asia/Kolkata to 11:00 pm",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=hours;byday=Daily AT 0700 TIMEZONE Asia/Shanghai to 06:00:00 PM",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=hours;byday=Fri AT 0500 TIMEZONE Europe/London to 2300",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=hours;byday=Mon AT 0500 TIMEZONE Asia/Jakarta to 8:00 pm",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=hours;byday=Mon,Tue,Wed,Thu,Fri AT 0500 TIMEZONE America/New_York to 2000",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=hours;byday=Wed 08:00:00 AM to AT 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=minutes;byday=Daily AT 0800 TIMEZONE Europe/London to 10:00 pm",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=minutes;byday=Mon,Fri 8:00 am to AT 2300",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=minutes;byday=Mon,Fri,Sun 9:00 am to AT 2100",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=minutes;byday=Mon,Tue,Wed,Thu,Fri 7:00 am to AT 1900",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=minutes;byday=Mon,Tue,Wed,Thu,Fri AT 0600 TIMEZONE America/New_York to 2000",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=minutes;byday=Sat 09:00:00 AM to AT 2200",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=minutes;byday=Wed,Fri,Sun AT 0600 TIMEZONE America/New_York to 2100",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=1;units=minutes;byday=Wed,Thu AT 0500 TIMEZONE Asia/Shanghai to 10:00:00 PM",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=20;units=HOURS;byday=Mon,Thu AT 0600 TIMEZONE Europe/London to 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=20;units=HOURS;byday=Mon,Thu AT 0800 TIMEZONE Asia/Shanghai to 8:00 pm",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=20;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri 0800 to AT 2100",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=20;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0800 TIMEZONE America/Chicago to 19:00",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=20;units=MINUTES;byday=Sun AT 0900 TIMEZONE Europe/London to 19:00",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=20;units=hours;byday=Daily AT 0700 TIMEZONE America/New_York to AT 2200",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=20;units=hours;byday=Sat 06:00 to AT 2200",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=20;units=minutes;byday=Mon,Tue,Wed,Thu,Fri 05:00:00 AM to AT 2000",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=20;units=minutes;byday=Wed,Sun AT 0900 TIMEZONE America/Chicago to 9:00 pm",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=HOURS;byday=Mon,Sat,Sun 0700 to AT 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=MINUTES;byday=Daily AT 0900 TIMEZONE America/New_York to 11:00:00 PM",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=MINUTES;byday=Mon,Sun 06:00:00 AM to AT 2200",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=MINUTES;byday=Mon,Tue,Sat 05:00 to AT 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri 09:00:00 AM to AT 2300",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0600 TIMEZONE Asia/Jakarta to 10:00:00 PM",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=hours;byday=Mon,Tue 07:00:00 AM to AT 2100",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=hours;byday=Mon,Tue,Wed,Thu,Fri 06:00:00 AM to AT 1900",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=hours;byday=Mon,Tue,Wed,Thu,Fri 0800 to AT 2000",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=hours;byday=Mon,Tue,Wed,Thu,Fri 08:00:00 AM to AT 2000",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=hours;byday=Mon,Tue,Wed,Thu,Fri AT 0500 TIMEZONE America/Chicago to 03:00:00 AM",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=hours;byday=Mon,Tue,Wed,Thu,Fri AT 0600 TIMEZONE Europe/London to 23:00",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=hours;byday=Wed,Thu,Fri AT 0700 TIMEZONE Asia/Jakarta to 08:00:00 PM",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=minutes;byday=Fri AT 0600 TIMEZONE America/Los_Angeles to 10:00 pm",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=2;units=minutes;byday=Thu,Fri 05:00 to AT 2300",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=HOURS;byday=Daily AT 0900 TIMEZONE Asia/Seoul to AT 2100",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=HOURS;byday=Fri,Sat AT 0800 TIMEZONE America/Chicago to 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=HOURS;byday=Mon,Sat AT 0800 TIMEZONE America/New_York to AT 2300",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=MINUTES;byday=Daily AT 0500 TIMEZONE UTC to AT 2200",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=MINUTES;byday=Fri,Sat,Sun AT 0500 TIMEZONE Europe/Berlin to 06:00:00 PM",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0800 TIMEZONE America/Chicago to 20:00",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=MINUTES;byday=Sat AT 0500 TIMEZONE UTC to 2200",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=MINUTES;byday=Tue,Fri AT 0700 TIMEZONE America/Los_Angeles to AT 2300",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=MINUTES;byday=Tue,Thu,Fri 06:00:00 AM to AT 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=hours;byday=Mon,Tue,Wed,Thu,Fri 09:00 to AT 2200",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=hours;byday=Tue AT 0900 TIMEZONE America/Los_Angeles to AT 2300",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=minutes;byday=Daily AT 0700 TIMEZONE UTC to AT 2300",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=minutes;byday=Mon,Thu 05:00 to AT 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=minutes;byday=Mon,Tue,Wed,Thu,Fri AT 0600 TIMEZONE Asia/Kolkata to 21:00",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=minutes;byday=Mon,Tue,Wed,Thu,Fri AT 0600 TIMEZONE Asia/Shanghai to 10:00:00 PM",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=minutes;byday=Mon,Tue,Wed,Thu,Fri AT 0700 TIMEZONE America/Los_Angeles to AT 2100",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=30;units=minutes;byday=Mon,Wed,Sat 9:00 am to AT 2000",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=HOURS;byday=Mon,Tue,Wed,Thu,Fri AT 0500 TIMEZONE UTC to AT 1900",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=HOURS;byday=Mon,Wed,Fri AT 0600 TIMEZONE America/Chicago to AT 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=HOURS;byday=Tue,Sun 08:00:00 AM to AT 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=HOURS;byday=Wed 8:00 am to AT 2200",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=HOURS;byday=Wed,Thu 08:00 to AT 2100",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=MINUTES;byday=Daily AT 0900 TIMEZONE Europe/Berlin to 6:00 pm",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0500 TIMEZONE Europe/London to 2300",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=hours;byday=Mon,Thu 6:00 am to AT 2100",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=hours;byday=Mon,Tue,Thu 09:00 to AT 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=hours;byday=Mon,Tue,Wed,Thu,Fri AT 0900 TIMEZONE Asia/Shanghai to AT 2200",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=hours;byday=Mon,Wed AT 0700 TIMEZONE Asia/Kolkata to 2000",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=hours;byday=Tue,Thu,Sat 7:00 am to AT 2200",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=minutes;byday=Fri AT 0800 TIMEZONE America/Los_Angeles to 2300",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=minutes;byday=Mon,Tue 07:00 to AT 2100",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=minutes;byday=Mon,Tue,Fri 05:00:00 AM to AT 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=3;units=minutes;byday=Sun AT 0900 TIMEZONE Europe/London to 11:00:00 PM",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=HOURS;byday=Daily AT 0600 TIMEZONE UTC to 10:00 pm",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=HOURS;byday=Daily AT 0700 TIMEZONE Europe/London to 8:00 pm",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=HOURS;byday=Thu 9:00 am to AT 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri 06:00 to AT 2100",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0600 TIMEZONE Asia/Jakarta to 2000",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=MINUTES;byday=Sat AT 0900 TIMEZONE Asia/Jakarta to 2100",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=MINUTES;byday=Sun 0500 to AT 2200",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=MINUTES;byday=Sun AT 0600 TIMEZONE America/Los_Angeles to 6:00 pm",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=hours;byday=Daily AT 0800 TIMEZONE Asia/Seoul to 10:00 pm",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=hours;byday=Mon,Tue,Wed,Thu,Fri AT 0800 TIMEZONE America/New_York to AT 2200",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=minutes;byday=Daily AT 0600 TIMEZONE America/Chicago to 09:00:00 PM",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=minutes;byday=Daily AT 0800 TIMEZONE America/Los_Angeles to 11:00:00 PM",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=minutes;byday=Daily AT 0800 TIMEZONE Asia/Kolkata to 2100",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=minutes;byday=Mon,Tue,Wed 05:00:00 AM to AT 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=minutes;byday=Mon,Tue,Wed,Thu,Fri 6:00 am to AT 1800",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=4;units=minutes;byday=Thu,Sat AT 0800 TIMEZONE Asia/Seoul to AT 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=5;units=HOURS;byday=Mon,Tue,Wed,Thu,Fri AT 0900 TIMEZONE Asia/Jakarta to 07:00:00 PM",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=5;units=HOURS;byday=Sat 05:00 to AT 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=5;units=MINUTES;byday=Daily AT 0800 TIMEZONE Asia/Jakarta to AT 2200",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=5;units=MINUTES;byday=Daily AT 0900 TIMEZONE Europe/Berlin to 10:00:00 PM",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=5;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri 5:00 am to AT 1800",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=5;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0700 TIMEZONE Asia/Shanghai to AT 2000",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=5;units=MINUTES;byday=Tue,Wed 08:00 to AT 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=5;units=MINUTES;byday=Tue,Wed,Fri AT 0700 TIMEZONE Asia/Kolkata to 22:00",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=5;units=hours;byday=Daily AT 0800 TIMEZONE Europe/Berlin to AT 1800",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=5;units=hours;byday=Mon,Tue,Wed,Thu,Fri 0900 to AT 2300",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=5;units=minutes;byday=Mon,Tue,Wed,Thu,Fri 0700 to AT 2000",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=HOURS;byday=Daily AT 0700 TIMEZONE Europe/London to 2100",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=HOURS;byday=Daily AT 0800 TIMEZONE Europe/London to 20:00",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=HOURS;byday=Sun 05:00 to AT 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=HOURS;byday=Tue AT 0600 TIMEZONE Asia/Kolkata to 21:00",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=HOURS;byday=Wed AT 0600 TIMEZONE America/Los_Angeles to 9:00 pm",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=MINUTES;byday=Fri AT 0900 TIMEZONE Asia/Shanghai to 2100",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0600 TIMEZONE America/Chicago to 18:00",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=MINUTES;byday=Mon,Tue,Wed,Thu,Fri AT 0800 TIMEZONE America/Los_Angeles to AT 2100",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=MINUTES;byday=Mon,Wed AT 0500 TIMEZONE America/Los_Angeles to 20:00",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=hours;byday=Mon,Tue,Wed,Thu,Fri 9:00 am to AT 1800",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=hours;byday=Mon,Tue,Wed,Thu,Fri AT 0900 TIMEZONE America/Los_Angeles to AT 2200",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=hours;byday=Tue 06:00:00 AM to AT 2200",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=hours;byday=Wed,Fri 06:00:00 AM to AT 1900",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=minutes;byday=Daily AT 0800 TIMEZONE Asia/Seoul to 10:00 pm",
+      "time": "interval",
+      "day": "daily",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/daily"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=minutes;byday=Mon,Tue,Wed,Thu,Fri AT 0700 TIMEZONE Asia/Jakarta to 06:00:00 PM",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=minutes;byday=Thu,Sun AT 0900 TIMEZONE Europe/Berlin to 09:00:00 PM",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=minutes;byday=Wed 07:00:00 AM to AT 2200",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=INTERVAL;interval=6;units=minutes;byday=Wed,Sat,Sun 8:00 am to AT 1800",
+      "time": "interval",
+      "day": "specificDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/specificDays"
+    },
+    {
+      "text": "FREQ=MINUTELY;interval=6;units=minutes;byday=Mon,Tue,Wed,Thu,Fri AT 0500 TIMEZONE UTC to AT 2100",
+      "time": "interval",
+      "day": "businessDays",
+      "source": "simulator",
+      "iteration": 1,
+      "was": "absolute/businessDays"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=1 10:30:00 AM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=1 2:15 am",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=10 11:45",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=10 1600",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=10 1630",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=10 20:30",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=10th 1630",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=10th 2015",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=11 11:45",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=11 AT 0930 TIMEZONE Europe/London",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=12 06:30:00 PM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=12 AT 1730 TIMEZONE Asia/Kolkata",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=12th 0500",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=13 1045",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=14 3:00 am",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=14 6:45 am",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=14th 13:15",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=15 0545",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=15 10:30:00 AM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=15 13:15",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=15th 01:00:00 AM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=15th 12:00:00 PM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=16th 20:00",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=17 01:45",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=17th 09:15:00 PM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=17th 21:30",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=17th 2330",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=18 00:30",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=18th 1:45 pm",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=19th 17:00",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=19th AT 1000 TIMEZONE Europe/London",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=2 0145",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=2 06:15",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=20 AT 0245 TIMEZONE America/New_York",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=20th 12:15",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=20th 5:15 am",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=21 1530",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=22 07:30:00 PM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=22 12:00 am",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=22 1845",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=22th 0715",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=23th 10:00",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=23th 3:00 pm",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=24 01:45",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=24 4:00 am",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=24 AT 2300 TIMEZONE Asia/Jakarta",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=24th 13:15",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=24th 2345",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=24th 2:30 am",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=24th 3:30 pm",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=25 02:45",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=25 12:00:00 AM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=25 AT 0815 TIMEZONE Europe/London",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=25th 02:45:00 AM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=25th 1:00 pm",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=25th 23:00",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=25th 8:45 pm",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=26th 10:30 pm",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=27 05:45:00 AM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=27 20:00",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=27 5:30 am",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=27th 05:45:00 PM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=27th 1245",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=28 02:00",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=28 1515",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=28th 05:45:00 PM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=3 0900",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=4 AT 0130 TIMEZONE Europe/London",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=4th 05:00",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=5 6:45 am",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=5 AT 0845 TIMEZONE Asia/Jakarta",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=5th 10:15",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=5th 10:15:00 PM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=5th AT 1730 TIMEZONE Europe/Berlin",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=6 1730",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=7 AT 0200 TIMEZONE America/Los_Angeles",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=7 AT 1545 TIMEZONE Europe/Berlin",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=7th 07:00",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=7th 11:00:00 AM",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=7th 9:45 am",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=7th AT 1545 TIMEZONE America/Los_Angeles",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=8 0630",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=8 12:00 am",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=8 13:45",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=8th 11:00 pm",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=8th AT 1400 TIMEZONE Asia/Jakarta",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=9 0930",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=9 09:30",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=9 23:45",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    },
+    {
+      "text": "FREQ=MONTHLY;INTERVAL=1;byday=9th 18:00",
+      "time": "absolute",
+      "day": "monthlyDay",
+      "source": "simulator",
+      "iteration": 2,
+      "was": "interval/monthlyDay"
+    }
+  ],
+  "intent": []
+}

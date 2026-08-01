@@ -161,9 +161,130 @@ export function features(text: string, opts: FeatureOptions = {}): Map<string, n
     if (/[A-Za-z]+\/[A-Za-z_]+/.test(text)) bump('s:has_tz');
     if (/\b(mon|tue|wed|thu|fri|sat|sun)/i.test(text)) bump('s:has_day');
     bump('s:len_bucket_' + Math.min(6, Math.floor(raw.length / 4)));
+    // Weighted above the n-grams on purpose. Inputs are unit-normalised, so a
+    // single count-1 term among sixty carries almost none of the vector's norm —
+    // which left the exact day set losing to lexical coincidence: "Monday,
+    // Thursday, Friday only at 11:15" read as business days because "monday…
+    // friday" and "only" are both strong business-day cues in the hand-written
+    // corpus. These features are computed facts about the text, not statistical
+    // proxies for it, so they should outweigh the proxies.
+    for (const f of weekdaySetFeatures(text)) bump(f, DAY_SET_FEATURE_WEIGHT);
   }
 
   return bag;
+}
+
+// ── Weekday-set features ─────────────────────────────────────────────────────
+
+/** How much a computed day-set feature counts for, relative to one n-gram. */
+export const DAY_SET_FEATURE_WEIGHT = 4;
+
+/** Full day names, kept separate because only these are safe to de-pluralise. */
+const FULL_DAY_INDEX: Record<string, number> = {
+  monday: 0, tuesday: 1, wednesday: 2, thursday: 3, friday: 4, saturday: 5, sunday: 6,
+};
+
+/**
+ * Day names and abbreviations.
+ *
+ * Two-letter codes (mo, tu, we, th, fr, sa, su) are deliberately absent. They
+ * collide with ordinary text in ways that actively mislead: the tokeniser splits
+ * "the 15th of every month" into a bare "th", which would have registered
+ * Thursday on a monthly phrase. UAC's own vocabulary is three-letter, so nothing
+ * is lost.
+ */
+const DAY_INDEX: Record<string, number> = {
+  ...FULL_DAY_INDEX,
+  mon: 0,
+  tues: 1, tue: 1,
+  weds: 2, wed: 2,
+  thurs: 3, thur: 3, thu: 3,
+  fri: 4,
+  sat: 5,
+  sun: 6,
+};
+
+/**
+ * Resolves a token to a day index, allowing the plural forms people actually
+ * write — "on tuesdays and thursdays". Only full names are de-pluralised:
+ * stripping the 's' from short forms would map "thus" to Thursday.
+ */
+function dayOf(token: string): number | undefined {
+  const direct = DAY_INDEX[token];
+  if (direct !== undefined) return direct;
+  if (token.length > 4 && token.endsWith('s')) return FULL_DAY_INDEX[token.slice(0, -1)];
+  return undefined;
+}
+
+/** "mon-fri", "monday to friday", "mondays through fridays" — a range, not two days. */
+const WEEKDAY_RANGE = /\b(?:mon|mondays?)\s*(?:-|–|—|to|thru|through|till|until)\s*(?:fri|fridays?)\b/i;
+/** "sat-sun", "saturday to sunday". */
+const WEEKEND_RANGE = /\b(?:sat|saturdays?)\s*(?:-|–|—|to|thru|through|till|until)\s*(?:sun|sundays?)\b/i;
+
+/**
+ * Which weekdays a phrase names, expressed so a linear model can use it.
+ *
+ * WHY THIS IS NOT SOMETHING MORE DATA COULD FIX
+ *
+ * "monday,tuesday,wednesday,thursday,friday" means business days.
+ * "monday,thursday,friday" means those three days.
+ *
+ * Those two strings share almost every word and character n-gram, and the only
+ * thing that separates them is whether the set of days named is complete. A bag
+ * of n-grams has no notion of set completeness, so no quantity of training
+ * examples can teach the distinction — the training loop demonstrated that
+ * directly: it drove business-day recognition from 76% to 100% and, in doing so,
+ * started misreading three-day lists as business days, because from the model's
+ * point of view they look the same.
+ *
+ * So the discriminator is computed here and handed over as a feature. The count
+ * is emitted as a distinct term per size rather than as a magnitude, because the
+ * relationship is categorical: five weekdays means something qualitatively
+ * different from four, not "more of the same".
+ */
+export function weekdaySetFeatures(text: string): string[] {
+  const out: string[] = [];
+  const lower = String(text).toLowerCase();
+  const days = new Set<number>();
+
+  // Ranges first: "monday to friday" names two tokens but five days.
+  let ranged = false;
+  if (WEEKDAY_RANGE.test(lower)) { [0, 1, 2, 3, 4].forEach(d => days.add(d)); ranged = true; }
+  if (WEEKEND_RANGE.test(lower)) { [5, 6].forEach(d => days.add(d)); ranged = true; }
+
+  // Whole tokens only. Substring matching would find "thu" inside "thursday"
+  // and "sat" inside "saturate", inflating the count.
+  for (const tok of lower.split(/[^a-z]+/)) {
+    const d = dayOf(tok);
+    if (d !== undefined) days.add(d);
+  }
+
+  // Named collective terms carry a set without naming any day.
+  if (/\b(weekday|weekdays|business\s*day|business\s*days|working\s*day|working\s*days)\b/.test(lower)) {
+    [0, 1, 2, 3, 4].forEach(d => days.add(d));
+    out.push('s:days_named_collective');
+  }
+  if (/\b(weekend|weekends)\b/.test(lower)) {
+    [5, 6].forEach(d => days.add(d));
+    out.push('s:days_weekend_word');
+  }
+
+  if (days.size === 0) return out;
+
+  const weekdays = [0, 1, 2, 3, 4].filter(d => days.has(d));
+  const weekend = [5, 6].filter(d => days.has(d));
+
+  out.push(`s:days_count_${days.size}`);
+  if (ranged) out.push('s:days_range');
+  if (weekend.length) out.push('s:days_has_weekend');
+  if (weekdays.length === 5 && weekend.length === 0) out.push('s:days_all_weekdays_exactly');
+  if (weekdays.length > 0 && weekdays.length < 5 && weekend.length === 0) {
+    out.push('s:days_weekday_subset');
+    out.push(`s:days_weekday_subset_${weekdays.length}`);
+  }
+  if (days.size === 7) out.push('s:days_every_day');
+
+  return out;
 }
 
 // ── Vocabulary / vectoriser ──────────────────────────────────────────────────
@@ -197,6 +318,22 @@ export class Vocabulary {
 
   term(i: number): string { return this.terms[i]; }
   get size(): number { return this.terms.length; }
+
+  /** Terms in index order. Round-trips through fromTerms without reindexing. */
+  toTerms(): string[] { return [...this.terms]; }
+
+  /**
+   * Rebuilds a vocabulary from a saved term list.
+   *
+   * Index order is preserved, which is the whole point: the weight matrices are
+   * addressed by index, so a vocabulary that renumbered its terms on load would
+   * silently permute every learned weight.
+   */
+  static fromTerms(terms: string[]): Vocabulary {
+    const v = new Vocabulary();
+    for (const t of terms) v.add(t);
+    return v;
+  }
 }
 
 /** Dense vector from a feature bag, using only terms already in the vocabulary. */

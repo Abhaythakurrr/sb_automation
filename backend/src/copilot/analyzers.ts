@@ -21,6 +21,12 @@ const AGENT_TASK_TYPES = new Set([
 ]);
 const KNOWN_TASK_TYPES = new Set([...AGENT_TASK_TYPES, 'taskWorkflow', 'taskTimer', 'taskEmail', 'taskWebService', 'taskUniversal']);
 
+/**
+ * What this application actually supports creating: Unix and Windows tasks with
+ * a time trigger. Anything else is flagged rather than half-built.
+ */
+const SUPPORTED_TASK_TYPES = new Set(['taskUnix', 'taskWindows']);
+
 /** Rejected first_run_date content, mirroring the payload builder's guard. */
 const NON_DATE_MARKERS = ['scheduled', 'frequency', 'daily', 'weekly', 'monthly'];
 
@@ -68,7 +74,15 @@ export function analyzeRow(row: JobRowLike, index: number): Finding[] {
   } else if (!KNOWN_TASK_TYPES.has(taskType)) {
     out.push(finding('error', name, 'required.task_type',
       `"${taskType}" is not a task type this application recognises.`,
-      `Use one of: ${[...AGENT_TASK_TYPES].join(', ')}.`, at('task_type')));
+      `Use ${[...SUPPORTED_TASK_TYPES].join(' or ')}.`, at('task_type')));
+  } else if (!SUPPORTED_TASK_TYPES.has(taskType)) {
+    // Recognised by UAC, but this tool does not build it correctly. z/OS is the
+    // clearest example: the controller spec defines no `command` field on it at
+    // all, because z/OS work is driven by JCL, so the script defaults applied
+    // here would be silently wrong.
+    out.push(finding('error', name, 'required.task_type',
+      `"${taskType}" is a real UAC task type, but this application only creates ${[...SUPPORTED_TASK_TYPES].join(' and ')} tasks with a time trigger.`,
+      `Create ${taskType} jobs directly in UAC, or change the Job Type column.`, at('task_type')));
   }
 
   if (SCRIPT_TASK_TYPES.has(taskType) && !str(row.command)) {
@@ -397,8 +411,11 @@ export function detectBatchAnomalies(rows: JobRowLike[]): Finding[] {
   }
 
   // Names that are nearly, but not exactly, the same.
+  // Reported in full rather than truncated: a batch with many near-duplicates is
+  // exactly the case where the user most needs to see all of them, and an
+  // execution run is capped at 100 jobs so the list cannot grow unbounded.
   const names = rows.map(r => str(r.task_name)).filter(Boolean);
-  for (const nd of nearDuplicates(names).slice(0, 6)) {
+  for (const nd of nearDuplicates(names)) {
     out.push(finding('warning', nd.a, 'duplicate.task_name_in_file',
       `"${nd.a}" and "${nd.b}" are ${Math.round(nd.score * 100)}% similar. UAC will treat them as two separate jobs, so if one is a typo you will get a duplicate.`,
       'Confirm both names are intentional.', { field: 'task_name' }));
