@@ -160,11 +160,11 @@
   <div class="views" id="views"></div>
   <input type="search" id="find" placeholder="Find a component…" />
   <div class="views exports">
-    <button class="btn primary" id="dl-vsdx">Download .vsdx</button>
-    <button class="btn" id="dl-drawio">.drawio</button>
-    <button class="btn" id="dl-svg">SVG</button>
-    <button class="btn" id="dl-png">PNG</button>
-    <button class="btn" id="do-print">Print</button>
+    <button class="btn primary" id="dl-vsdx" title="Download as Visio 2013+ (.vsdx) — opens directly in Microsoft Visio or diagrams.net">⬇ Visio (.vsdx)</button>
+    <button class="btn" id="dl-drawio" title="Download as draw.io / diagrams.net XML">.drawio</button>
+    <button class="btn" id="dl-svg" title="Download as Scalable Vector Graphic">SVG</button>
+    <button class="btn" id="dl-png" title="Download as PNG image">PNG</button>
+    <button class="btn" id="do-print" title="Open browser print dialog">Print</button>
   </div>
 </header>
 
@@ -731,9 +731,13 @@ function panel(id) {
       Click any component to see its file path, what it does, and everything it talks to.<br><br>
       Switch views to isolate one flow — the overview holds every component, the flow views stay readable.</p>
       <div class="k">Exports</div>
-      <p class="empty"><b>.vsdx</b> opens in Microsoft Visio, one page per view.<br>
-      <b>.drawio</b> opens in diagrams.net.<br>
-      <b>SVG / PNG</b> for slides. <b>Print</b> for PDF.</p>`;
+      <p class="empty"><b>⬇ Visio (.vsdx)</b> — downloads a Visio 2013+ package (OPC/ZIP). One page per view.
+      Open directly in <b>Microsoft Visio</b> (File → Open) or import into <b>diagrams.net</b>
+      (Extras → Edit Diagram / File → Import From → Device).
+      The file is generated from the same source data as the diagram you see — every shape
+      and connector corresponds to real code.<br><br>
+      <b>.drawio</b> opens in diagrams.net (app.diagrams.net).<br>
+      <b>SVG / PNG</b> for slides and documents. <b>Print</b> for PDF.</p>`;
     return;
   }
   const n = NODES.find(x => x.id === id);
