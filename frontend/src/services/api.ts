@@ -1,6 +1,21 @@
 import axios, { AxiosInstance } from 'axios';
 
-const BACKEND = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
+/**
+ * Where the API lives.
+ *
+ * Empty by default, which means relative URLs, which means same-origin. That is
+ * what lets one build run in every deployment: the server that hands the browser
+ * its HTML also answers its API calls, so nothing about the customer's hostname
+ * has to be known at build time.
+ *
+ * It used to default to http://localhost:3001 and be overridden with
+ * NEXT_PUBLIC_API_BASE_URL, which is a build-time variable — so a distributable
+ * package would have carried one company's hostname baked into it, and everyone
+ * else would have had to rebuild from source.
+ *
+ * Still overridable, for the split deployment where the API sits on another host.
+ */
+const BACKEND = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
 export class ApiClient {
   public http: AxiosInstance;

@@ -1,35 +1,34 @@
 /** @type {import('next').NextConfig} */
 
-const securityHeaders = [
-  { key: 'X-DNS-Prefetch-Control', value: 'on' },
-  { key: 'X-Frame-Options', value: 'DENY' },
-  { key: 'X-Content-Type-Options', value: 'nosniff' },
-  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-  {
-    key: 'Content-Security-Policy',
-    value: [
-      "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
-      "font-src 'self'",
-      // Allow both HTTP (local dev) and HTTPS connections
-      // In production, remove http://localhost:* from CSP
-      "connect-src 'self' http://localhost:* https://localhost:* https://*.stonebranch.cloud https://*.adient.internal",
-      "frame-ancestors 'none'",
-    ].join('; '),
-  },
-];
-
+/**
+ * Static export.
+ *
+ * Every page in this application is static — no server components fetching data,
+ * no middleware, no dynamic routes. Next.js is therefore a build tool here, not a
+ * runtime, and `output: 'export'` says so out loud: the build produces plain
+ * HTML, CSS and JS that the API server hands out directly.
+ *
+ * That is what removes three moving parts from a deployment. There is no second
+ * Node process for the frontend, so nothing to supervise; and because the same
+ * origin serves both the page and the API, there is no reverse proxy needed to
+ * glue them together and no CORS to configure.
+ *
+ * Security headers used to live in this file under `headers()`. That is a server
+ * feature and is not available to an exported build, so they moved to the Express
+ * layer, which is a better home anyway: one place that sets them, applied to the
+ * API responses as well as the documents.
+ */
 const nextConfig = {
+  output: 'export',
   reactStrictMode: true,
-  images: {
-    domains: [],
-  },
-  async headers() {
-    return [{ source: '/(.*)', headers: securityHeaders }];
-  },
+
+  // No image optimiser without a Node server. The app ships one small logo.
+  images: { unoptimized: true },
+
+  // Emit directory-style paths (/about-tool/index.html) so a plain static file
+  // server resolves them without rewrite rules.
+  trailingSlash: true,
+
   webpack: (config, { webpack, isServer }) => {
     if (!isServer) {
       // The `docx` library references the Node globals `Buffer` and `process`,

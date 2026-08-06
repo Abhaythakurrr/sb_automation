@@ -21,25 +21,34 @@ import { copilotRouter } from './routes/copilot';
 import { errorHandler } from './middleware/errorHandler';
 import { sessionMiddleware } from './middleware/session';
 import { requestLogger } from './middleware/requestLogger';
+import { mountWeb } from './serveWeb';
 import { createModuleLogger, logLifecycle, getLoggingConfig } from './config/logger';
 
 const log = createModuleLogger('server');
 
+export const APP_VERSION = process.env.APP_VERSION || '1.0.0';
+
+// PORT is the documented name for a service that now serves the whole
+// application on one port. BACKEND_PORT is still read so an existing split
+// deployment keeps working after upgrading.
+const PORT = Number(process.env.PORT || process.env.BACKEND_PORT || 8080);
+
 // Surface the effective configuration at boot (never the secret values
 // themselves — only whether they are present).
-logLifecycle('Backend starting', {
+logLifecycle('Service starting', {
+  version: APP_VERSION,
   environment: process.env.NODE_ENV || 'development',
-  port: process.env.BACKEND_PORT || 3001,
+  port: PORT,
   baseUrlConfigured: !!process.env.BASE_URL,
   teamsWebhookConfigured: !!process.env.TEAMS_WEBHOOK_URL,
   logging: getLoggingConfig(),
 });
 
 const app = express();
-const PORT = process.env.BACKEND_PORT || 3001;
 
-// Behind nginx/reverse proxy — trust the first proxy hop so rate limiting and
-// logging use the real client IP (X-Forwarded-For) rather than the proxy IP.
+// Trust one proxy hop, so rate limiting and logging see the real client address
+// when a load balancer or TLS terminator is in front. Harmless when there is
+// nothing in front, which is now the common case.
 app.set('trust proxy', 1);
 // Do not advertise the framework.
 app.disable('x-powered-by');
@@ -157,14 +166,34 @@ app.use('/api/copilot',     copilotRouter);
 
 // Health check
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    version: APP_VERSION,
+    web: webMount.mounted,
+    timestamp: new Date().toISOString(),
+  });
 });
+
+// ── Web interface ───────────────────────────────────────────────────────────
+// Mounted after the API so /api/* always resolves to a route, never to a file.
+// One process serves the page and the API on one port: no reverse proxy to set
+// up, and no CORS, because they share an origin.
+const webMount = mountWeb(app);
 
 // Error handling
 app.use(errorHandler);
 
 const server = app.listen(PORT, () => {
-  logLifecycle(`Backend server listening on port ${PORT}`, { port: PORT });
+  logLifecycle(`Service listening on port ${PORT}`, {
+    port: PORT,
+    version: APP_VERSION,
+    web: webMount.mounted ? webMount.root : 'API only',
+  });
+  if (webMount.mounted) {
+    logLifecycle(`Open http://localhost:${PORT} to use it`, { url: `http://localhost:${PORT}` });
+  } else {
+    logLifecycle(webMount.reason);
+  }
   // Restore any scheduled agent jobs that were persisted before a restart.
   restoreScheduledJobs();
   // Monitoring is intentionally not auto-restored: it needs a live user token.
@@ -172,8 +201,8 @@ const server = app.listen(PORT, () => {
 });
 
 // ── Graceful shutdown ───────────────────────────────────────────────────────
-// PM2 and container orchestrators signal termination with SIGTERM/SIGINT.
-// Record the shutdown, stop accepting new connections, then exit.
+// systemd sends SIGTERM on `stop`; a terminal sends SIGINT on Ctrl-C. Both mean
+// stop accepting connections, finish what is in flight, then exit.
 function shutdown(signal: string): void {
   logLifecycle(`Received ${signal} — shutting down`, { signal });
   server.close(() => process.exit(0));
