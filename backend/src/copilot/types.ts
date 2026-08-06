@@ -150,10 +150,23 @@ export interface CopilotAnswer {
   citations: Citation[];
   findings: Finding[];
   actions: QuickAction[];
-  /** 'llm' when a model composed the prose, 'grounded' for the deterministic composer. */
+  /** Always 'grounded' — answers are assembled from the local knowledge base. */
   mode: 'llm' | 'grounded';
   /** True when the question could not be answered from trusted sources. */
   outOfScope: boolean;
+  /**
+   * The steps taken to produce this answer, in order.
+   *
+   * Kept on the answer rather than only streamed, so the reasoning is still
+   * inspectable after the fact — including on a reply that arrived while the user
+   * was looking elsewhere.
+   */
+  trace?: {
+    step: 'retrieve' | 'classify' | 'scope' | 'specialist' | 'compose' | 'done';
+    label: string;
+    detail?: string;
+    ms: number;
+  }[];
 }
 
 // ── Inline Assistant (wizard) ────────────────────────────────────────────────

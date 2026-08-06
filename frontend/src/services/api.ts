@@ -411,4 +411,70 @@ export class ApiClient {
   async copilotScore(): Promise<any> {
     return this.http.get('/api/copilot/score');
   }
+
+  /**
+   * Asks a question and reports each pipeline stage as it completes.
+   *
+   * Resolves with the finished answer, or rejects so the caller can fall back to
+   * the plain request. Uses fetch rather than EventSource because EventSource
+   * cannot issue a POST or set the session header.
+   */
+  copilotAskStream(
+    question: string,
+    context: { page: string; step?: string; focus?: string } | undefined,
+    onStage: (stage: any) => void,
+  ): Promise<any> {
+    return new Promise((resolve, reject) => {
+      fetch(`${BACKEND}/api/copilot/ask/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.sessionId ? { 'X-Session-ID': this.sessionId } : {}),
+        },
+        body: JSON.stringify({ question, context }),
+      })
+        .then(async response => {
+          if (!response.ok || !response.body) {
+            reject(new Error(`HTTP ${response.status}`));
+            return;
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let answer: any = null;
+          let failure: string | null = null;
+
+          // SSE frames are separated by a blank line and can be split across
+          // chunks, so the tail of the buffer is kept until a full frame arrives.
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            const frames = buffer.split('\n\n');
+            buffer = frames.pop() ?? '';
+
+            for (const frame of frames) {
+              const evLine = frame.split('\n').find(l => l.startsWith('event:'));
+              const dataLine = frame.split('\n').find(l => l.startsWith('data:'));
+              if (!evLine || !dataLine) continue;
+
+              const event = evLine.slice(6).trim();
+              let payload: any;
+              try { payload = JSON.parse(dataLine.slice(5).trim()); } catch { continue; }
+
+              if (event === 'stage')  onStage(payload);
+              if (event === 'answer') answer = payload;
+              if (event === 'error')  failure = payload?.error || 'stream error';
+            }
+          }
+
+          if (failure) reject(new Error(failure));
+          else if (answer) resolve(answer);
+          else reject(new Error('stream ended without an answer'));
+        })
+        .catch(reject);
+    });
+  }
 }

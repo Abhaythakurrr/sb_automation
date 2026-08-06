@@ -62,6 +62,20 @@ export interface QuickAction {
   arg?: string | Record<string, unknown>;
 }
 
+/**
+ * One step the Copilot took, reported as it happens.
+ *
+ * Streamed from POST /api/copilot/ask/stream while a question is in flight, and
+ * also returned on the finished answer so the reasoning stays readable
+ * afterwards.
+ */
+export interface AskStage {
+  step: 'retrieve' | 'classify' | 'scope' | 'specialist' | 'compose' | 'done';
+  label: string;
+  detail?: string;
+  ms: number;
+}
+
 export interface CopilotAnswer {
   answer: string;
   citations: Citation[];
@@ -70,6 +84,7 @@ export interface CopilotAnswer {
   /** Always 'grounded' — answers are assembled from the local knowledge base. */
   mode: 'grounded';
   outOfScope: boolean;
+  trace?: AskStage[];
 }
 
 export interface PageGuidance {
@@ -280,4 +295,6 @@ export interface CopilotMessage {
   feedbackNote?: string;
   /** True when a correction actually moved the model. */
   didLearn?: boolean;
+  /** The steps taken to produce this reply, for the "how I got there" panel. */
+  trace?: AskStage[];
 }

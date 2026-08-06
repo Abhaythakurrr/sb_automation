@@ -12,6 +12,7 @@ import {
   playClick, playSuccess, playError, playTick, playComplete, playWhoosh, playWarning,
 } from '@/utils/soundEffects';
 import {
+  AskStage,
   CopilotAnswer,
   CopilotContext,
   CopilotFinding,
@@ -45,6 +46,8 @@ interface CopilotState {
   // ── Conversation ──
   messages: CopilotMessage[];
   thinking: boolean;
+  /** Stages arriving for the reply currently in flight. Cleared when it lands. */
+  liveStages: AskStage[];
 
   // ── Context ──
   context: CopilotContext;
@@ -143,6 +146,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
 
   messages: [],
   thinking: false,
+  liveStages: [],
 
   context: { page: 'home' },
   guidance: null,
@@ -257,6 +261,12 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   },
 
   // ── Conversation ───────────────────────────────────────────────────────────
+  //
+  // Streams by default. The pipeline has several stages that each take long enough
+  // to notice, and showing them turns waiting into reading — as well as making the
+  // routing decision visible, which is what you need when an answer comes back
+  // wrong. Falls back to the plain request if streaming is unavailable, so a
+  // proxy that mangles SSE degrades to the old behaviour rather than breaking.
   ask: async (question) => {
     const q = question.trim();
     if (!q || get().thinking) return;
@@ -267,6 +277,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
     set({
       open: true,
       thinking: true,
+      liveStages: [],
       messages: [
         ...get().messages,
         userMsg,
@@ -274,14 +285,13 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       ],
     });
 
-    try {
-      const { page, step, focus } = get().context;
-      const res = await globalApi.copilotAsk(q, { page, step, focus });
-      const answer: CopilotAnswer = res.data?.data;
-      // A findings-bearing answer is a warning, not a neutral reply.
+    const { page, step, focus } = get().context;
+
+    const settle = (answer: CopilotAnswer) => {
       answer?.findings?.some(f => f.severity === 'error') ? playWarning() : playTick();
       set({
         thinking: false,
+        liveStages: [],
         messages: get().messages.map(m => m.id === pendingId
           ? {
             ...m,
@@ -292,17 +302,30 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
             actions: answer?.actions,
             mode: answer?.mode,
             outOfScope: answer?.outOfScope,
-            // Kept on the reply because a correction is about the question that
-            // was asked, not about the prose that came back.
+            trace: answer?.trace,
             question: q,
           }
           : m),
       });
+    };
+
+    const streamed = await globalApi.copilotAskStream(
+      q, { page, step, focus },
+      stage => set({ liveStages: [...get().liveStages, stage] }),
+    ).catch(() => null);
+
+    if (streamed) { settle(streamed); return; }
+
+    // ── Fallback: plain request ──────────────────────────────────────────────
+    try {
+      const res = await globalApi.copilotAsk(q, { page, step, focus });
+      settle(res.data?.data as CopilotAnswer);
     } catch (e) {
       set({
         thinking: false,
+        liveStages: [],
         messages: get().messages.map(m => m.id === pendingId
-          ? { ...m, pending: false, content: errText(e) }
+          ? { ...m, pending: false, content: errText(e), question: q }
           : m),
       });
     }

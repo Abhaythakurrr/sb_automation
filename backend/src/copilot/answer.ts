@@ -518,23 +518,60 @@ If you meant something in here and I've misread it, rephrase with the feature or
 
 // ── Public entry point ───────────────────────────────────────────────────────
 
+/**
+ * A step the Copilot took, reported as it happens.
+ *
+ * The pipeline is several distinct stages and each one can be slow enough to
+ * notice — retrieval scans the whole knowledge base, the first classification in
+ * a process pays for model load. Reporting them turns dead waiting time into
+ * something a user can read, and it makes the routing decision visible rather
+ * than hidden: if the Copilot sends a question to the wrong specialist, the trace
+ * is where that becomes obvious.
+ */
+export interface AskStage {
+  /** Machine-readable step id. */
+  step: 'retrieve' | 'classify' | 'scope' | 'specialist' | 'compose' | 'done';
+  /** One line, written for the person waiting. */
+  label: string;
+  /** Facts worth surfacing: hit counts, intent, confidence. */
+  detail?: string;
+  ms: number;
+}
+
 export interface AskOptions {
   sessionId: string;
   question: string;
   page?: PageId;
+  /** Called as each stage completes. Optional — the plain path ignores it. */
+  onStage?: (s: AskStage) => void;
 }
 
-export async function ask({ sessionId, question, page }: AskOptions): Promise<CopilotAnswer> {
+export async function ask({ sessionId, question, page, onStage }: AskOptions): Promise<CopilotAnswer> {
   const mem = getMemory(sessionId);
   const activePage = page || mem.context.page;
+  const t0 = Date.now();
+
+  /** Reports a stage and records it on the answer, so the trace survives. */
+  const trace: AskStage[] = [];
+  const stage = (step: AskStage['step'], label: string, detail?: string) => {
+    const s: AskStage = { step, label, detail, ms: Date.now() - t0 };
+    trace.push(s);
+    try { onStage?.(s); } catch { /* a listener must never break the answer */ }
+  };
 
   addTurn(sessionId, { role: 'user', content: question });
 
   const hits = retrieve(question, { page: activePage, limit: 6 });
+  stage('retrieve', 'Searched the knowledge base',
+    `${hits.length} relevant ${hits.length === 1 ? 'section' : 'sections'}`);
   // routeIntent, not classifyIntent: this is the live routing decision, so it
   // honours corrections made at runtime. classifyIntent stays the base model, so
   // the accuracy the Copilot reports about itself is not inflated by them.
   const prediction = routeIntent(question);
+  stage('classify', 'Worked out what you are asking for',
+    `${prediction.intent} · ${Math.round(prediction.confidence * 100)}% confident`
+    + (prediction.source === 'exemplar' ? ' · from a correction someone made' : '')
+    + (prediction.source === 'rule' ? ' · matched a guardrail' : ''));
 
   // ── Scope gate, before any specialist runs ────────────────────────────────
   // This ordering matters. A classifier can misroute an off-topic question to a
@@ -544,13 +581,16 @@ export async function ask({ sessionId, question, page }: AskOptions): Promise<Co
   // specialist, whatever the classifier thought.
   const capabilityAsk = prediction.intent === 'capability';
   if (isOutOfScope(hits) && !capabilityAsk) {
+    stage('scope', 'Checked this against what I know', 'outside the knowledge base — saying so rather than guessing');
     const text = outOfScopeText(question);
     addTurn(sessionId, { role: 'assistant', content: text });
+    stage('done', 'Done');
     return {
       answer: text, citations: [], findings: [], actions: [],
-      mode: 'grounded', outOfScope: true,
+      mode: 'grounded', outOfScope: true, trace,
     };
   }
+  stage('scope', 'Checked this against what I know', 'in scope');
 
   // A weakly-predicted specialism is not worth acting on: the generic
   // retrieval-grounded answer is more useful than a confident wrong specialist.
@@ -575,9 +615,17 @@ export async function ask({ sessionId, question, page }: AskOptions): Promise<Co
     default: break;
   }
 
+  if (intent !== 'general' && intent !== 'howto') {
+    stage('specialist', `Handed it to the ${SPECIALIST_LABEL[intent] || intent} specialist`,
+      composed.final
+        ? `answered from ${composed.findings.length > 0 ? 'your session data' : 'exact field data'}`
+        : 'no exact answer available — falling back to the knowledge base');
+  }
+
   const outOfScope = false;   // already handled by the gate above
 
   if (composed.final) {
+    stage('done', 'Done');
     addTurn(sessionId, { role: 'assistant', content: composed.answer });
     return {
       answer: composed.answer,
@@ -586,6 +634,7 @@ export async function ask({ sessionId, question, page }: AskOptions): Promise<Co
       actions: composed.actions,
       mode: 'grounded',
       outOfScope: false,
+      trace,
     };
   }
 
@@ -603,8 +652,12 @@ export async function ask({ sessionId, question, page }: AskOptions): Promise<Co
       : composeGrounded(question, hits, sessionId);
   }
 
+  stage('compose', 'Wrote the answer from what I found',
+    'sentences taken verbatim from the knowledge base, never generated');
+
   const actions = suggestFollowUps(activePage, sessionId);
   addTurn(sessionId, { role: 'assistant', content: answerText });
+  stage('done', 'Done');
 
   return {
     answer: answerText,
@@ -613,8 +666,20 @@ export async function ask({ sessionId, question, page }: AskOptions): Promise<Co
     actions,
     mode,
     outOfScope,
+    trace,
   };
 }
+
+/** Human names for the specialists, for the activity trace. */
+const SPECIALIST_LABEL: Record<string, string> = {
+  schedule: 'scheduling',
+  'analyze-upload': 'file validation',
+  'explain-payload': 'payload',
+  'explain-error': 'error',
+  'explain-field': 'field reference',
+  impact: 'impact analysis',
+  capability: 'capability',
+};
 
 // ── Context-aware proactive guidance ─────────────────────────────────────────
 

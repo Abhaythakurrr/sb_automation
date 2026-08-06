@@ -10,6 +10,7 @@ import JobDeletionPage from './JobDeletionPage';
 import JobRecoveryPage from './JobRecoveryPage';
 import SearchEditPage from './SearchEditPage';
 import AdhocLaunchPage from './AdhocLaunchPage';
+import CopilotCanvas from './copilot/CopilotCanvas';
 
 // ── Tab Bar ───────────────────────────────────────────────────────────────────
 function TabBar() {
@@ -54,6 +55,11 @@ function TabBar() {
     'adhoc-launch': (
       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+    'copilot': (
+      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
       </svg>
     ),
   };
@@ -118,7 +124,17 @@ function TabBar() {
 // All opened automations stay mounted. Only the active one is visible.
 // This preserves state across tab switches — no data loss.
 export default function WorkspaceLayout() {
-  const { openTabs, activeTab } = useWorkspaceStore();
+  const { openTabs, activeTab, openTab } = useWorkspaceStore();
+
+  // Arriving from a documentation page with /#copilot opens the tab. Those routes
+  // render outside this shell, so the launcher there navigates rather than
+  // calling openTab directly.
+  useEffect(() => {
+    if (window.location.hash === '#copilot') {
+      openTab('copilot', 'Copilot');
+      history.replaceState(null, '', window.location.pathname);
+    }
+  }, [openTab]);
 
   // Track which automations have been opened (to lazy-mount them)
   const mountedIds = openTabs.map(t => t.id);
@@ -183,6 +199,14 @@ export default function WorkspaceLayout() {
             <AdhocLaunchPage />
           </div>
         )}
+
+        {/* Copilot — a tab like any other, so it can be consulted while working
+            rather than covering the thing you are asking about. */}
+        {mountedIds.includes('copilot') && (
+          <div style={{ display: activeTab === 'copilot' ? 'block' : 'none' }}>
+            <CopilotCanvas />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -211,6 +235,7 @@ function LandingPageWrapper() {
         '/job-recovery':  { id: 'job-recovery',  title: 'Job Recovery' },
         '/search':        { id: 'search',        title: 'Search & Edit' },
         '/adhoc-launch':  { id: 'adhoc-launch',  title: 'Ad-hoc Launch' },
+        '#copilot':       { id: 'copilot',       title: 'Copilot' },
       };
 
       const match = routeMap[href];

@@ -260,6 +260,70 @@ router.post('/ask', async (req: AuthRequest, res: Response, next: NextFunction):
   } catch (e) { next(e); }
 });
 
+// ── Ask, streamed ────────────────────────────────────────────────────────────
+// Same pipeline as /ask, but each stage is pushed as it completes.
+//
+// Worth the extra endpoint because the stages are genuinely informative, not
+// decoration: which specialist took the question and how confident the router was
+// are the two things you need to see when an answer comes back wrong. A spinner
+// hides exactly that.
+router.post('/ask/stream', async (req: AuthRequest, res: Response): Promise<void> => {
+  if (!guardEnabled(res)) return;
+
+  const schema = z.object({
+    question: z.string().min(1).max(2000),
+    context: ContextSchema.optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, error: 'A question is required (max 2000 characters).' });
+    return;
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  // Stops a reverse proxy buffering the stream into one lump at the end, which
+  // would defeat the point of streaming it.
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const send = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const key = sessionKey(req);
+  const ctx = toContext(parsed.data.context);
+  if (ctx) setContext(key, ctx);
+
+  const question = parsed.data.question.trim();
+  const started = Date.now();
+
+  try {
+    const answer = await ask({
+      sessionId: key,
+      question,
+      page: ctx?.page,
+      onStage: s => send('stage', s),
+    });
+
+    send('answer', answer);
+    log.info('Copilot answered (streamed)', {
+      page: getMemory(key).context.page,
+      intent: detectIntent(question),
+      outOfScope: answer.outOfScope,
+      stages: answer.trace?.length ?? 0,
+      ms: Date.now() - started,
+    });
+  } catch (e) {
+    // The stream is already open, so an error has to travel down it rather than
+    // through the normal error handler.
+    send('error', { error: e instanceof Error ? e.message : 'The Copilot could not answer that.' });
+  } finally {
+    res.end();
+  }
+});
+
 // ── Suggestions / proactive guidance ─────────────────────────────────────────
 router.get('/suggestions', (req: AuthRequest, res: Response, next: NextFunction): void => {
   if (!guardEnabled(res)) return;
